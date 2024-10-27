@@ -49,7 +49,7 @@ def get_dicom_metadata(dicom_slice):
     return metadata
 
 # Example usage
-directory = "path/to/your/dicom/files"
+directory = 'Images'
 image_3d, dicom_slices = load_dicom_series(directory)
 
 # Display middle slice
