@@ -1,7 +1,13 @@
-glob2
-pydicom
-numpy
-SimpleITK
-torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-scipy
-logging
+# glob2
+# pydicom
+# numpy
+# SimpleITK
+# torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# scipy
+# logging
+
+pydicom>=2.4.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+tqdm>=4.65.0
+pathlib>=1.0.1
