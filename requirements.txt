@@ -14,3 +14,4 @@ pathlib>=1.0.1
 nibabel
 scipy
 seaborn
+scikit-learn
