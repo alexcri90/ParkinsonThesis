@@ -1,0 +1,130 @@
+2024-11-16 12:47:56,284 - INFO - Searching for DICOM files in Images_Test\dicom
+2024-11-16 12:47:56,284 - INFO - Found 6 DICOM files
+2024-11-16 12:47:56,352 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 13:18:53,117 - INFO - Searching for DICOM files in Images_Test\dicom
+2024-11-16 13:18:53,121 - INFO - Found 6 DICOM files
+2024-11-16 13:18:53,143 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 14:15:34,505 - INFO - Using device: cuda
+2024-11-16 14:15:34,505 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 14:15:48,873 - INFO - Using device: cuda
+2024-11-16 14:15:48,880 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 14:15:48,882 - INFO - Found 6 DICOM files
+2024-11-16 14:15:48,922 - INFO - Converted data to torch tensor on cuda
+2024-11-16 14:15:48,922 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 14:17:44,141 - INFO - Using device: cuda
+2024-11-16 14:17:44,141 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 14:17:44,143 - INFO - Found 6 DICOM files
+2024-11-16 14:17:44,172 - INFO - Converted data to torch tensor on cuda
+2024-11-16 14:17:44,173 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 15:57:01,987 - INFO - Using device: cuda
+2024-11-16 15:57:01,987 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 15:57:01,987 - INFO - Found 6 DICOM files
+2024-11-16 15:57:02,024 - INFO - Converted data to torch tensor on cuda
+2024-11-16 15:57:02,025 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:03:11,426 - INFO - Using device: cuda
+2024-11-16 16:03:11,427 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:03:11,427 - INFO - Found 6 DICOM files
+2024-11-16 16:03:11,467 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:03:11,470 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:03:55,020 - INFO - Using device: cuda
+2024-11-16 16:03:55,020 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:03:55,024 - INFO - Found 6 DICOM files
+2024-11-16 16:03:55,059 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:03:55,059 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:03:58,810 - INFO - Using device: cuda
+2024-11-16 16:03:58,811 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:03:58,816 - INFO - Found 6 DICOM files
+2024-11-16 16:03:58,846 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:03:58,847 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:04:05,162 - INFO - Using device: cuda
+2024-11-16 16:04:05,162 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:04:05,163 - INFO - Found 6 DICOM files
+2024-11-16 16:04:05,191 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:04:05,191 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:04:15,894 - INFO - Using device: cuda
+2024-11-16 16:04:15,894 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:04:15,894 - INFO - Found 6 DICOM files
+2024-11-16 16:04:15,923 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:04:15,923 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:09:30,919 - INFO - Using device: cuda
+2024-11-16 16:10:09,700 - INFO - Using device: cuda
+2024-11-16 16:10:09,701 - INFO - Initialized DATSCANIngestion with root directory: Images\PPMI_Images
+2024-11-16 16:10:10,915 - INFO - Found 3875 DICOM files
+2024-11-16 16:10:10,927 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:10:10,927 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:10:10,990 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:10:10,991 - INFO - Successfully loaded 4 DICOM files
+2024-11-16 16:10:30,442 - INFO - Using device: cuda
+2024-11-16 16:10:30,442 - INFO - Initialized DATSCANIngestion with root directory: Images\PPMI_Images
+2024-11-16 16:10:31,226 - INFO - Found 3875 DICOM files
+2024-11-16 16:10:31,232 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:10:31,232 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:10:31,283 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:10:31,284 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:10:31,331 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:10:31,331 - INFO - Successfully loaded 8 DICOM files
+2024-11-16 16:10:44,494 - INFO - Using device: cuda
+2024-11-16 16:10:44,494 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:10:44,494 - INFO - Found 6 DICOM files
+2024-11-16 16:10:44,530 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:10:44,534 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:11:13,635 - INFO - Using device: cuda
+2024-11-16 16:11:13,635 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:11:13,637 - INFO - Found 6 DICOM files
+2024-11-16 16:11:13,671 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:11:13,671 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:11:34,336 - INFO - Using device: cuda
+2024-11-16 16:11:34,337 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:11:34,339 - INFO - Found 6 DICOM files
+2024-11-16 16:11:34,371 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:11:34,371 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:29:46,238 - INFO - Using device: cuda
+2024-11-16 16:29:46,242 - INFO - Initialized DATSCANIngestion with root directory: Images\PPMI_Images
+2024-11-16 16:29:47,290 - INFO - Found 3875 DICOM files
+2024-11-16 16:29:47,294 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:29:47,294 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:29:47,300 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.03184347682629214022'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,304 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.08742452137871172662'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,304 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.08735741841250782329'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,304 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.01474066533754787643'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,310 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0849328298706296429'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,310 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0842618002085906096'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,310 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.01653540020942450634'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,334 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:29:47,335 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:29:47,341 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.08543100698785995568'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,345 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.09147610892668182546'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,345 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.09136859000131223328'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,349 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.07684820243731742645'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,351 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0188430563309068005'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,351 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0176534650178990810'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,355 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.06913537773894523033'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,355 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0175514575406208888'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,359 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.0175701981095308638'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:47,380 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:29:47,381 - INFO - Successfully loaded 8 DICOM files
+2024-11-16 16:29:59,792 - INFO - Using device: cuda
+2024-11-16 16:29:59,792 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:29:59,798 - INFO - Found 6 DICOM files
+2024-11-16 16:29:59,805 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.04696761120816019986'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,809 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.08576973486019497092'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,822 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.07643317726539657907'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,822 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.01670129985817275328'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,826 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.06320106418946674325'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,826 - WARNING - Invalid value for VR UI: '2.16.124.113543.6006.99.08347116003827369814'. Please see <https://dicom.nema.org/medical/dicom/current/output/html/part05.html#table_6.2-1> for allowed values for each VR.
+2024-11-16 16:29:59,836 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:29:59,836 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:30:20,985 - INFO - Using device: cuda
+2024-11-16 16:30:20,986 - INFO - Initialized DATSCANIngestion with root directory: Images\PPMI_Images
+2024-11-16 16:30:21,809 - INFO - Found 3875 DICOM files
+2024-11-16 16:30:21,813 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:30:21,813 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2020-09-09_17_07_33.0\I1452480\PPMI_100001_NM_Reconstructed_DaTSCAN_Br_20210608102518754_1_S1028880_I1452480.dcm
+2024-11-16 16:30:22,011 - ERROR - Error loading DICOM file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:30:22,012 - WARNING - Skipping file Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm due to error: Invalid DICOM file: Images\PPMI_Images\100001\Reconstructed_DaTSCAN\2024-09-11_15_13_41.0\I10960001\PPMI_100001_NM_AC-018100001-4-DAT-G6N1__br_raw_20240926190052673_1.dcm
+2024-11-16 16:30:22,043 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:30:22,044 - INFO - Successfully loaded 8 DICOM files
+2024-11-16 16:30:25,225 - INFO - Using device: cuda
+2024-11-16 16:30:25,226 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:30:25,250 - INFO - Found 6 DICOM files
+2024-11-16 16:30:25,381 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:30:25,381 - INFO - Successfully loaded 5 DICOM files

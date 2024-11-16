@@ -1,0 +1,58 @@
+<project>
+    <context>
+        We are continuing development of a data science project in medical imaging. The goal is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. 
+    </context>
+    <current_progress>
+    In our previous conversation, we successfully completed:
+    - Data ingestion pipeline with DATSCANIngestion class
+    - DICOM file loading and validation
+    - Proper visualization of 3D volumes (91x109x91 voxels)
+    - Correct anatomical orientations (Axial, Sagittal, Coronal views)
+    - Code is available in the attached datscan_pipeline.py file
+    </current_progress>
+
+    <development_strategy>
+        We will develop this project as a Python Jupyter Notebook, focusing on one task per interaction:
+        - Use Chain of Thought reasoning before coding
+        - Ensure code is modular and well-documented
+        - Adhere to good coding practices
+    </development_strategy>
+
+    <coding_guidelines>
+        - Use Python Version: 3.12
+        - Libraries:
+            - pydicom
+            - numpy
+            - torch
+            - Any other standard libraries as required
+        - Follow PEP 8 style guidelines
+        - Include comments and docstrings
+        - Organize code into functions and classes
+    </coding_guidelines>
+
+    <next_steps>
+        We are ready to proceed with:
+        1. Preprocessing pipeline
+        - Intensity normalization
+        - Feature extraction
+        2. Implementation of unsupervised learning models:
+        - Autoencoders
+        - Variational Autoencoders (VAEs)
+        - Other techniques as outlined in the project plan
+    </next_steps>
+
+    <current_task>
+        <task_number>2</task_number>
+        <task_title>Image Preprocessing</task_title>
+        <task_description>
+            Implement intensity normalization for the DATSCAN images:
+            - Consider that images are already spatially aligned
+            - Account for scanner differences
+            - Normalize values to a common scale
+            - Preserve relative intensity patterns crucial for DATSCAN analysis
+            - Use Chain of Thought to plan the approach before coding
+            - ALWAYS await further instructions before proceeding to the next task
+            - ALWAYS provide one code cell at a time
+        </task_description>
+    </current_task>
+</project>

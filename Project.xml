@@ -1,0 +1,45 @@
+<project>
+    <context>
+        Take a look at the project Architecture. We are working on a data science project in medical imaging. Our goal is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. The dataset consists of reconstructed DATSCAN DICOM images from the PPMI dataset.
+    </context>
+
+    <development_strategy>
+        We will develop this project as a Python Jupyter Notebook **one step at a time**, focusing on **one task per interaction**. For each task:
+        - Use **Chain of Thought** reasoning: Before writing code, outline the steps and reasoning for the task.
+        - Ensure the code is modular, well-documented, and adheres to good coding practices.
+        - Await further instructions before proceeding to the next task.
+    </development_strategy>
+
+    <current_task>
+        <task_number>1</task_number>
+        <task_title>Data Ingestion</task_title>
+        <task_description>
+            Write a Python 3.12 script to recursively traverse the nested folder structure to locate all DICOM files.
+            - Use `pydicom` to read DICOM files into NumPy arrays.
+            - Ensure the code is modular and well-documented.
+            - Implement good coding practices by splitting the script into functions or classes as appropriate.
+            - Use **Chain of Thought** to plan the approach before coding.
+            - Utilize PyTorch if any computations can benefit from GPU acceleration.
+            - ALWAYS await further instructions before proceeding to the next task.
+            - ALWAYS provide one code cell at a time
+        </task_description>
+    </current_task>
+
+    <coding_guidelines>
+        - Use **Python Version**: 3.12
+        - **Libraries**:
+            - `pydicom`
+            - `numpy`
+            - `torch` (if needed)
+            - Any other standard libraries as required
+        - **Good Coding Practices**:
+            - Follow PEP 8 style guidelines.
+            - Include comments and docstrings.
+            - Organize code into functions and classes for maintainability.
+        - **Write single cells for a Python Jupyter Notebook**:
+    </coding_guidelines>
+
+    <requirements_file>
+        Create a `requirements.txt` file containing all necessary libraries for this task.
+    </requirements_file>
+</project>
