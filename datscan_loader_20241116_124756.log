@@ -128,3 +128,44 @@
 2024-11-16 16:30:25,250 - INFO - Found 6 DICOM files
 2024-11-16 16:30:25,381 - INFO - Converted data to torch tensor on cuda
 2024-11-16 16:30:25,381 - INFO - Successfully loaded 5 DICOM files
+2024-11-16 16:37:45,597 - INFO - Using device: cuda
+2024-11-16 16:37:45,597 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:37:45,597 - INFO - Found 6 DICOM files
+2024-11-16 16:37:45,621 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:37:45,621 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:37:46,684 - INFO - Starting training for 50 epochs
+2024-11-16 16:39:54,859 - INFO - Using device: cuda
+2024-11-16 16:39:54,860 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:39:54,862 - INFO - Found 6 DICOM files
+2024-11-16 16:39:54,909 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:39:54,911 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:43:09,504 - INFO - Using device: cuda
+2024-11-16 16:43:09,505 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:43:09,507 - INFO - Found 6 DICOM files
+2024-11-16 16:43:09,531 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:43:09,532 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:44:27,416 - INFO - Using device: cuda
+2024-11-16 16:44:27,417 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:44:27,419 - INFO - Found 6 DICOM files
+2024-11-16 16:44:27,460 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:44:27,460 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:45:41,119 - INFO - Using device: cuda
+2024-11-16 16:45:41,119 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:45:41,125 - INFO - Found 6 DICOM files
+2024-11-16 16:45:41,191 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:45:41,192 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:47:07,235 - INFO - Using device: cuda
+2024-11-16 16:47:07,236 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:47:07,238 - INFO - Found 6 DICOM files
+2024-11-16 16:47:07,269 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:47:07,269 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:48:07,284 - INFO - Using device: cuda
+2024-11-16 16:48:07,284 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:48:07,286 - INFO - Found 6 DICOM files
+2024-11-16 16:48:07,313 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:48:07,313 - INFO - Successfully loaded 6 DICOM files
+2024-11-16 16:49:13,652 - INFO - Using device: cuda
+2024-11-16 16:49:13,656 - INFO - Initialized DATSCANIngestion with root directory: Images_Test\dicom
+2024-11-16 16:49:13,657 - INFO - Found 6 DICOM files
+2024-11-16 16:49:13,687 - INFO - Converted data to torch tensor on cuda
+2024-11-16 16:49:13,688 - INFO - Successfully loaded 6 DICOM files
