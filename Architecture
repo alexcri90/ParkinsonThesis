@@ -12,14 +12,18 @@
         <dataset_description>
             <dicom_structure>
                 The dataset is organized in a nested structure, as follows:
-                - **Patient ID Folder**: Unique numerical code for each patient.
-                - **Reconstructed_DaTSCAN Folder**: Just a folder named "Reconstructed_DaTSCAN Folder".
-                - **Exam Date Folders**: Multiple exams per patient, formatted as `YYYY_MM_DD_hh_mm_ss.v` (Year, Month, Day, Hours, Minutes, Seconds, Version).
-                - **Exam Identifier Folder**: Named with `I<exam_code>`, e.g., `I123456`.
+                - **Images Folder**: Contains three subfolders:
+                    - **PPMI_Images_PD**: Folder for PD images.
+                    - **PPMI_Images_SWEDD**: Folder for SWEDD images.
+                    - **PPMI_Images_Cont**: Folder for Control images.
+                - **Patient ID Folder**: Each patient has a unique numerical code as the folder name.
+                - **Reconstructed_DaTSCAN Folder**: A folder named "Reconstructed_DaTSCAN".
+                - **Exam Date Folders**: Each exam is stored in a folder named with the format `YYYY_MM_DD_hh_mm_ss.v` (Year, Month, Day, Hours, Minutes, Seconds, Version).
+                - **Exam Identifier Folder**: Named with `I<exam_code>`, for example, `I123456`.
                 - **DICOM File**: The image file, named like `S<some_numbers>_I<some_numbers>.dcm`.
             </dicom_structure>
             <example_path>
-                Images_Test/dicom/3000/Reconstructed_DaTSCAN/2011-01-20_16_28_47.0/I323662/PPMI_3000_NM_Reconstructed_DaTSCAN_Br_20120814154829508_1_S117534_I323662.dcm
+                Images/PPMI_Images_PD/3000/Reconstructed_DaTSCAN/2011-01-20_16_28_47.0/I323662/PPMI_3000_NM_Reconstructed_DaTSCAN_Br_20120814154829508_1_S117534_I323662.dcm
             </example_path>
         </dataset_description>
     </data_understanding>
