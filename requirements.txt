@@ -2,7 +2,7 @@
 # pydicom
 # numpy
 # SimpleITK
-# torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 # scipy
 # logging
 
