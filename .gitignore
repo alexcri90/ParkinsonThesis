@@ -3,3 +3,7 @@
 
 # Ignore everything in the Images folder
 Images/
+
+# Ignore the draft .py and .xml structure files
+*.py
+*.xml
