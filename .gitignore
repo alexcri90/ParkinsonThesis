@@ -1,5 +1,6 @@
 # Ignore everything in the .venv folder
 .venv/
+preprocessed_data/
 
 # Ignore everything in the Images folder
 Images/
