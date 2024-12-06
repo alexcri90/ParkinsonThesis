@@ -58,23 +58,34 @@ class DATSCANPreprocessor:
     def create_brain_mask(self, image: np.ndarray) -> np.ndarray:
         """
         Create a brain mask using Otsu thresholding and morphological operations.
+        Ensures proper handling of 3D images.
         """
         # Apply Otsu thresholding
         thresh = filters.threshold_otsu(image)
         binary = image > thresh
         
-        # Apply morphological operations to clean up the mask
-        struct = ndimage.generate_binary_structure(3, 2)
-        binary = ndimage.binary_closing(binary, structure=struct, iterations=2)
-        binary = ndimage.binary_fill_holes(binary)
+        # Create a 3D spherical structuring element
+        radius = 2
+        struct = np.zeros((2*radius+1, 2*radius+1, 2*radius+1))
+        x, y, z = np.ogrid[-radius:radius+1, -radius:radius+1, -radius:radius+1]
+        mask = x*x + y*y + z*z <= radius*radius
+        struct[mask] = 1
         
-        # Keep only the largest connected component
-        labeled, num_features = ndimage.label(binary)
-        if num_features > 1:
-            sizes = ndimage.sum(binary, labeled, range(1, num_features + 1))
-            mask = binary.copy()
-            mask[labeled != np.argmax(sizes) + 1] = 0
-            binary = mask
+        try:
+            # Apply morphological operations to clean up the mask
+            binary = ndimage.binary_closing(binary, structure=struct, iterations=2)
+            binary = ndimage.binary_fill_holes(binary)
+            
+            # Keep only the largest connected component
+            labeled, num_features = ndimage.label(binary, structure=struct)
+            if num_features > 1:
+                sizes = ndimage.sum(binary, labeled, range(1, num_features + 1))
+                mask = binary.copy()
+                mask[labeled != np.argmax(sizes) + 1] = 0
+                binary = mask
+        except Exception as e:
+            print(f"Warning: Morphological operations failed, returning simple threshold mask. Error: {str(e)}")
+            return (image > thresh).astype(float)
         
         return binary.astype(float)
     
