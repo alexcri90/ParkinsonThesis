@@ -6,5 +6,5 @@ preprocessed_data/
 Images/
 
 # Ignore the draft .py and .xml structure files
-*.py
+notebook.py
 *.xml
