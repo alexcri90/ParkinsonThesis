@@ -8,3 +8,5 @@ Images/
 # Ignore the draft .py and .xml structure files
 notebook.py
 *.xml
+datscan_vae.pt
+/__pycache__
