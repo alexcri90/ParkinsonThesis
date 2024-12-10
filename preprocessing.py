@@ -138,6 +138,9 @@ class DATSCANPreprocessor:
         # Initial normalization
         image = self.normalize_intensity(image)
         
+        # Enhance contrast
+        image = self.enhance_contrast(image)
+        
         # Create and apply brain mask if requested
         if self.apply_brain_mask:
             mask = self.create_brain_mask(image)
@@ -150,6 +153,18 @@ class DATSCANPreprocessor:
         image = self.apply_augmentation(image)
         
         return image
+    
+    def enhance_contrast(self, image: np.ndarray) -> np.ndarray:
+        """
+        Enhance image contrast using adaptive histogram equalization
+        """
+        from skimage import exposure
+        
+        # Apply CLAHE-like enhancement
+        p2, p98 = np.percentile(image, (2, 98))
+        image_rescale = exposure.rescale_intensity(image, in_range=(p2, p98))
+        
+        return image_rescale
 
 class DATSCANDataset(Dataset):
     """

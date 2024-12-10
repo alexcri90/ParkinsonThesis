@@ -4,41 +4,101 @@ import torch.nn.functional as F
 from torch.amp import autocast, GradScaler
 from tqdm import tqdm
 import numpy as np
+import os
 
+# Add after the existing imports in model.py
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.conv1 = nn.Conv3d(in_channels, in_channels, 3, padding=1)
+        self.bn1 = nn.BatchNorm3d(in_channels)
+        self.conv2 = nn.Conv3d(in_channels, in_channels, 3, padding=1)
+        self.bn2 = nn.BatchNorm3d(in_channels)
+        
+    def forward(self, x):
+        residual = x
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += residual
+        return F.relu(out)
+
+class SelfAttention3D(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.query = nn.Conv3d(in_channels, in_channels//8, 1)
+        self.key = nn.Conv3d(in_channels, in_channels//8, 1)
+        self.value = nn.Conv3d(in_channels, in_channels, 1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        
+    def forward(self, x):
+        batch_size, C, D, H, W = x.size()
+        q = self.query(x).view(batch_size, -1, D*H*W)
+        k = self.key(x).view(batch_size, -1, D*H*W)
+        v = self.value(x).view(batch_size, -1, D*H*W)
+        
+        attention = F.softmax(torch.bmm(q.permute(0,2,1), k), dim=2)
+        out = torch.bmm(v, attention.permute(0,2,1))
+        out = out.view(batch_size, C, D, H, W)
+        return self.gamma * out + x
+
+# Replace the existing Encoder class in model.py
 class Encoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
         
-        # Convolutional layers
+        # Initial convolution
         self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=2, padding=1)
-        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
-        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)
-        self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1)
-        
-        # Batch normalization
         self.bn1 = nn.BatchNorm3d(32)
+        self.res1 = ResidualBlock(32)
+        
+        # Deeper layers
+        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm3d(64)
+        self.res2 = ResidualBlock(64)
+        
+        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)
         self.bn3 = nn.BatchNorm3d(128)
+        self.res3 = ResidualBlock(128)
+        
+        self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1)
         self.bn4 = nn.BatchNorm3d(256)
+        self.res4 = ResidualBlock(256)
         
-        # Calculate the size of flattened features
-        self.flatten_size = 256 * 8 * 8 * 8  # For 128x128x128 input
+        # Attention mechanism
+        self.attention = SelfAttention3D(256)
         
-        # Fully connected layers for mean and log variance
+        # Calculate flatten size
+        self.flatten_size = 256 * 8 * 8 * 8
+        
+        # Latent space projections
         self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
         self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
+        
+        # Dropout for regularization
+        self.dropout = nn.Dropout3d(0.1)
 
     def forward(self, x):
-        # Apply convolutions with ReLU activation and batch normalization
+        # Convolutional pathway with residual connections
         x = F.relu(self.bn1(self.conv1(x)))
+        x = self.res1(x)
+        x = self.dropout(x)
+        
         x = F.relu(self.bn2(self.conv2(x)))
+        x = self.res2(x)
+        x = self.dropout(x)
+        
         x = F.relu(self.bn3(self.conv3(x)))
+        x = self.res3(x)
+        x = self.dropout(x)
+        
         x = F.relu(self.bn4(self.conv4(x)))
+        x = self.res4(x)
         
-        # Flatten
+        # Apply attention
+        x = self.attention(x)
+        
+        # Flatten and project to latent space
         x = x.view(x.size(0), -1)
-        
-        # Get mean and log variance
         mu = self.fc_mu(x)
         logvar = self.fc_logvar(x)
         
@@ -107,117 +167,74 @@ class DATScanVAE(nn.Module):
 
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path):
     print("Initializing training...")
-    # Use a smaller learning rate
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
-    print("Created optimizer")
-    scaler = GradScaler('cuda')
-    print("Created scaler")
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
+    print("Created optimizer and scheduler")
     
-    # Move loss function to the same device as the model
     criterion = nn.BCEWithLogitsLoss(reduction='sum').to(device)
     print("Created criterion")
     
-    # Weight for KL loss (start small and increase gradually)
     kl_weight = 0.0
-    
-    # Initialize dictionary to store training history
     history = {'loss': [], 'kl_loss': [], 'recon_loss': []}
     
     print(f"\nStarting training for {num_epochs} epochs...")
-    print(f"Number of batches per epoch: {len(train_loader)}")
     
     for epoch in range(num_epochs):
-        print(f"\nStarting epoch {epoch+1}/{num_epochs}")
         model.train()
         epoch_loss = 0
         epoch_kl_loss = 0
         epoch_recon_loss = 0
         
-        # Gradually increase KL weight
         kl_weight = min((epoch + 1) / 20, 1.0)
         
-        print(f"Processing {len(train_loader)} batches...")
-        for batch_idx, data in enumerate(train_loader):
-            if batch_idx == 0:
-                print(f"Starting first batch. Data shape: {data.shape}")
-            
+        # Create progress bar for this epoch
+        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
+        
+        for batch_idx, data in enumerate(pbar):
             try:
                 data = data.to(device, non_blocking=True)
-                if batch_idx == 0:
-                    print("Data moved to GPU")
-                
                 optimizer.zero_grad(set_to_none=True)
                 
-                with autocast('cuda', enabled=True):
-                    # Forward pass
-                    recon_logits, mu, logvar = model(data)
-                    if batch_idx == 0:
-                        print("Forward pass completed")
-                    
-                    # Clip values to prevent numerical instability
-                    mu = torch.clamp(mu, -10, 10)
-                    logvar = torch.clamp(logvar, -10, 10)
-                    
-                    # Reconstruction loss (using BCEWithLogitsLoss)
-                    recon_loss = criterion(recon_logits, data)
-                    
-                    # KL divergence loss with gradient clipping
-                    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-                    kl_loss = torch.clamp(kl_loss, 0, 1e6)
-                    
-                    # Total loss with weighted KL term
-                    loss = recon_loss + kl_weight * kl_loss
-                    
-                    if batch_idx == 0:
-                        print("Loss computation completed")
+                # Forward pass
+                recon_logits, mu, logvar = model(data)
                 
-                # Backward pass with gradient scaling
-                scaler.scale(loss).backward()
-                if batch_idx == 0:
-                    print("Backward pass completed")
+                # Clip values to prevent numerical instability
+                mu = torch.clamp(mu, -10, 10)
+                logvar = torch.clamp(logvar, -10, 10)
                 
-                # Clip gradients
+                # Reconstruction loss
+                recon_loss = criterion(recon_logits, data)
+                
+                # KL divergence loss
+                kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                kl_loss = torch.clamp(kl_loss, 0, 1e6)
+                
+                # Add consistency loss
+                random_noise = torch.randn_like(data) * 0.1
+                noisy_data = data + random_noise
+                noisy_recon, noisy_mu, noisy_logvar = model(noisy_data)
+                consistency_loss = F.mse_loss(recon_logits, noisy_recon)
+                
+                # Total loss
+                loss = recon_loss + kl_weight * kl_loss + 0.1 * consistency_loss
+                
+                # Backward pass
+                loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                
-                scaler.step(optimizer)
-                scaler.update()
-                
-                if batch_idx == 0:
-                    print("Optimizer step completed")
+                optimizer.step()
                 
                 # Update epoch losses
                 epoch_loss += loss.item()
                 epoch_kl_loss += kl_loss.item()
                 epoch_recon_loss += recon_loss.item()
                 
-                # Print batch progress
-                if batch_idx % 10 == 0:
-                    print(f'\rBatch {batch_idx}/{len(train_loader)} | '
-                          f'Loss: {loss.item():.4f} | '
-                          f'KL: {kl_loss.item():.4f} | '
-                          f'Recon: {recon_loss.item():.4f}')
-                
-            except RuntimeError as e:
-                print(f"\nError in batch {batch_idx}: {str(e)}")
-                if "out of memory" in str(e):
-                    print('\nGPU out of memory! Clearing cache and skipping batch...')
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    continue
-                else:
-                    raise e
-                
-                # Update epoch losses
-                epoch_loss += loss.item()
-                epoch_kl_loss += kl_loss.item()
-                epoch_recon_loss += recon_loss.item()
-                
-                # Print batch progress
-                if batch_idx % 10 == 0:
-                    print(f'\rBatch {batch_idx}/{len(train_loader)} | '
-                          f'Loss: {loss.item():.4f} | '
-                          f'KL: {kl_loss.item():.4f} | '
-                          f'Recon: {recon_loss.item():.4f}', end='')
+                # Update progress bar description
+                pbar.set_postfix({
+                    'batch': f'{batch_idx}/{len(train_loader)}',
+                    'loss': f'{loss.item():.4f}',
+                    'kl': f'{kl_loss.item():.4f}',
+                    'recon': f'{recon_loss.item():.4f}'
+                })
                 
             except RuntimeError as e:
                 if "out of memory" in str(e):
@@ -227,6 +244,8 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                     continue
                 else:
                     raise e
+        
+        scheduler.step()
         
         # Calculate average losses
         avg_loss = epoch_loss / len(train_loader.dataset)
@@ -238,7 +257,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
         history['kl_loss'].append(avg_kl_loss)
         history['recon_loss'].append(avg_recon_loss)
         
-        # Print progress
+        # Print progress every 5 epochs
         if (epoch + 1) % 5 == 0:
             print(f'\nEpoch {epoch+1}/{num_epochs}:')
             print(f'Average Loss: {avg_loss:.4f}')
@@ -252,6 +271,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
                 'loss': avg_loss,
                 'history': history
             }, save_path)
