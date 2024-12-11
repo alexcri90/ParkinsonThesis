@@ -167,15 +167,28 @@ class DATScanVAE(nn.Module):
 
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path):
     print("Initializing training...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs, eta_min=1e-6)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)  # Reduced from 1e-4
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, 
+        mode='min',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-6
+    )
     print("Created optimizer and scheduler")
     
     criterion = nn.BCEWithLogitsLoss(reduction='sum').to(device)
     print("Created criterion")
     
-    kl_weight = 0.0
+    # Initialize dictionary to store training history
     history = {'loss': [], 'kl_loss': [], 'recon_loss': []}
+    
+    # KL annealing parameters
+    kl_weight = 0.0
+    annealing_epochs = 10
+    
+    # Gradient clipping value
+    max_grad_norm = 0.5
     
     print(f"\nStarting training for {num_epochs} epochs...")
     
@@ -185,7 +198,8 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
         epoch_kl_loss = 0
         epoch_recon_loss = 0
         
-        kl_weight = min((epoch + 1) / 20, 1.0)
+        # Update KL weight more gradually
+        kl_weight = min((epoch + 1) / annealing_epochs, 1.0)
         
         # Create progress bar for this epoch
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
@@ -220,7 +234,10 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                 
                 # Backward pass
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                
                 optimizer.step()
                 
                 # Update epoch losses
@@ -245,12 +262,13 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                 else:
                     raise e
         
-        scheduler.step()
-        
         # Calculate average losses
         avg_loss = epoch_loss / len(train_loader.dataset)
         avg_kl_loss = epoch_kl_loss / len(train_loader.dataset)
         avg_recon_loss = epoch_recon_loss / len(train_loader.dataset)
+        
+        # Update scheduler
+        scheduler.step(avg_loss)
         
         # Store in history
         history['loss'].append(avg_loss)
@@ -264,6 +282,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
             print(f'KL Loss: {avg_kl_loss:.4f}')
             print(f'Reconstruction Loss: {avg_recon_loss:.4f}')
             print(f'KL Weight: {kl_weight:.4f}')
+            print(f'Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
         
         # Save checkpoint
         if (epoch + 1) % 10 == 0:

@@ -10,3 +10,4 @@ notebook.py
 *.xml
 datscan_vae.pt
 /__pycache__
+*.pt
