@@ -13,7 +13,11 @@ import torch.utils.data
 def load_dicom_image(file_path, target_shape=None):
     """
     Load a DICOM file and return the image data as a NumPy array.
-    Optionally resizes the image to the target_shape.
+    Applies expert-recommended preprocessing:
+    - Manual minimum set to 0
+    - Truncates negative values
+    - No contrast enhancement
+    - No percentile-based clipping
     """
     ds = dcmread(file_path)
     img = ds.pixel_array.astype(np.float32)
@@ -24,8 +28,16 @@ def load_dicom_image(file_path, target_shape=None):
     if hasattr(ds, 'RescaleIntercept'):
         img += float(ds.RescaleIntercept)
 
-    # Normalize the image intensities
-    img = (img - np.min(img)) / (np.max(img) - np.min(img))
+    # Truncate negative values and set minimum to 0
+    img = np.maximum(img, 0)
+
+    # Simple min-max normalization without percentile clipping
+    min_val = 0  # Set minimum manually to 0
+    max_val = np.max(img)
+    if max_val > min_val:
+        img = (img - min_val) / (max_val - min_val)
+    else:
+        img = img - min_val  # Handle edge case where max equals min
 
     # Resize image if target_shape is specified
     if target_shape and img.shape != target_shape:
@@ -36,6 +48,7 @@ def load_dicom_image(file_path, target_shape=None):
 class DATSCANPreprocessor:
     """
     Preprocessor class for DATSCAN images.
+    Updated with expert recommendations.
     """
     def __init__(self, 
                  target_shape: Tuple[int, int, int] = (128, 128, 128),
@@ -92,13 +105,15 @@ class DATSCANPreprocessor:
     def normalize_intensity(self, image: np.ndarray) -> np.ndarray:
         """
         Normalize image intensity using specified method.
+        Updated to use expert-recommended approach.
         """
         if self.normalize_method == 'minmax':
-            min_val = np.min(image)
+            # Truncate negative values and set minimum to 0
+            image = np.maximum(image, 0)
             max_val = np.max(image)
-            if max_val - min_val != 0:
-                return (image - min_val) / (max_val - min_val)
-            return image - min_val
+            if max_val > 0:
+                return image / max_val
+            return image
         
         elif self.normalize_method == 'zscore':
             mean_val = np.mean(image)
@@ -126,7 +141,6 @@ class DATSCANPreprocessor:
         Apply augmentation to the image if enabled.
         """
         if self.augment:
-            # Convert to format expected by albumentations
             augmented = self.aug_pipeline(image=image)
             return augmented['image']
         return image
@@ -134,12 +148,10 @@ class DATSCANPreprocessor:
     def __call__(self, image: np.ndarray) -> np.ndarray:
         """
         Apply full preprocessing pipeline to an image.
+        Removed contrast enhancement as per expert recommendation.
         """
         # Initial normalization
         image = self.normalize_intensity(image)
-        
-        # Enhance contrast
-        image = self.enhance_contrast(image)
         
         # Create and apply brain mask if requested
         if self.apply_brain_mask:
@@ -153,18 +165,6 @@ class DATSCANPreprocessor:
         image = self.apply_augmentation(image)
         
         return image
-    
-    def enhance_contrast(self, image: np.ndarray) -> np.ndarray:
-        """
-        Enhance image contrast using adaptive histogram equalization
-        """
-        from skimage import exposure
-        
-        # Apply CLAHE-like enhancement
-        p2, p98 = np.percentile(image, (2, 98))
-        image_rescale = exposure.rescale_intensity(image, in_range=(p2, p98))
-        
-        return image_rescale
 
 class DATSCANDataset(Dataset):
     """
@@ -177,23 +177,16 @@ class DATSCANDataset(Dataset):
         self.file_paths = file_paths
         self.preprocessor = preprocessor
         self.device = device
-        # Keep load_dicom_image as an instance method
         self.load_dicom_image = load_dicom_image
     
     def __len__(self) -> int:
         return len(self.file_paths)
     
     def __getitem__(self, idx: int) -> torch.Tensor:
-        # Load image using the instance method
         img = self.load_dicom_image(self.file_paths[idx])
-        
-        # Apply preprocessing
         img = self.preprocessor(img)
-        
-        # Convert to tensor and add channel dimension
         img_tensor = torch.from_numpy(img).float().unsqueeze(0)
-        
-        return img_tensor  # Return CPU tensor
+        return img_tensor
 
 def create_dataloaders(df: pd.DataFrame,
                       batch_size: int = 32,
