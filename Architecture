@@ -1,14 +1,15 @@
 <architecture>
-	<introduction>
+    <introduction>
         The objective of this project is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. By leveraging unsupervised learning techniques, the goal is to uncover intrinsic patterns and features within the imaging data that could enhance the understanding of Parkinson's Disease progression.
-	</introduction>
-	<data_understanding>
+    </introduction>
+    <data_understanding>
         <data_sources>
             <source_1>
-                <name> Parkinson's Progression Markers Initiative (PPMI) </name>
-                <description> The PPMI dataset is a large, multicenter study that aims to identify biomarkers of Parkinson's Disease progression. </description>
-                <link> https://www.ppmi-info.org/ </link>
+                <name>Parkinson's Progression Markers Initiative (PPMI)</name>
+                <description>The PPMI dataset is a large, multicenter study that aims to identify biomarkers of Parkinson's Disease progression.</description>
+                <link>https://www.ppmi-info.org/</link>
             </source_1>
+        </data_sources>
         <dataset_description>
             <dicom_structure>
                 The dataset is organized in a nested structure, as follows:
@@ -27,27 +28,53 @@
             </example_path>
         </dataset_description>
     </data_understanding>
-	<ingestion_and_preprocessing>
+    <ingestion_and_preprocessing>
         <data_loading>
             Develop a script to recursively traverse the nested folder structure to locate all DICOM files. Use libraries like pydicom to read DICOM files into NumPy arrays.
         </data_loading>
         <data_preprocessing>
-            - Intensity Normalization: Normalize pixel intensities to a common scale to account for scanner differences.
-            - Voxel Alignment: Ensure all images have consistent voxel dimensions.
-            - Masking: Apply brain masks if necessary to focus on regions of interest.
-            - Data Augmentation: Although images are centered and well-aligned, consider augmentations like slight rotations or noise addition if beneficial.
+            - Intensity Normalization: 
+                - Set minimum to 0
+                - Truncate negative values
+                - Normalize pixel intensities using min-max scaling
+            - Region of Interest Extraction:
+                - Focus on a 64-slice thick region centered on the striatum
+                - Use variance analysis to automatically detect the striatal region
+                - Maintain full resolution in the axial plane (x-y dimensions)
+            - Dimension Standardization:
+                - Target shape: (64, 128, 128)
+                - Preserve aspect ratio using zero-padding instead of stretching
+                - Apply padding symmetrically around the brain region
+            - Brain Masking:
+                - Apply threshold-based brain masks to focus on brain tissue
+                - Remove non-brain regions while preserving anatomical proportions
+            - Data Validation:
+                - Verify striatal region centering using variance analysis
+                - Confirm padding symmetry and aspect ratio preservation
+                - Validate intensity normalization effectiveness
         </data_preprocessing>
     </ingestion_and_preprocessing>
     <eda>
         <statistical_analysis>
             - Descriptive Statistics: Compute mean, median, standard deviation, and other summary statistics for the dataset.
-            - Distribution Analysis: Examine the distribution of pixel intensities and voxel values.
+            - Distribution Analysis: 
+                - Examine the distribution of pixel intensities and voxel values
+                - Analyze variance distribution across slices to validate striatal region selection
             - Correlation Analysis: Investigate relationships between different regions of the brain.
         </statistical_analysis>
         <visualization>
-            - Image Visualization: Display sample images to understand the data quality and variability.
-            - Histograms: Plot histograms of pixel intensities to identify common patterns.
-            - Heatmaps: Generate heatmaps to visualize voxel correlations and patterns.
+            - Image Visualization:
+                - Display sample images to understand data quality and variability
+                - Visualize padding and aspect ratio preservation
+                - Show striatal region selection effectiveness
+            - Variance Analysis:
+                - Plot variance distributions across all dimensions
+                - Validate striatal region centering
+                - Analyze slice-wise information content
+            - Quality Control:
+                - Visualize preprocessing steps' impact
+                - Verify anatomical preservation
+                - Confirm proper padding implementation
         </visualization>
     </eda>
     <model>
@@ -61,36 +88,72 @@
                 - UMAP: Employ Uniform Manifold Approximation and Projection (UMAP) for nonlinear dimensionality reduction.
             </unsupervised_models>
             <model_architecture>
-                - Input Layer: Match the input dimensions to the image size and number of channels.
-                - Encoder: Comprise convolutional layers to extract features and reduce dimensionality.
-                - Latent Space: A bottleneck layer where the latent representation is learned.
-                - Decoder: Mirror the encoder architecture to reconstruct the input from the latent space.
+                - Input Layer: 
+                    - Shape: (1, 64, 128, 128) for 64-slice volumes
+                    - Single channel grayscale images
+                    - Zero-padded to maintain aspect ratio
+                - Encoder:
+                    - Convolutional layers with stride 2 for downsampling
+                    - Residual connections for better gradient flow
+                    - Batch normalization and ReLU activation
+                    - Self-attention mechanism for spatial relationships
+                - Latent Space:
+                    - Dense bottleneck layer
+                    - Reparameterization for VAE
+                    - Size optimized for reconstruction quality
+                - Decoder:
+                    - Mirror encoder architecture
+                    - Transposed convolutions for upsampling
+                    - Batch normalization and ReLU activation
+                    - Final sigmoid activation for intensity scaling
+            </model_architecture>
         </selection>
         <training>
-            - Training Setup: Use frameworks like TensorFlow or PyTorch for model implementation. Utilize GPUs for computational efficiency.
-            - Hyperparameters: Experiment with different latent space dimensions. Adjust learning rates, batch sizes, and activation functions.
-            - Optimization: Use optimizers like Adam or RMSprop. Implement regularization techniques (dropout, weight decay) to prevent overfitting.
-            - Training Loop: Incorporate checkpoints to save model states. Use early stopping based on validation loss to avoid overfitting.
+            - Training Setup: 
+                - Use frameworks like TensorFlow or PyTorch
+                - Leverage GPU acceleration on NVIDIA 4070Ti
+                - Implement memory-efficient batch processing
+            - Hyperparameters:
+                - Batch size optimized for GPU memory
+                - Learning rate with scheduling
+                - KL divergence weight annealing
+            - Optimization:
+                - Adam optimizer with weight decay
+                - Gradient clipping for stability
+                - Early stopping based on validation loss
+            - Memory Management:
+                - Efficient data loading with proper memory pinning
+                - GPU memory monitoring and optimization
+                - Batch size adjustment based on available resources
         </training>
         <evaluation>
-            - Reconstruction Error: Measure reconstruction loss (e.g., Mean Squared Error) between input and output images.
-            - Latent Space Analysis: Visualize latent spaces using dimensionality reduction techniques like t-SNE or PCA. Check for clustering patterns that may correlate with patient metadata (e.g., disease stage).
-            - Comparison Metrics: Evaluate models based on reconstruction quality and latent space interpretability. Use metrics like Structural Similarity Index (SSIM) for image quality assessment.
+            - Reconstruction Error:
+                - Mean Squared Error for image fidelity
+                - Structural Similarity Index (SSIM)
+                - Focus on striatal region accuracy
+            - Latent Space Analysis:
+                - Visualization using dimensionality reduction
+                - Cluster analysis for patient groups
+                - Feature importance in the latent space
+            - Clinical Relevance:
+                - Correlation with disease progression
+                - Group separation analysis
+                - Feature interpretability
         </evaluation>
     </model>
     <workflow_pipeline>
         <data_pipeline>
-            Step 1: Data loading and preprocessing scripts to prepare the dataset.
-            Step 2: EDA notebooks to understand data characteristics.
+            Step 1: Data loading and enhanced preprocessing with striatal focus
+            Step 2: EDA with emphasis on preprocessing validation
         </data_pipeline>
         <model_pipeline>
-            Step 3: Define model architectures in modular code.
-            Step 4: Training scripts with configurable parameters.
-            Step 5: Evaluation scripts to compute metrics and generate visualizations.
+            Step 3: Define model architectures with updated input dimensions
+            Step 4: Training scripts with memory optimization
+            Step 5: Evaluation scripts for comprehensive analysis
         </model_pipeline>
         <results_pipeline>
-            Step 6: Aggregation of results for comparison across models.
-            Step 7: Reporting tools to document findings.
+            Step 6: Aggregation of results across models
+            Step 7: Reporting tools for findings documentation
         </results_pipeline>
     </workflow_pipeline>
 </architecture>

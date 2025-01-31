@@ -6,7 +6,6 @@ from tqdm import tqdm
 import numpy as np
 import os
 
-# Add after the existing imports in model.py
 class ResidualBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
@@ -41,7 +40,6 @@ class SelfAttention3D(nn.Module):
         out = out.view(batch_size, C, D, H, W)
         return self.gamma * out + x
 
-# Replace the existing Encoder class in model.py
 class Encoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
@@ -67,8 +65,9 @@ class Encoder(nn.Module):
         # Attention mechanism
         self.attention = SelfAttention3D(256)
         
-        # Calculate flatten size
-        self.flatten_size = 256 * 8 * 8 * 8
+        # Calculate flatten size for 64x128x128 input
+        # After 4 stride-2 convolutions: 64->32->16->8->4
+        self.flatten_size = 256 * 4 * 8 * 8  # Adjusted for new dimensions
         
         # Latent space projections
         self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
@@ -77,43 +76,16 @@ class Encoder(nn.Module):
         # Dropout for regularization
         self.dropout = nn.Dropout3d(0.1)
 
-    def forward(self, x):
-        # Convolutional pathway with residual connections
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = self.res1(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = self.res2(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = self.res3(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn4(self.conv4(x)))
-        x = self.res4(x)
-        
-        # Apply attention
-        x = self.attention(x)
-        
-        # Flatten and project to latent space
-        x = x.view(x.size(0), -1)
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        
-        return mu, logvar
-
 class Decoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
         
-        self.flatten_size = 256 * 8 * 8 * 8  # Same as encoder
+        self.flatten_size = 256 * 4 * 8 * 8  # Adjusted for new dimensions
         
         # Fully connected layer to reshape
         self.fc = nn.Linear(latent_dim, self.flatten_size)
         
-        # Transposed convolutions
+        # Transposed convolutions adjusted for 64 slices
         self.deconv1 = nn.ConvTranspose3d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
         self.deconv2 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
         self.deconv3 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
@@ -123,19 +95,6 @@ class Decoder(nn.Module):
         self.bn1 = nn.BatchNorm3d(128)
         self.bn2 = nn.BatchNorm3d(64)
         self.bn3 = nn.BatchNorm3d(32)
-
-    def forward(self, x):
-        # Fully connected and reshape
-        x = self.fc(x)
-        x = x.view(x.size(0), 256, 8, 8, 8)
-        
-        # Apply transposed convolutions with ReLU and batch norm
-        x = F.relu(self.bn1(self.deconv1(x)))
-        x = F.relu(self.bn2(self.deconv2(x)))
-        x = F.relu(self.bn3(self.deconv3(x)))
-        x = self.deconv4(x)  # No activation - will use BCEWithLogitsLoss
-        
-        return x
 
 class DATScanVAE(nn.Module):
     def __init__(self, latent_dim=64):
@@ -165,9 +124,22 @@ class DATScanVAE(nn.Module):
         samples = torch.sigmoid(logits)
         return samples
 
-def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path):
-    print("Initializing training...")
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)  # Reduced from 1e-4
+def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
+    """
+    Train the VAE model with support for resuming training
+    
+    Args:
+        model: The VAE model
+        train_loader: DataLoader for training data
+        num_epochs: Total number of epochs to train
+        learning_rate: Initial learning rate
+        device: Device to train on
+        save_path: Path to save checkpoints
+        start_epoch: Epoch to start/resume from (default: 0)
+        history: Previous training history (default: None)
+    """
+    print("Initializing/Resuming training...")
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 
         mode='min',
@@ -175,33 +147,30 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
         patience=5,
         min_lr=1e-6
     )
-    print("Created optimizer and scheduler")
     
     criterion = nn.BCEWithLogitsLoss(reduction='sum').to(device)
-    print("Created criterion")
     
-    # Initialize dictionary to store training history
-    history = {'loss': [], 'kl_loss': [], 'recon_loss': []}
+    # Initialize or load history
+    history = history or {'loss': [], 'kl_loss': [], 'recon_loss': []}
     
     # KL annealing parameters
-    kl_weight = 0.0
     annealing_epochs = 10
+    kl_weight = min((start_epoch + 1) / annealing_epochs, 1.0)
     
     # Gradient clipping value
     max_grad_norm = 0.5
     
-    print(f"\nStarting training for {num_epochs} epochs...")
+    print(f"\nStarting training from epoch {start_epoch+1} to {num_epochs}")
     
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         model.train()
         epoch_loss = 0
         epoch_kl_loss = 0
         epoch_recon_loss = 0
         
-        # Update KL weight more gradually
+        # Update KL weight
         kl_weight = min((epoch + 1) / annealing_epochs, 1.0)
         
-        # Create progress bar for this epoch
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
         
         for batch_idx, data in enumerate(pbar):
@@ -245,9 +214,8 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                 epoch_kl_loss += kl_loss.item()
                 epoch_recon_loss += recon_loss.item()
                 
-                # Update progress bar description
+                # Update progress bar
                 pbar.set_postfix({
-                    'batch': f'{batch_idx}/{len(train_loader)}',
                     'loss': f'{loss.item():.4f}',
                     'kl': f'{kl_loss.item():.4f}',
                     'recon': f'{recon_loss.item():.4f}'
@@ -262,7 +230,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
                 else:
                     raise e
         
-        # Calculate average losses
+        # Calculate average losses for the epoch
         avg_loss = epoch_loss / len(train_loader.dataset)
         avg_kl_loss = epoch_kl_loss / len(train_loader.dataset)
         avg_recon_loss = epoch_recon_loss / len(train_loader.dataset)
@@ -285,14 +253,18 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path)
             print(f'Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
         
         # Save checkpoint
-        if (epoch + 1) % 10 == 0:
-            torch.save({
+        if (epoch + 1) % 10 == 0 or epoch == num_epochs - 1:  # Save at interval or last epoch
+            checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'loss': avg_loss,
-                'history': history
-            }, save_path)
+                'history': history,
+                'learning_rate': optimizer.param_groups[0]['lr'],
+                'kl_weight': kl_weight
+            }
+            torch.save(checkpoint, save_path)
+            print(f"Checkpoint saved at epoch {epoch + 1}")
     
     return history
