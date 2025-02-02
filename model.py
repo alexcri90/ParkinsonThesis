@@ -97,7 +97,6 @@ class Encoder(nn.Module):
         logvar = self.fc_logvar(x)
         return mu, logvar
 
-
 class Decoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
@@ -158,21 +157,7 @@ class DATScanVAE(nn.Module):
         samples = torch.sigmoid(logits)
         return samples
 
-
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
-    """
-    Train the VAE model with support for resuming training
-    
-    Args:
-        model: The VAE model
-        train_loader: DataLoader for training data
-        num_epochs: Total number of epochs to train
-        learning_rate: Initial learning rate
-        device: Device to train on
-        save_path: Path to save checkpoints
-        start_epoch: Epoch to start/resume from (default: 0)
-        history: Previous training history (default: None)
-    """
     print("Initializing/Resuming training...")
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -183,79 +168,67 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
         min_lr=1e-6
     )
     
-    criterion = nn.BCEWithLogitsLoss(reduction='sum').to(device)
-    
-    # Initialize or load history
+    criterion = torch.nn.MSELoss(reduction='mean').to(device)
     history = history or {'loss': [], 'kl_loss': [], 'recon_loss': []}
     
-    # KL annealing parameters
-    annealing_epochs = 10
-    kl_weight = min((start_epoch + 1) / annealing_epochs, 1.0)
+    # Extend annealing to 50 epochs instead of 10
+    annealing_epochs = 50
     
-    # Gradient clipping value
     max_grad_norm = 0.5
     
     print(f"\nStarting training from epoch {start_epoch+1} to {num_epochs}")
     
     for epoch in range(start_epoch, num_epochs):
         model.train()
-        epoch_loss = 0
-        epoch_kl_loss = 0
-        epoch_recon_loss = 0
+        epoch_loss = 0.0
+        epoch_kl_loss = 0.0
+        epoch_recon_loss = 0.0
         
-        # Update KL weight
+        # Extended annealing: gradually ramp KL weight over 50 epochs
         kl_weight = min((epoch + 1) / annealing_epochs, 1.0)
         
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
-        
         for batch_idx, data in enumerate(pbar):
             try:
                 data = data.to(device, non_blocking=True)
                 optimizer.zero_grad(set_to_none=True)
                 
                 # Forward pass
-                recon_logits, mu, logvar = model(data)
+                recon, mu, logvar = model(data)
                 
-                # Clip values to prevent numerical instability
+                # Clamp for numerical stability
                 mu = torch.clamp(mu, -10, 10)
                 logvar = torch.clamp(logvar, -10, 10)
                 
                 # Reconstruction loss
-                recon_loss = criterion(recon_logits, data)
+                recon_loss = criterion(recon, data)
                 
-                # KL divergence loss
-                kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-                kl_loss = torch.clamp(kl_loss, 0, 1e6)
+                # KL divergence computed by summing over latent dimensions
+                kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
                 
-                # Add consistency loss
-                random_noise = torch.randn_like(data) * 0.1
-                noisy_data = data + random_noise
-                noisy_recon, noisy_mu, noisy_logvar = model(noisy_data)
-                consistency_loss = F.mse_loss(recon_logits, noisy_recon)
+                # Optionally, you can disable consistency loss if it is interfering:
+                # random_noise = torch.randn_like(data) * 0.1
+                # noisy_data = data + random_noise
+                # noisy_recon, _, _ = model(noisy_data)
+                # consistency_loss = torch.nn.functional.mse_loss(recon, noisy_recon)
+                # loss = recon_loss + kl_weight * kl_loss + 0.01 * consistency_loss
                 
-                # Total loss
-                loss = recon_loss + kl_weight * kl_loss + 0.1 * consistency_loss
+                # For now, we omit consistency loss:
+                loss = recon_loss + kl_weight * kl_loss
                 
-                # Backward pass
                 loss.backward()
-                
-                # Gradient clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-                
                 optimizer.step()
                 
-                # Update epoch losses
                 epoch_loss += loss.item()
                 epoch_kl_loss += kl_loss.item()
                 epoch_recon_loss += recon_loss.item()
                 
-                # Update progress bar
                 pbar.set_postfix({
                     'loss': f'{loss.item():.4f}',
                     'kl': f'{kl_loss.item():.4f}',
                     'recon': f'{recon_loss.item():.4f}'
                 })
-                
             except RuntimeError as e:
                 if "out of memory" in str(e):
                     print('\nGPU out of memory! Clearing cache and skipping batch...')
@@ -265,20 +238,16 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
                 else:
                     raise e
         
-        # Calculate average losses for the epoch
-        avg_loss = epoch_loss / len(train_loader.dataset)
-        avg_kl_loss = epoch_kl_loss / len(train_loader.dataset)
-        avg_recon_loss = epoch_recon_loss / len(train_loader.dataset)
+        avg_loss = epoch_loss / len(train_loader)
+        avg_kl_loss = epoch_kl_loss / len(train_loader)
+        avg_recon_loss = epoch_recon_loss / len(train_loader)
         
-        # Update scheduler
         scheduler.step(avg_loss)
         
-        # Store in history
         history['loss'].append(avg_loss)
         history['kl_loss'].append(avg_kl_loss)
         history['recon_loss'].append(avg_recon_loss)
         
-        # Print progress every 5 epochs
         if (epoch + 1) % 5 == 0:
             print(f'\nEpoch {epoch+1}/{num_epochs}:')
             print(f'Average Loss: {avg_loss:.4f}')
@@ -287,8 +256,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
             print(f'KL Weight: {kl_weight:.4f}')
             print(f'Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
         
-        # Save checkpoint
-        if (epoch + 1) % 10 == 0 or epoch == num_epochs - 1:  # Save at interval or last epoch
+        if (epoch + 1) % 5 == 0 or epoch == num_epochs - 1:
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -303,3 +271,4 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
             print(f"Checkpoint saved at epoch {epoch + 1}")
     
     return history
+

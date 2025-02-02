@@ -95,10 +95,16 @@ class DATSCANDataset(Dataset):
         img = pydicom.dcmread(file_path).pixel_array.astype(np.float32)
         # Preprocess the image (normalization, masking, resize/pad)
         img = self.preprocessor(img)
-        # Ensure the resulting array is contiguous in memory
+        # If the image is 2D, expand it into a 3D volume by replicating the slice.
+        if img.ndim == 2:
+            # Replicate the 2D slice along a new axis to reach the desired depth.
+            desired_depth = self.preprocessor.target_shape[0]
+            img = np.repeat(np.expand_dims(img, axis=0), repeats=desired_depth, axis=0)
+        # Ensure the resulting array is contiguous in memory.
         img = np.ascontiguousarray(img)
-        # Return a tensor with an added channel dimension
+        # Return a tensor with an added channel dimension (shape becomes [1, D, H, W]).
         return torch.from_numpy(img).float().unsqueeze(0)
+
 
 def create_dataloaders(df: pd.DataFrame,
                       batch_size: int = 32,
