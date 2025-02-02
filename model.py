@@ -43,105 +43,38 @@ class SelfAttention3D(nn.Module):
 class Encoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
-        
-        # Initial convolution
+        # Initial convolution block
         self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=2, padding=1)
         self.bn1 = nn.BatchNorm3d(32)
         self.res1 = ResidualBlock(32)
-        
-        # Deeper layers
-        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
-        self.bn2 = nn.BatchNorm3d(64)
-        self.res2 = ResidualBlock(64)
-        
-        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)
-        self.bn3 = nn.BatchNorm3d(128)
-        self.res3 = ResidualBlock(128)
-        
-        self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.bn4 = nn.BatchNorm3d(256)
-        self.res4 = ResidualBlock(256)
-        
-        # Attention mechanism
-        self.attention = SelfAttention3D(256)
-        
-        # Calculate flatten size
-        # Input: 64x128x128
-        # After 4 stride-2 convolutions: 64->32->16->8->4, 128->64->32->16->8
-        self.flatten_size = 256 * 4 * 8 * 8
-        
-        # Latent space projections
-        self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
-        self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout3d(0.1)
-    
-    def forward(self, x):
-        # Initial convolution block
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = self.res1(x)
-        x = self.dropout(x)
         
         # Second block
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = self.res2(x)
-        x = self.dropout(x)
-        
-        # Third block
-        x = F.relu(self.bn3(self.conv3(x)))
-        x = self.res3(x)
-        x = self.dropout(x)
-        
-        # Fourth block
-        x = F.relu(self.bn4(self.conv4(x)))
-        x = self.res4(x)
-        
-        # Apply attention
-        x = self.attention(x)
-        
-        # Flatten and project to latent space
-        x = x.view(x.size(0), -1)
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        
-        return mu, logvar
-    def __init__(self, latent_dim):
-        super().__init__()
-        
-        # Initial convolution
-        self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=2, padding=1)
-        self.bn1 = nn.BatchNorm3d(32)
-        self.res1 = ResidualBlock(32)
-        
-        # Deeper layers
         self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
         self.bn2 = nn.BatchNorm3d(64)
         self.res2 = ResidualBlock(64)
         
+        # Third block
         self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)
         self.bn3 = nn.BatchNorm3d(128)
         self.res3 = ResidualBlock(128)
         
+        # Fourth block
         self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1)
         self.bn4 = nn.BatchNorm3d(256)
         self.res4 = ResidualBlock(256)
         
-        # Attention mechanism
+        # Attention mechanism remains the same
         self.attention = SelfAttention3D(256)
         
-        # Calculate flatten size
-        # Input: 64x128x128
-        # After 4 stride-2 convolutions: 64->32->16->8->4, 128->64->32->16->8
-        self.flatten_size = 256 * 4 * 8 * 8
+        # For input volume 128x128x128, after 4 stride-2 convs:
+        # Depth: 128 -> 64 -> 32 -> 16 -> 8; Height/Width: 128 -> 64 -> 32 -> 16 -> 8
+        self.flatten_size = 256 * 8 * 8 * 8  # = 256 * 512 = 131072
         
-        # Latent space projections
         self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
         self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
         
-        # Dropout for regularization
         self.dropout = nn.Dropout3d(0.1)
-    
+        
     def forward(self, x):
         x = F.relu(self.bn1(self.conv1(x)))
         x = self.res1(x)
@@ -159,128 +92,43 @@ class Encoder(nn.Module):
         x = self.res4(x)
         
         x = self.attention(x)
-        
         x = x.view(x.size(0), -1)
         mu = self.fc_mu(x)
         logvar = self.fc_logvar(x)
-        
         return mu, logvar
-    def __init__(self, latent_dim):
-        super().__init__()
-        
-        # Initial convolution
-        self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=2, padding=1)
-        self.bn1 = nn.BatchNorm3d(32)
-        self.res1 = ResidualBlock(32)
-        
-        # Deeper layers
-        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)
-        self.bn2 = nn.BatchNorm3d(64)
-        self.res2 = ResidualBlock(64)
-        
-        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)
-        self.bn3 = nn.BatchNorm3d(128)
-        self.res3 = ResidualBlock(128)
-        
-        self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.bn4 = nn.BatchNorm3d(256)
-        self.res4 = ResidualBlock(256)
-        
-        # Attention mechanism
-        self.attention = SelfAttention3D(256)
-        
-        # Calculate flatten size for 64x128x128 input
-        # After 4 stride-2 convolutions: 64->32->16->8->4
-        self.flatten_size = 256 * 4 * 8 * 8  # Adjusted for new dimensions
-        
-        # Latent space projections
-        self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
-        self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
-        
-        # Dropout for regularization
-        self.dropout = nn.Dropout3d(0.1)
+
 
 class Decoder(nn.Module):
     def __init__(self, latent_dim):
         super().__init__()
+        # Use the new flatten size
+        self.flatten_size = 256 * 8 * 8 * 8  # 131072
         
-        # Match encoder's flatten size
-        self.flatten_size = 256 * 4 * 8 * 8
-        
-        # Fully connected layer to reshape
         self.fc = nn.Linear(latent_dim, self.flatten_size)
         
-        # Transposed convolutions for 64x128x128 output
+        # Transposed convolutions to reconstruct to 128x128x128
         self.deconv1 = nn.ConvTranspose3d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn1 = nn.BatchNorm3d(128)
+        
         self.deconv2 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn2 = nn.BatchNorm3d(64)
+        
         self.deconv3 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn3 = nn.BatchNorm3d(32)
+        
         self.deconv4 = nn.ConvTranspose3d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
         
-        # Batch normalization
-        self.bn1 = nn.BatchNorm3d(128)
-        self.bn2 = nn.BatchNorm3d(64)
-        self.bn3 = nn.BatchNorm3d(32)
-    
-    def forward(self, x):
-        # Project and reshape
-        x = self.fc(x)
-        x = x.view(x.size(0), 256, 4, 8, 8)
-        
-        # Decode
-        x = F.relu(self.bn1(self.deconv1(x)))
-        x = F.relu(self.bn2(self.deconv2(x)))
-        x = F.relu(self.bn3(self.deconv3(x)))
-        x = self.deconv4(x)
-        
-        return x
-    def __init__(self, latent_dim):
-        super().__init__()
-        
-        # Match encoder's flatten size
-        self.flatten_size = 256 * 4 * 8 * 8
-        
-        # Fully connected layer to reshape
-        self.fc = nn.Linear(latent_dim, self.flatten_size)
-        
-        # Transposed convolutions for 64x128x128 output
-        self.deconv1 = nn.ConvTranspose3d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv3 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv4 = nn.ConvTranspose3d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
-        
-        # Batch normalization
-        self.bn1 = nn.BatchNorm3d(128)
-        self.bn2 = nn.BatchNorm3d(64)
-        self.bn3 = nn.BatchNorm3d(32)
-    
     def forward(self, x):
         x = self.fc(x)
-        x = x.view(x.size(0), 256, 4, 8, 8)
+        # Reshape to (batch, 256, 8, 8, 8)
+        x = x.view(x.size(0), 256, 8, 8, 8)
         
         x = F.relu(self.bn1(self.deconv1(x)))
         x = F.relu(self.bn2(self.deconv2(x)))
         x = F.relu(self.bn3(self.deconv3(x)))
         x = self.deconv4(x)
-        
         return x
-    def __init__(self, latent_dim):
-        super().__init__()
-        
-        self.flatten_size = 256 * 4 * 8 * 8  # Adjusted for new dimensions
-        
-        # Fully connected layer to reshape
-        self.fc = nn.Linear(latent_dim, self.flatten_size)
-        
-        # Transposed convolutions adjusted for 64 slices
-        self.deconv1 = nn.ConvTranspose3d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv3 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv4 = nn.ConvTranspose3d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
-        
-        # Batch normalization
-        self.bn1 = nn.BatchNorm3d(128)
-        self.bn2 = nn.BatchNorm3d(64)
-        self.bn3 = nn.BatchNorm3d(32)
+
 
 class DATScanVAE(nn.Module):
     def __init__(self, latent_dim=128):
@@ -302,33 +150,14 @@ class DATScanVAE(nn.Module):
         z = self.reparameterize(mu, logvar)
         recon = self.decoder(z)
         return recon, mu, logvar
-
-    def __init__(self, latent_dim=64):
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.encoder = Encoder(latent_dim)
-        self.decoder = Decoder(latent_dim)
-
-    def reparameterize(self, mu, logvar):
-        if self.training:
-            std = torch.exp(0.5 * logvar)
-            eps = torch.randn_like(std)
-            return mu + eps * std
-        else:
-            return mu
-
-    def forward(self, x):
-        mu, logvar = self.encoder(x)
-        z = self.reparameterize(mu, logvar)
-        return self.decoder(z), mu, logvar
-
+    
     @torch.no_grad()
     def generate(self, num_samples=1, device=torch.device('cuda')):
-        """Generate new samples from the latent space"""
         z = torch.randn(num_samples, self.latent_dim, device=device)
         logits = self.decoder(z)
         samples = torch.sigmoid(logits)
         return samples
+
 
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
     """
