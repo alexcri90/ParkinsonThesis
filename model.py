@@ -195,12 +195,11 @@ class DATScanVAE(nn.Module):
 
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
     """
-    Revised training function for the DATScanVAE model suitable for medical applications.
-    Modifications include:
-      - Total epochs set to 150.
-      - Lower learning rate (e.g., 5e-5) to slow down updates.
-      - Extended KL warmup: first 20 epochs use beta=0, then increasing linearly to a maximum beta of 0.1 over 80 epochs.
-      - Reconstruction loss is computed per voxel (MSE with reduction='mean') scaled by recon_scale (100.0)
+    Revised training function for the DATScanVAE model (suitable for medical applications on an nVidia 4070Ti):
+      - Total epochs: 150
+      - Learning rate: 5e-5
+      - Warmup: first 10 epochs with beta=0; then linearly increase beta to max_beta over 50 epochs.
+      - Reconstruction loss computed as per-voxel MSE (reduction='mean') scaled by recon_scale (100.0)
       - Uses torch.amp.autocast with device_type='cuda'
       - Applies gradient clipping and detailed logging.
     """
@@ -220,8 +219,8 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
     history = history or {'loss': [], 'kl_loss': [], 'recon_loss': []}
     
     # Extended KL warmup parameters:
-    warmup_epochs = 20         # First 20 epochs: zero KL contribution.
-    annealing_epochs = 80      # Then ramp up beta over the next 80 epochs.
+    warmup_epochs = 10         # First 10 epochs: zero KL contribution.
+    annealing_epochs = 50      # Then ramp up beta over the next 50 epochs.
     max_beta = 0.1             # Maximum beta value.
     
     recon_scale = 100.0        # Scaling factor for the reconstruction loss.
@@ -237,7 +236,7 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
         epoch_kl_loss = 0.0
         epoch_recon_loss = 0.0
         
-        # Compute beta using extended warmup:
+        # Compute beta using the modified warmup schedule:
         if epoch < warmup_epochs:
             beta = 0.0
         else:
@@ -322,4 +321,3 @@ def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path,
             print(f"Checkpoint saved at epoch {epoch + 1}")
     
     return history
-
