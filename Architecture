@@ -37,21 +37,21 @@
                 - Set minimum to 0
                 - Truncate negative values
                 - Normalize pixel intensities using min-max scaling
-            - Region of Interest Extraction:
-                - Focus on a 64-slice thick region centered on the striatum
-                - Use variance analysis to automatically detect the striatal region
-                - Maintain full resolution in the axial plane (x-y dimensions)
+            - Volume Processing:
+                - Maintain full 128x128x128 brain volume
+                - Preserve all anatomical information including striatum and surrounding regions
+                - Apply consistent processing across the entire volume
             - Dimension Standardization:
-                - Target shape: (64, 128, 128)
+                - Target shape: (128, 128, 128)
                 - Preserve aspect ratio using zero-padding instead of stretching
                 - Apply padding symmetrically around the brain region
             - Brain Masking:
                 - Apply threshold-based brain masks to focus on brain tissue
                 - Remove non-brain regions while preserving anatomical proportions
             - Data Validation:
-                - Verify striatal region centering using variance analysis
-                - Confirm padding symmetry and aspect ratio preservation
-                - Validate intensity normalization effectiveness
+                - Verify volume integrity and proper padding
+                - Confirm intensity normalization effectiveness
+                - Validate anatomical preservation
         </data_preprocessing>
     </ingestion_and_preprocessing>
     <eda>
@@ -59,18 +59,19 @@
             - Descriptive Statistics: Compute mean, median, standard deviation, and other summary statistics for the dataset.
             - Distribution Analysis: 
                 - Examine the distribution of pixel intensities and voxel values
-                - Analyze variance distribution across slices to validate striatal region selection
+                - Analyze variance distribution across the full volume
+                - Special focus on striatal region characteristics
             - Correlation Analysis: Investigate relationships between different regions of the brain.
         </statistical_analysis>
         <visualization>
             - Image Visualization:
-                - Display sample images to understand data quality and variability
+                - Display sample volumes to understand data quality and variability
                 - Visualize padding and aspect ratio preservation
-                - Show striatal region selection effectiveness
+                - Show full brain volume characteristics
             - Variance Analysis:
                 - Plot variance distributions across all dimensions
-                - Validate striatal region centering
-                - Analyze slice-wise information content
+                - Identify regions of high information content
+                - Map intensity patterns across the volume
             - Quality Control:
                 - Visualize preprocessing steps' impact
                 - Verify anatomical preservation
@@ -89,7 +90,7 @@
             </unsupervised_models>
             <model_architecture>
                 - Input Layer: 
-                    - Shape: (1, 64, 128, 128) for 64-slice volumes
+                    - Shape: (1, 128, 128, 128) for full brain volumes
                     - Single channel grayscale images
                     - Zero-padded to maintain aspect ratio
                 - Encoder:
@@ -114,7 +115,7 @@
                 - Leverage GPU acceleration on NVIDIA 4070Ti
                 - Implement memory-efficient batch processing
             - Hyperparameters:
-                - Batch size optimized for GPU memory
+                - Batch size optimized for GPU memory (2-4 for full volumes)
                 - Learning rate with scheduling
                 - KL divergence weight annealing
             - Optimization:
@@ -130,7 +131,7 @@
             - Reconstruction Error:
                 - Mean Squared Error for image fidelity
                 - Structural Similarity Index (SSIM)
-                - Focus on striatal region accuracy
+                - Analysis across full brain volume
             - Latent Space Analysis:
                 - Visualization using dimensionality reduction
                 - Cluster analysis for patient groups
@@ -139,15 +140,16 @@
                 - Correlation with disease progression
                 - Group separation analysis
                 - Feature interpretability
+                - Special attention to striatal region patterns
         </evaluation>
     </model>
     <workflow_pipeline>
         <data_pipeline>
-            Step 1: Data loading and enhanced preprocessing with striatal focus
-            Step 2: EDA with emphasis on preprocessing validation
+            Step 1: Data loading and preprocessing of full brain volumes
+            Step 2: EDA with emphasis on whole-brain analysis
         </data_pipeline>
         <model_pipeline>
-            Step 3: Define model architectures with updated input dimensions
+            Step 3: Define model architectures for 128³ volumes
             Step 4: Training scripts with memory optimization
             Step 5: Evaluation scripts for comprehensive analysis
         </model_pipeline>
