@@ -178,44 +178,56 @@ class SemiSupervisedVAE(nn.Module):
         return recon, mu, logvar, metadata_preds
 
 def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
-                            metadata_weights=None):
+                             metadata_weights=None, start_epoch=0, history=None):
     """
-    Train the semi-supervised VAE
+    Train the semi-supervised VAE with support for pausing/resuming training.
     
     Args:
-        metadata_weights: dict of weight factors for each metadata field's loss
+        model: The semi-supervised VAE model.
+        train_loader: DataLoader for training data.
+        num_epochs: Total number of epochs to train.
+        device: Device (CPU or GPU) to train on.
+        save_path: Path for saving checkpoints.
+        metadata_weights: dict with weight factors for each metadata field's loss.
+        start_epoch: Epoch to resume training from.
+        history: Dictionary holding training history (for resuming training).
     """
-    print("Initializing training...")
+    print("Initializing/Resuming training...")
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6
     )
     
-    # Default weights if not provided
+    # Set default metadata weights if none provided
     if metadata_weights is None:
         metadata_weights = {field: 1.0 for field in model.metadata_dims}
     
-    criterion = nn.BCEWithLogitsLoss(reduction='sum')
+    # Using BCEWithLogitsLoss with sum reduction for reconstruction loss.
+    # Alternatively, you could use reduction='mean' to average over voxels.
+    recon_criterion = nn.BCEWithLogitsLoss(reduction='sum')
     metadata_criteria = {
         field: nn.CrossEntropyLoss(reduction='mean')
         for field in model.metadata_dims
     }
     
-    history = {
-        'loss': [], 'recon_loss': [], 'kl_loss': [],
-        **{f'{field}_loss': [] for field in model.metadata_dims}
-    }
+    # Initialize or resume training history
+    if history is None:
+        history = {
+            'loss': [], 'recon_loss': [], 'kl_loss': [],
+            **{f'{field}_loss': [] for field in model.metadata_dims}
+        }
     
     # KL annealing parameters
-    kl_weight = 0.0
-    annealing_epochs = 10
+    annealing_epochs = 10  # Increase KL weight linearly over the first 10 epochs
+
+    print(f"\nStarting training from epoch {start_epoch + 1} to {num_epochs}")
     
-    print(f"\nStarting training for {num_epochs} epochs...")
-    
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         model.train()
         epoch_losses = {k: 0.0 for k in history.keys()}
         
+        # Update KL weight: linearly increase until it reaches 1.0
         kl_weight = min((epoch + 1) / annealing_epochs, 1.0)
         
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
@@ -224,16 +236,17 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
             try:
                 data = data.to(device)
                 metadata = {k: v.to(device) for k, v in metadata.items()}
-                
                 optimizer.zero_grad()
                 
                 # Forward pass
                 recon, mu, logvar, metadata_preds = model(data)
                 
-                # Reconstruction loss
-                recon_loss = criterion(recon, data)
+                # Compute reconstruction loss (option: use 'mean' reduction if preferred)
+                recon_loss = recon_criterion(recon, data)
+                # If using mean reduction, you might not need to further average per sample.
+                # For sum reduction, we divide later by total number of samples.
                 
-                # KL divergence
+                # KL divergence loss
                 kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
                 
                 # Metadata classification losses
@@ -242,24 +255,22 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
                     for field in model.metadata_dims
                 }
                 
-                # Total loss
-                loss = (recon_loss + 
-                       kl_weight * kl_loss + 
-                       sum(metadata_weights[field] * loss 
-                           for field, loss in metadata_losses.items()))
+                # Total loss: combine reconstruction, KL, and metadata losses
+                loss = recon_loss + kl_weight * kl_loss + \
+                       sum(metadata_weights[field] * m_loss for field, m_loss in metadata_losses.items())
                 
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 
-                # Update epoch losses
+                # Update running epoch losses
                 epoch_losses['loss'] += loss.item()
                 epoch_losses['recon_loss'] += recon_loss.item()
                 epoch_losses['kl_loss'] += kl_loss.item()
                 for field, m_loss in metadata_losses.items():
                     epoch_losses[f'{field}_loss'] += m_loss.item()
                 
-                # Update progress bar
+                # Update progress bar with current batch losses
                 pbar.set_postfix({
                     'loss': f'{loss.item():.4f}',
                     'kl': f'{kl_loss.item():.4f}',
@@ -275,28 +286,33 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
                 else:
                     raise e
         
-        # Calculate average losses
+        # Normalize losses by the number of samples (or batches, as appropriate)
+        num_samples = len(train_loader.dataset)
         for k in epoch_losses:
-            epoch_losses[k] /= len(train_loader.dataset)
+            epoch_losses[k] /= num_samples
             history[k].append(epoch_losses[k])
         
+        # Update learning rate scheduler based on total epoch loss
         scheduler.step(epoch_losses['loss'])
         
+        # Log summary every 5 epochs
         if (epoch + 1) % 5 == 0:
-            print(f'\nEpoch {epoch+1}/{num_epochs}:')
+            print(f'\nEpoch {epoch+1}/{num_epochs} summary:')
             for k, v in epoch_losses.items():
-                print(f'{k}: {v:.4f}')
-            print(f'KL Weight: {kl_weight:.4f}')
-            print(f'Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
-        
-        if (epoch + 1) % 10 == 0:
-            torch.save({
+                print(f'  {k}: {v:.4f}')
+            print(f'  KL Weight: {kl_weight:.4f}')
+            print(f'  Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
+            
+            # Save checkpoint every 5 epochs
+            checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'loss': epoch_losses['loss'],
                 'history': history
-            }, save_path)
+            }
+            torch.save(checkpoint, save_path)
+            print(f'Checkpoint saved at epoch {epoch+1} to {save_path}')
     
     return history
