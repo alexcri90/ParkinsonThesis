@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 import numpy as np
 import os
+from torch.cuda.amp import autocast, GradScaler
 
 # Keep the original building blocks
 class ResidualBlock(nn.Module):
@@ -198,6 +199,7 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6
     )
+    scaler = GradScaler()
     
     # Set default metadata weights if none provided
     if metadata_weights is None:
@@ -239,29 +241,30 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
                 optimizer.zero_grad()
                 
                 # Forward pass
-                recon, mu, logvar, metadata_preds = model(data)
+                with autocast():
+                    recon, mu, logvar, metadata_preds = model(data)
                 
-                # Compute reconstruction loss (option: use 'mean' reduction if preferred)
-                recon_loss = recon_criterion(recon, data)
-                # If using mean reduction, you might not need to further average per sample.
-                # For sum reduction, we divide later by total number of samples.
+                    # Compute reconstruction loss (option: use 'mean' reduction if preferred)
+                    recon_loss = recon_criterion(recon, data)
+                    # If using mean reduction, you might not need to further average per sample.
+                    # For sum reduction, we divide later by total number of samples.
+                    
+                    # KL divergence loss
+                    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                    
+                    # Metadata classification losses
+                    metadata_losses = {
+                        field: metadata_criteria[field](metadata_preds[field], metadata[field])
+                        for field in model.metadata_dims
+                    }
+                    
+                    # Total loss: combine reconstruction, KL, and metadata losses
+                    loss = recon_loss + kl_weight * kl_loss + \
+                           sum(metadata_weights[field] * m_loss for field, m_loss in metadata_losses.items())
                 
-                # KL divergence loss
-                kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-                
-                # Metadata classification losses
-                metadata_losses = {
-                    field: metadata_criteria[field](metadata_preds[field], metadata[field])
-                    for field in model.metadata_dims
-                }
-                
-                # Total loss: combine reconstruction, KL, and metadata losses
-                loss = recon_loss + kl_weight * kl_loss + \
-                       sum(metadata_weights[field] * m_loss for field, m_loss in metadata_losses.items())
-                
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 
                 # Update running epoch losses
                 epoch_losses['loss'] += loss.item()
