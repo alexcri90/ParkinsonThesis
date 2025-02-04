@@ -29,6 +29,15 @@ class EnhancedDATSCANPreprocessor(DATSCANPreprocessor):
             # Resize if shape doesn't match
             processed = resize(processed, target_shape, anti_aliasing=True, preserve_range=True)
         return processed
+    
+def normalize_intensity(self, img: np.ndarray) -> np.ndarray:
+    img = np.maximum(img, 0)
+    if self.normalize_method == 'minmax':
+        if img.max() > 0:
+            img = (img - img.min()) / (img.max() - img.min())
+            # Scale to [-0.5, 0.5] range instead of [0, 1]
+            img = img - 0.5
+    return img
 
 def load_dicom_metadata(file_path):
     """

@@ -195,9 +195,20 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
     """
     print("Initializing/Resuming training...")
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    # Initialize with safer parameters
+    annealing_epochs = 50  # Increase for more stable KL annealing
+    initial_kl_weight = 1e-5  # Start with very small KL weight
+    max_kl_weight = 0.1  # Cap maximum KL weight
+    
+    # Updated optimizer settings
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)  # Lower learning rate
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6
+        optimizer, 
+        mode='min',
+        factor=0.5,
+        patience=5,
+        min_lr=1e-7,
+        cooldown=2  # Add cooldown period
     )
     scaler = GradScaler()
     
@@ -207,7 +218,7 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
     
     # Using BCEWithLogitsLoss with sum reduction for reconstruction loss.
     # Alternatively, you could use reduction='mean' to average over voxels.
-    recon_criterion = nn.BCEWithLogitsLoss(reduction='sum')
+    recon_criterion = nn.BCEWithLogitsLoss(reduction='mean')
     metadata_criteria = {
         field: nn.CrossEntropyLoss(reduction='mean')
         for field in model.metadata_dims
@@ -221,7 +232,8 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
         }
     
     # KL annealing parameters
-    annealing_epochs = 10  # Increase KL weight linearly over the first 10 epochs
+    annealing_epochs = 20  # Increase KL weight linearly over the first 20 epochs
+    beta = 0.01  # Add this as initial beta value
 
     print(f"\nStarting training from epoch {start_epoch + 1} to {num_epochs}")
     
@@ -230,7 +242,7 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
         epoch_losses = {k: 0.0 for k in history.keys()}
         
         # Update KL weight: linearly increase until it reaches 1.0
-        kl_weight = min((epoch + 1) / annealing_epochs, 1.0)
+        kl_weight = min(beta * (epoch + 1) / annealing_epochs, 0.1)  # Cap at 0.1 instead of 1.0
         
         pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
         
@@ -242,15 +254,24 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
                 
                 # Forward pass
                 with autocast():
+                    # Add value checks throughout the forward pass
                     recon, mu, logvar, metadata_preds = model(data)
-                
-                    # Compute reconstruction loss (option: use 'mean' reduction if preferred)
-                    recon_loss = recon_criterion(recon, data)
-                    # If using mean reduction, you might not need to further average per sample.
-                    # For sum reduction, we divide later by total number of samples.
                     
-                    # KL divergence loss
-                    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+                    # Clip values to prevent explosions
+                    mu = torch.clamp(mu, -10, 10)
+                    logvar = torch.clamp(logvar, -10, 10)
+                    
+                    # Compute reconstruction loss with safety checks
+                    recon_loss = recon_criterion(recon, data)
+                    if torch.isnan(recon_loss):
+                        print(f"NaN detected in recon_loss. Skipping batch.")
+                        continue
+                    
+                    # KL divergence loss with numerical stability
+                    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
+                    if torch.isnan(kl_loss):
+                        print(f"NaN detected in kl_loss. Skipping batch.")
+                        continue
                     
                     # Metadata classification losses
                     metadata_losses = {
@@ -258,11 +279,26 @@ def train_semisupervised_vae(model, train_loader, num_epochs, device, save_path,
                         for field in model.metadata_dims
                     }
                     
-                    # Total loss: combine reconstruction, KL, and metadata losses
-                    loss = recon_loss + kl_weight * kl_loss + \
-                           sum(metadata_weights[field] * m_loss for field, m_loss in metadata_losses.items())
+                    # Combine losses with safety checks
+                    weighted_kl = kl_weight * kl_loss
+                    metadata_loss = sum(metadata_weights[field] * m_loss 
+                                    for field, m_loss in metadata_losses.items())
+                    
+                    # Check each component before combining
+                    if torch.isnan(weighted_kl) or torch.isnan(metadata_loss):
+                        print(f"NaN detected in loss components. Skipping batch.")
+                        continue
+                        
+                    loss = recon_loss + weighted_kl + metadata_loss
+                    
+                    # Final NaN check
+                    if torch.isnan(loss):
+                        print(f"NaN detected in final loss. Skipping batch.")
+                        continue
                 
                 scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 scaler.step(optimizer)
                 scaler.update()
                 
