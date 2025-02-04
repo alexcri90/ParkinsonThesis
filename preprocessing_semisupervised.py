@@ -18,6 +18,17 @@ class EnhancedDATSCANPreprocessor(DATSCANPreprocessor):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+    
+    def __call__(self, img):
+        """
+        Ensure consistent output shape by explicitly reshaping
+        """
+        processed = super().__call__(img)
+        target_shape = (128, 128, 128)  # Fixed shape for all images
+        if processed.shape != target_shape:
+            # Resize if shape doesn't match
+            processed = resize(processed, target_shape, anti_aliasing=True, preserve_range=True)
+        return processed
 
 def load_dicom_metadata(file_path):
     """
@@ -79,7 +90,15 @@ class EnhancedDATSCANDataset(Dataset):
         file_path = self.file_paths[idx]
         img = dcmread(file_path).pixel_array.astype(np.float32)
         img = self.preprocessor(img)
-        img_tensor = torch.from_numpy(img).float().unsqueeze(0)
+        
+        # Ensure img has the correct shape before creating tensor
+        if img.shape != (128, 128, 128):
+            img = resize(img, (128, 128, 128), anti_aliasing=True, preserve_range=True)
+        
+        img_tensor = torch.from_numpy(img).float().unsqueeze(0)  # Add channel dimension
+        
+        # Verify tensor shape
+        assert img_tensor.shape == (1, 128, 128, 128), f"Unexpected tensor shape: {img_tensor.shape}"
         
         # Get metadata
         metadata_dict = {}
@@ -141,38 +160,26 @@ def create_enhanced_dataloaders(df: pd.DataFrame,
 
 class CombinedEnhancedDataloader:
     """
-    Utility class to combine multiple dataloaders
+    Combines multiple dataloaders into a single loader for semi-supervised learning.
     """
-    @staticmethod
-    def collate_fn(batch):
-        """
-        Static method for collating batches of images and metadata.
-        """
-        # Separate images and metadata
-        images = [item[0] for item in batch]
-        metadata = [item[1] for item in batch]
-        
-        # Stack images
-        images = torch.stack(images, dim=0)
-        
-        # Combine metadata dictionaries
-        combined_metadata = {}
-        for key in metadata[0].keys():
-            combined_metadata[key] = torch.stack([d[key] for d in metadata])
-        
-        return images, combined_metadata
-
     def __init__(self, dataloaders):
         self.dataloaders = dataloaders
+        
+        # Create concatenated dataset
         self.dataset = torch.utils.data.ConcatDataset([
             dl.dataset for dl in dataloaders.values()
         ])
         
-        # Get metadata dimensions from the first dataloader
+        # Get metadata dimensions from first dataloader
         first_dataset = next(iter(dataloaders.values())).dataset
         self.metadata_dims = first_dataset.num_classes
         
-        # Create a simpler DataLoader configuration
+        # Initialize iterators and track lengths
+        self.iterators = {group: iter(loader) for group, loader in dataloaders.items()}
+        self.lengths = {group: len(loader) for group, loader in dataloaders.items()}
+        self.total_length = sum(self.lengths.values())
+        
+        # Create the combined loader
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=next(iter(dataloaders.values())).batch_size,
@@ -182,8 +189,32 @@ class CombinedEnhancedDataloader:
             pin_memory=True if torch.cuda.is_available() else False
         )
     
-    def __iter__(self):
-        return iter(self.loader)
-    
     def __len__(self):
         return len(self.loader)
+
+    def __iter__(self):
+        return iter(self.loader)
+
+    @staticmethod
+    def collate_fn(batch):
+        """
+        Improved collate function with shape verification
+        """
+        images = []
+        metadata = []
+        
+        for item in batch:
+            img, meta = item
+            # Ensure consistent shape
+            if img.shape != (1, 128, 128, 128):
+                raise ValueError(f"Inconsistent tensor shape encountered: {img.shape}")
+            images.append(img)
+            metadata.append(meta)
+        
+        # Stack images and combine metadata
+        images = torch.stack(images, dim=0)
+        combined_metadata = {}
+        for key in metadata[0].keys():
+            combined_metadata[key] = torch.stack([d[key] for d in metadata])
+        
+        return images, combined_metadata

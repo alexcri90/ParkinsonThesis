@@ -193,6 +193,24 @@ class DATScanVAE(nn.Module):
         samples = torch.sigmoid(logits)
         return samples
 
+class DATSCANModel(nn.Module):
+    def __init__(self, input_shape=(1, 128, 128, 128)):
+        super(DATSCANModel, self).__init__()
+        
+        # Ensure input shape is consistent
+        self.input_shape = input_shape
+        
+        # Define expected input dimensions in convolution layers
+        self.conv1 = nn.Conv3d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
+        # ...existing code...
+    
+    def forward(self, x):
+        # Ensure input has correct shape
+        if len(x.shape) != 5:  # [batch, channels, height, width, depth]
+            raise ValueError(f"Expected 5D input tensor, got shape {x.shape}")
+        
+        # ...existing code...
+
 def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
     """
     Revised training function for the DATScanVAE model (suitable for medical applications on an nVidia 4070Ti):

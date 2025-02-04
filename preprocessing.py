@@ -93,16 +93,19 @@ class DATSCANDataset(Dataset):
         file_path = self.file_paths[idx]
         # Read the DICOM file and convert pixel data to float32
         img = pydicom.dcmread(file_path).pixel_array.astype(np.float32)
-        # Preprocess the image (normalization, masking, resize/pad)
+        
+        # Ensure 3D shape before preprocessing
+        if len(img.shape) == 2:
+            img = np.stack([img] * self.preprocessor.target_shape[0], axis=0)
+        
+        # Preprocess the image
         img = self.preprocessor(img)
-        # If the image is 2D, expand it into a 3D volume by replicating the slice.
-        if img.ndim == 2:
-            # Replicate the 2D slice along a new axis to reach the desired depth.
-            desired_depth = self.preprocessor.target_shape[0]
-            img = np.repeat(np.expand_dims(img, axis=0), repeats=desired_depth, axis=0)
-        # Ensure the resulting array is contiguous in memory.
-        img = np.ascontiguousarray(img)
-        # Return a tensor with an added channel dimension (shape becomes [1, D, H, W]).
+        
+        # Ensure the image has the correct shape
+        if img.shape != self.preprocessor.target_shape:
+            raise ValueError(f"Image shape {img.shape} does not match target shape {self.preprocessor.target_shape}")
+        
+        # Add channel dimension and return
         return torch.from_numpy(img).float().unsqueeze(0)
 
 
@@ -139,3 +142,37 @@ def create_dataloaders(df: pd.DataFrame,
         )
     
     return dataloaders
+
+def load_and_preprocess_data(file_path, target_shape=(128, 128, 128)):
+    """
+    Load and preprocess DICOM data with consistent dimensions
+    """
+    try:
+        # Load the DICOM image
+        ds = pydicom.dcmread(file_path)
+        image = ds.pixel_array.astype(np.float32)
+        
+        # Normalize the image
+        image = (image - np.min(image)) / (np.max(image) - np.min(image))
+        
+        # Ensure 3D shape
+        if len(image.shape) == 2:
+            image = np.expand_dims(image, axis=0)
+            
+        # Resize to target shape
+        current_shape = image.shape
+        scale_factors = (target_shape[0]/current_shape[0],
+                        target_shape[1]/current_shape[1],
+                        target_shape[2]/current_shape[2] if len(current_shape) > 2 else 1)
+        
+        image = zoom(image, scale_factors, order=1)
+        
+        # Add batch dimension if needed
+        if len(image.shape) == 3:
+            image = np.expand_dims(image, axis=0)
+            
+        return image
+        
+    except Exception as e:
+        print(f"Error processing {file_path}: {str(e)}")
+        return None
