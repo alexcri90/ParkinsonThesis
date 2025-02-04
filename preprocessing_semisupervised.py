@@ -143,6 +143,25 @@ class CombinedEnhancedDataloader:
     """
     Utility class to combine multiple dataloaders
     """
+    @staticmethod
+    def collate_fn(batch):
+        """
+        Static method for collating batches of images and metadata.
+        """
+        # Separate images and metadata
+        images = [item[0] for item in batch]
+        metadata = [item[1] for item in batch]
+        
+        # Stack images
+        images = torch.stack(images, dim=0)
+        
+        # Combine metadata dictionaries
+        combined_metadata = {}
+        for key in metadata[0].keys():
+            combined_metadata[key] = torch.stack([d[key] for d in metadata])
+        
+        return images, combined_metadata
+
     def __init__(self, dataloaders):
         self.dataloaders = dataloaders
         self.dataset = torch.utils.data.ConcatDataset([
@@ -153,12 +172,14 @@ class CombinedEnhancedDataloader:
         first_dataset = next(iter(dataloaders.values())).dataset
         self.metadata_dims = first_dataset.num_classes
         
+        # Create a simpler DataLoader configuration
         self.loader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=next(iter(dataloaders.values())).batch_size,
             shuffle=True,
-            num_workers=next(iter(dataloaders.values())).num_workers,
-            pin_memory=next(iter(dataloaders.values())).pin_memory
+            num_workers=0,  # Set to 0 to avoid multiprocessing issues
+            collate_fn=self.collate_fn,
+            pin_memory=True if torch.cuda.is_available() else False
         )
     
     def __iter__(self):
