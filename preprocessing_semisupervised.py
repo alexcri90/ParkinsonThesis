@@ -3,113 +3,135 @@ import torch
 import pandas as pd
 from torch.utils.data import Dataset
 from scipy import ndimage
-from skimage import filters
 from skimage.transform import resize
-import albumentations as A
-from typing import Tuple, Optional, Dict
-from pydicom import dcmread
+import pydicom
+from typing import Tuple, Optional, Dict, List
 import torch.utils.data
-from preprocessing import DATSCANPreprocessor  # Import from original preprocessing
 
-class EnhancedDATSCANPreprocessor(DATSCANPreprocessor):
-    """
-    Enhanced preprocessor that inherits from the original one
-    to maintain consistency while allowing for extensions
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-def load_dicom_metadata(file_path):
-    """
-    Load DICOM metadata without loading the full image
-    """
-    try:
-        ds = dcmread(file_path, stop_before_pixels=True)
-        return ds
-    except Exception as e:
-        print(f"Error reading metadata from {file_path}: {e}")
-        return None
-
-class EnhancedDATSCANDataset(Dataset):
-    """
-    Enhanced Dataset class that includes metadata handling
-    """
+class DATSCANSemiSupervisedPreprocessor:
     def __init__(self, 
-                file_paths: list,
-                metadata_df: pd.DataFrame,
-                preprocessor: EnhancedDATSCANPreprocessor,
-                metadata_fields: list = ['group', 'PatientSex', 'StudyDescription', 
-                                        'Manufacturer', 'ManufacturerModelName']):
+                 target_shape: Tuple[int, int, int] = (128, 128, 128),
+                 normalize_method: str = 'minmax',
+                 apply_brain_mask: bool = True,
+                 augment: bool = False):
+        self.target_shape = target_shape
+        self.normalize_method = normalize_method
+        self.apply_brain_mask = apply_brain_mask
+        self.augment = augment
+
+    def normalize_intensity(self, img: np.ndarray) -> np.ndarray:
+        img = np.maximum(img, 0)
+        if self.normalize_method == 'minmax':
+            if img.max() > 0:
+                img = (img - img.min()) / (img.max() - img.min())
+        return img
+
+    def create_brain_mask(self, img: np.ndarray, threshold_factor: float = 0.1) -> np.ndarray:
+        threshold = img.mean() * threshold_factor
+        mask = img > threshold
+        mask = ndimage.binary_fill_holes(mask)
+        return mask
+
+    def pad_volume(self, img: np.ndarray) -> np.ndarray:
+        target_shape = self.target_shape
+        current_shape = img.shape
+        pad_width = []
+        for target_dim, current_dim in zip(target_shape, current_shape):
+            if current_dim > target_dim:
+                start = (current_dim - target_dim) // 2
+                end = start + target_dim
+                pad_width.append((-start, -(current_dim - end)))
+            else:
+                pad_before = (target_dim - current_dim) // 2
+                pad_after = target_dim - current_dim - pad_before
+                pad_width.append((pad_before, pad_after))
+        for axis, (pad_before, pad_after) in enumerate(pad_width):
+            if pad_before >= 0 and pad_after >= 0:
+                padding = [(0, 0)] * img.ndim
+                padding[axis] = (pad_before, pad_after)
+                img = np.pad(img, padding, mode='constant', constant_values=0)
+            else:
+                slicing = [slice(None)] * img.ndim
+                slicing[axis] = slice(-pad_before, img.shape[axis] + pad_after)
+                img = img[tuple(slicing)]
+        return img
+
+    def resize_volume(self, img: np.ndarray) -> np.ndarray:
+        current_shape = img.shape
+        target_shape = self.target_shape
+        current_max_dim = max(current_shape)
+        target_max_dim = max(target_shape)
+        if current_max_dim > target_max_dim:
+            scale_factor = target_max_dim / current_max_dim
+            new_shape = tuple(int(dim * scale_factor) for dim in current_shape)
+            img = resize(img, new_shape, mode='reflect', anti_aliasing=True)
+        return self.pad_volume(img)
+    
+    def __call__(self, img: np.ndarray) -> np.ndarray:
+        img = self.normalize_intensity(img)
+        if self.apply_brain_mask:
+            mask = self.create_brain_mask(img)
+            img = img * mask
+        if self.target_shape is not None and img.shape != self.target_shape:
+            img = self.resize_volume(img)
+        return img
+
+class DATSCANSemiSupervisedDataset(Dataset):
+    def __init__(self, 
+                 file_paths: list,
+                 labels: List[str],
+                 preprocessor: DATSCANSemiSupervisedPreprocessor,
+                 metadata: Optional[pd.DataFrame] = None):
         self.file_paths = file_paths
-        self.metadata_df = metadata_df
         self.preprocessor = preprocessor
-        self.metadata_fields = metadata_fields
         
-        # Create encoders for categorical variables
-        self.encoders = {}
-        self.num_classes = {}
-        for field in metadata_fields:
-            # Get all values including NaN
-            values = self.metadata_df[field].unique()
-            # Add 'UNKNOWN' to valid categories
-            valid_values = np.append(values[pd.notna(values)], 'UNKNOWN')
-            # Create encoder dictionary
-            self.encoders[field] = {val: i for i, val in enumerate(valid_values)}
-            self.num_classes[field] = len(self.encoders[field])
-            print(f"Field {field} has {self.num_classes[field]} unique values (including UNKNOWN)")
+        # Convert string labels to numeric
+        self.label_map = {'PD': 0, 'SWEDD': 1, 'Control': 2}
+        self.labels = [self.label_map[label] for label in labels]
+        
+        # Store metadata if provided
+        self.metadata = metadata
     
     def __len__(self):
         return len(self.file_paths)
     
-    def encode_metadata(self, metadata_dict):
-        """
-        Encode metadata values to integers
-        """
-        encoded = {}
-        for field in self.metadata_fields:
-            value = metadata_dict.get(field)
-            # Handle missing or NaN values
-            if pd.isna(value) or value not in self.encoders[field]:
-                value = 'UNKNOWN'
-            encoded[field] = torch.tensor(self.encoders[field][value])
-        return encoded
-    
     def __getitem__(self, idx):
-        # Load and preprocess image
         file_path = self.file_paths[idx]
-        img = dcmread(file_path).pixel_array.astype(np.float32)
+        label = self.labels[idx]
+        
+        # Read and preprocess the image
+        img = pydicom.dcmread(file_path).pixel_array.astype(np.float32)
         img = self.preprocessor(img)
+        
+        if img.ndim == 2:
+            desired_depth = self.preprocessor.target_shape[0]
+            img = np.repeat(np.expand_dims(img, axis=0), repeats=desired_depth, axis=0)
+        
+        img = np.ascontiguousarray(img)
         img_tensor = torch.from_numpy(img).float().unsqueeze(0)
         
-        # Get metadata
-        metadata_dict = {}
-        for field in self.metadata_fields:
-            try:
-                value = self.metadata_df.loc[self.metadata_df['file_path'] == file_path, field].iloc[0]
-                metadata_dict[field] = value
-            except:
-                metadata_dict[field] = None
+        # Create label tensor
+        label_tensor = torch.tensor(label, dtype=torch.long)
         
-        metadata_encoded = self.encode_metadata(metadata_dict)
+        # If metadata is available, include it
+        if self.metadata is not None:
+            metadata_row = self.metadata.loc[self.metadata['file_path'] == file_path]
+            metadata_tensor = torch.tensor(metadata_row.values[0], dtype=torch.float)
+            return img_tensor, label_tensor, metadata_tensor
         
-        return img_tensor, metadata_encoded
+        return img_tensor, label_tensor
 
-def create_enhanced_dataloaders(df: pd.DataFrame,
-                              metadata_df: pd.DataFrame,
-                              batch_size: int = 32,
-                              target_shape: Tuple[int, int, int] = (128, 128, 128),
-                              normalize_method: str = 'minmax',
-                              apply_brain_mask: bool = True,
-                              augment: bool = False,
-                              device: torch.device = torch.device('cpu'),
-                              num_workers: int = 4,
-                              metadata_fields: list = ['PatientSex', 'StudyDescription', 
-                                                     'Manufacturer', 'ManufacturerModelName']
-                              ) -> Dict[str, torch.utils.data.DataLoader]:
-    """
-    Create DataLoaders with metadata handling
-    """
-    preprocessor = EnhancedDATSCANPreprocessor(
+def create_semisupervised_dataloaders(df: pd.DataFrame,
+                                    batch_size: int = 32,
+                                    target_shape: Tuple[int, int, int] = (128, 128, 128),
+                                    normalize_method: str = 'minmax',
+                                    apply_brain_mask: bool = True,
+                                    augment: bool = False,
+                                    device: torch.device = torch.device('cuda'),
+                                    num_workers: int = 4,
+                                    metadata_cols: Optional[List[str]] = None) -> Dict[str, torch.utils.data.DataLoader]:
+    """Create DataLoaders for semi-supervised learning"""
+    preprocessor = DATSCANSemiSupervisedPreprocessor(
         target_shape=target_shape,
         normalize_method=normalize_method,
         apply_brain_mask=apply_brain_mask,
@@ -117,13 +139,19 @@ def create_enhanced_dataloaders(df: pd.DataFrame,
     )
     
     dataloaders = {}
+    
+    # Prepare metadata if specified
+    metadata = None
+    if metadata_cols is not None:
+        metadata = df[metadata_cols]
+    
     for group in ['PD', 'SWEDD', 'Control']:
-        group_files = df[df['label'] == group]['file_path'].tolist()
-        dataset = EnhancedDATSCANDataset(
-            file_paths=group_files,
-            metadata_df=metadata_df,
+        group_data = df[df['label'] == group]
+        dataset = DATSCANSemiSupervisedDataset(
+            file_paths=group_data['file_path'].tolist(),
+            labels=group_data['label'].tolist(),
             preprocessor=preprocessor,
-            metadata_fields=metadata_fields
+            metadata=metadata
         )
         
         dataloaders[group] = torch.utils.data.DataLoader(
@@ -134,56 +162,4 @@ def create_enhanced_dataloaders(df: pd.DataFrame,
             pin_memory=True if device.type == 'cuda' else False
         )
     
-    # Store number of classes for each metadata field
-    metadata_dims = dataset.num_classes
-    
-    return dataloaders, metadata_dims
-
-class CombinedEnhancedDataloader:
-    """
-    Utility class to combine multiple dataloaders
-    """
-    @staticmethod
-    def collate_fn(batch):
-        """
-        Static method for collating batches of images and metadata.
-        """
-        # Separate images and metadata
-        images = [item[0] for item in batch]
-        metadata = [item[1] for item in batch]
-        
-        # Stack images
-        images = torch.stack(images, dim=0)
-        
-        # Combine metadata dictionaries
-        combined_metadata = {}
-        for key in metadata[0].keys():
-            combined_metadata[key] = torch.stack([d[key] for d in metadata])
-        
-        return images, combined_metadata
-
-    def __init__(self, dataloaders):
-        self.dataloaders = dataloaders
-        self.dataset = torch.utils.data.ConcatDataset([
-            dl.dataset for dl in dataloaders.values()
-        ])
-        
-        # Get metadata dimensions from the first dataloader
-        first_dataset = next(iter(dataloaders.values())).dataset
-        self.metadata_dims = first_dataset.num_classes
-        
-        # Create a simpler DataLoader configuration
-        self.loader = torch.utils.data.DataLoader(
-            self.dataset,
-            batch_size=next(iter(dataloaders.values())).batch_size,
-            shuffle=True,
-            num_workers=0,  # Set to 0 to avoid multiprocessing issues
-            collate_fn=self.collate_fn,
-            pin_memory=True if torch.cuda.is_available() else False
-        )
-    
-    def __iter__(self):
-        return iter(self.loader)
-    
-    def __len__(self):
-        return len(self.loader)
+    return dataloaders

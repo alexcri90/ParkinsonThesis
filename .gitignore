@@ -11,3 +11,4 @@ notebook.py
 datscan_vae.pt
 /__pycache__
 *.pt
+semisupervised_vae_checkpoint.pt.tmp
