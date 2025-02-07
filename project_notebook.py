@@ -44,6 +44,9 @@ def print_gpu_memory_stats():
 configure_gpu()
 print_gpu_memory_stats()
 
+import warnings
+warnings.filterwarnings('ignore')
+
 # Cell 3: GPU Setup and Memory Management
 import os
 import logging
@@ -324,50 +327,74 @@ import matplotlib.pyplot as plt
 from skimage.filters import threshold_otsu
 from skimage.morphology import binary_closing, ball
 
-# If not already defined, include the resize_volume function:
 def resize_volume(volume, target_shape=(128, 128, 128)):
     """
     Resizes the volume to the target shape using zero-padding or center cropping.
 
-    :param volume: Input 3D volume as a numpy array.
-    :param target_shape: Desired output shape (depth, height, width).
-    :return: Resized volume.
+    Args:
+        volume: Input 3D volume as numpy array with shape (d, h, w)
+        target_shape: Desired output shape as tuple (d_new, h_new, w_new)
+
+    Returns:
+        Resized volume with shape target_shape
     """
+    def get_pad_amounts(current_size, target_size):
+        """Helper to calculate padding amounts"""
+        if current_size >= target_size:
+            return 0, 0
+        diff = target_size - current_size
+        pad_before = diff // 2
+        pad_after = diff - pad_before
+        return pad_before, pad_after
+
+    current_shape = volume.shape
     resized = volume.copy()
+
+    # Calculate padding/cropping for each dimension
+    pads = [get_pad_amounts(current_shape[i], target_shape[i]) for i in range(3)]
+
+    # Apply padding if needed
+    if any(sum(p) > 0 for p in pads):
+        resized = np.pad(
+            resized,
+            pad_width=pads,
+            mode="constant",
+            constant_values=0
+        )
+
+    # Apply cropping if needed
     for i in range(3):
-        current = resized.shape[i]
-        target = target_shape[i]
-        if current < target:
-            pad_total = target - current
-            pad_before = pad_total // 2
-            pad_after = pad_total - pad_before
-            pad_width = [(0, 0), (0, 0), (0, 0)]
-            pad_width[i] = (pad_before, pad_after)
-            resized = np.pad(resized, pad_width=pad_width, mode="constant", constant_values=0)
-        elif current > target:
-            start = (current - target) // 2
-            end = start + target
+        if current_shape[i] > target_shape[i]:
+            # Calculate slicing indices
+            start = (current_shape[i] - target_shape[i]) // 2
+            end = start + target_shape[i]
+            # Apply slice
             if i == 0:
                 resized = resized[start:end, :, :]
             elif i == 1:
                 resized = resized[:, start:end, :]
-            elif i == 2:
+            else:
                 resized = resized[:, :, start:end]
+
     return resized
 
 def process_volume(volume, target_shape=(128, 128, 128)):
     """
     Process a 3D volume by:
-    1. Normalizing intensity (truncating negatives and min-max scaling).
-    2. Resizing to target_shape.
-    3. Generating a brain mask via Otsu thresholding and 3D morphological closing.
+    1. Normalizing intensity (truncating negatives and min-max scaling)
+    2. Resizing to target_shape
+    3. Generating a brain mask via Otsu thresholding and morphological closing
+
+    Args:
+        volume: Input 3D volume
+        target_shape: Desired output shape (depth, height, width)
 
     Returns:
-      - norm_vol: The normalized and resized volume.
-      - mask: The computed brain mask.
-      - masked_vol: norm_vol multiplied by mask (i.e. non-brain regions zeroed out).
+        norm_vol: Normalized and resized volume
+        mask: Brain mask
+        masked_vol: Masked volume
     """
-    # 1. Intensity normalization (truncate negatives and min-max scale)
+    # 1. Intensity normalization
     volume = np.clip(volume, a_min=0, a_max=None)
     vmin, vmax = volume.min(), volume.max()
     if vmax > vmin:
@@ -375,13 +402,13 @@ def process_volume(volume, target_shape=(128, 128, 128)):
     else:
         norm_vol = volume - vmin
 
-    # 2. Resize the normalized volume to the target shape
+    # 2. Resize the normalized volume
     norm_vol = resize_volume(norm_vol, target_shape=target_shape)
 
-    # 3. Compute brain mask using Otsu threshold and binary closing
+    # 3. Compute brain mask
     thresh = threshold_otsu(norm_vol)
     mask = norm_vol > thresh
-    mask = binary_closing(mask, footprint=ball(2))  # using "footprint" as per current API
+    mask = binary_closing(mask, footprint=ball(2))
     masked_vol = norm_vol * mask
 
     return norm_vol, mask, masked_vol
@@ -427,9 +454,8 @@ class DaTScanDataset(Dataset):
 
     def _calculate_dataset_statistics(self):
         """Calculate dataset statistics"""
-        print("Calculating dataset statistics...")
         chunk_size = 10
-        for i in tqdm(range(0, len(self.df), chunk_size), desc="Computing stats"):
+        for i in tqdm(range(0, len(self.df), chunk_size), desc="Computing dataset stats", leave=False):
             chunk = self.df.iloc[i:min(i+chunk_size, len(self.df))]
             for _, row in chunk.iterrows():
                 try:
@@ -443,7 +469,6 @@ class DaTScanDataset(Dataset):
                     gc.collect()
                 except Exception as e:
                     print(f"Error processing file {row['file_path']}: {e}")
-        print(f"Dataset statistics: min={self.stats['min']}, max={self.stats['max']}")
 
     def __len__(self):
         return len(self.df)
@@ -451,14 +476,10 @@ class DaTScanDataset(Dataset):
     def __getitem__(self, idx):
         try:
             file_path = self.df.iloc[idx]["file_path"]
-            print(f"Loading file {idx}: {file_path}")  # Debug print
 
-            # Load and process DICOM
+            # Load and process DICOM (silently)
             volume, _ = load_dicom(file_path)
-            print(f"DICOM loaded, shape: {volume.shape}")  # Debug print
-
             norm_vol, mask, masked_vol = process_volume(volume, target_shape=(128, 128, 128))
-            print(f"Volume processed, shape: {masked_vol.shape}")  # Debug print
 
             # Clean up original data
             del volume, norm_vol, mask
@@ -466,7 +487,6 @@ class DaTScanDataset(Dataset):
 
             # Convert to tensor
             volume_tensor = torch.from_numpy(np.expand_dims(masked_vol, axis=0)).float()
-            print(f"Tensor created, shape: {volume_tensor.shape}")  # Debug print
 
             del masked_vol
             gc.collect()
@@ -793,3 +813,560 @@ print(summary_stats)
 gc.collect()
 torch.cuda.empty_cache()
 print("\nEDA completed!")
+
+def analyze_slice_variance(dataloader, num_samples_per_group=5):
+    """
+    Analyzes slice-wise variance across different views for each patient group
+    """
+    print("Analyzing slice-wise variance patterns...")
+
+    # Initialize storage for variances
+    group_variances = {
+        'PD': {'axial': [], 'coronal': [], 'sagittal': []},
+        'Control': {'axial': [], 'coronal': [], 'sagittal': []},
+        'SWEDD': {'axial': [], 'coronal': [], 'sagittal': []}
+    }
+    sample_counts = {'PD': 0, 'Control': 0, 'SWEDD': 0}
+
+    try:
+        for batch in tqdm(dataloader, desc="Computing slice variances"):
+            volumes = batch['volume']
+            labels = batch['label']
+
+            for volume, label in zip(volumes, labels):
+                label = label if isinstance(label, str) else label.item()
+
+                if sample_counts[label] >= num_samples_per_group:
+                    continue
+
+                # Get volume data
+                vol_data = volume.squeeze().numpy()
+                d, h, w = vol_data.shape
+
+                # Compute variance for each slice in each view
+                axial_var = [np.var(vol_data[i, :, :]) for i in range(d)]
+                coronal_var = [np.var(vol_data[:, i, :]) for i in range(h)]
+                sagittal_var = [np.var(vol_data[:, :, i]) for i in range(w)]
+
+                # Store variances
+                group_variances[label]['axial'].append(axial_var)
+                group_variances[label]['coronal'].append(coronal_var)
+                group_variances[label]['sagittal'].append(sagittal_var)
+
+                sample_counts[label] += 1
+
+            # Check if we have enough samples from each group
+            if all(count >= num_samples_per_group for count in sample_counts.values()):
+                break
+
+            # Memory cleanup
+            del volumes, labels
+            gc.collect()
+            torch.cuda.empty_cache()
+
+    except Exception as e:
+        print(f"Error during variance analysis: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+    # Compute average variances across samples for each group
+    avg_variances = {}
+    for group in group_variances:
+        avg_variances[group] = {
+            view: np.mean(variances, axis=0)
+            for view, variances in group_variances[group].items()
+        }
+
+    return avg_variances
+
+# Plot the slice variance results
+def plot_slice_variances(avg_variances):
+    """
+    Creates line plots for slice-wise variance analysis
+    """
+    views = ['axial', 'coronal', 'sagittal']
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+
+    for idx, view in enumerate(views):
+        ax = axes[idx]
+
+        for group in avg_variances:
+            variances = avg_variances[group][view]
+            ax.plot(range(len(variances)), variances, label=group)
+
+        ax.set_title(f'{view.capitalize()} View - Slice-wise Variance')
+        ax.set_xlabel('Slice Index')
+        ax.set_ylabel('Average Variance')
+        ax.legend()
+        ax.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# Analyze slice-wise variance
+print("\nAnalyzing slice-wise variance patterns...")
+avg_variances = analyze_slice_variance(train_loader, num_samples_per_group=5)
+
+if avg_variances is not None:
+    print("\nPlotting slice-wise variance analysis...")
+    plot_slice_variances(avg_variances)
+
+# Cell 11: Base Autoencoder Implementation
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from collections import OrderedDict
+
+class ConvBlock(nn.Module):
+    """
+    Basic convolutional block with batch normalization and ReLU activation.
+    Memory-efficient implementation with proper cleanup.
+    """
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        self.block = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding)),
+            ('bn', nn.BatchNorm3d(out_channels)),
+            ('relu', nn.ReLU(inplace=True))  # inplace ReLU for memory efficiency
+        ]))
+
+    def forward(self, x):
+        return self.block(x)
+
+class Encoder(nn.Module):
+    """
+    3D Encoder network with residual connections and progressive downsampling.
+    Input: (batch_size, 1, 128, 128, 128)
+    """
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        # Initial feature extraction
+        self.init_conv = ConvBlock(1, 16)  # 128 -> 128
+
+        # Downsampling path
+        self.down1 = nn.Sequential(
+            ConvBlock(16, 32, stride=2),    # 128 -> 64
+            ConvBlock(32, 32)
+        )
+
+        self.down2 = nn.Sequential(
+            ConvBlock(32, 64, stride=2),    # 64 -> 32
+            ConvBlock(64, 64)
+        )
+
+        self.down3 = nn.Sequential(
+            ConvBlock(64, 128, stride=2),   # 32 -> 16
+            ConvBlock(128, 128)
+        )
+
+        self.down4 = nn.Sequential(
+            ConvBlock(128, 256, stride=2),  # 16 -> 8
+            ConvBlock(256, 256)
+        )
+
+        # Flatten and project to latent space
+        self.flatten_size = 256 * 8 * 8 * 8
+        self.fc = nn.Linear(self.flatten_size, latent_dim)
+
+    def forward(self, x):
+        # Initial convolution
+        x = self.init_conv(x)
+
+        # Downsampling path with residual connections
+        d1 = self.down1(x)
+        d2 = self.down2(d1)
+        d3 = self.down3(d2)
+        d4 = self.down4(d3)
+
+        # Flatten and project to latent space
+        flat = torch.flatten(d4, start_dim=1)
+        z = self.fc(flat)
+
+        # Return latent representation and skip connections
+        return z, (d1, d2, d3, d4)
+
+class Decoder(nn.Module):
+    """
+    3D Decoder network with residual connections and progressive upsampling.
+    Output: (batch_size, 1, 128, 128, 128)
+    """
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        self.flatten_size = 256 * 8 * 8 * 8
+        self.fc = nn.Linear(latent_dim, self.flatten_size)
+
+        # Upsampling path
+        self.up1 = nn.Sequential(
+            nn.ConvTranspose3d(256, 128, kernel_size=2, stride=2),  # 8 -> 16
+            ConvBlock(128, 128)
+        )
+
+        self.up2 = nn.Sequential(
+            nn.ConvTranspose3d(128, 64, kernel_size=2, stride=2),   # 16 -> 32
+            ConvBlock(64, 64)
+        )
+
+        self.up3 = nn.Sequential(
+            nn.ConvTranspose3d(64, 32, kernel_size=2, stride=2),    # 32 -> 64
+            ConvBlock(32, 32)
+        )
+
+        self.up4 = nn.Sequential(
+            nn.ConvTranspose3d(32, 16, kernel_size=2, stride=2),    # 64 -> 128
+            ConvBlock(16, 16)
+        )
+
+        # Final convolution
+        self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
+
+    def forward(self, z, skip_connections):
+        # Reshape from latent space
+        x = self.fc(z)
+        x = x.view(-1, 256, 8, 8, 8)
+
+        # Unpack skip connections
+        d1, d2, d3, d4 = skip_connections
+
+        # Upsampling path with skip connections
+        x = self.up1(x + d4)  # Add residual connection
+        x = self.up2(x + d3)  # Add residual connection
+        x = self.up3(x + d2)  # Add residual connection
+        x = self.up4(x + d1)  # Add residual connection
+
+        # Final convolution with sigmoid activation
+        x = torch.sigmoid(self.final_conv(x))
+
+        return x
+
+class BaseAutoencoder(nn.Module):
+    """
+    Complete 3D Autoencoder model with memory-efficient implementation.
+    """
+    def __init__(self, latent_dim=256):
+        super().__init__()
+        self.encoder = Encoder(latent_dim)
+        self.decoder = Decoder(latent_dim)
+
+    def forward(self, x):
+        # Encode
+        z, skip_connections = self.encoder(x)
+
+        # Decode
+        reconstruction = self.decoder(z, skip_connections)
+
+        return reconstruction
+
+    def encode(self, x):
+        """Encode input to latent space"""
+        z, _ = self.encoder(x)
+        return z
+
+    def decode(self, z):
+        """Decode from latent space (for generation)"""
+        # Create dummy skip connections filled with zeros
+        batch_size = z.size(0)
+        device = z.device
+        dummy_skips = (
+            torch.zeros(batch_size, 32, 64, 64, 64, device=device),
+            torch.zeros(batch_size, 64, 32, 32, 32, device=device),
+            torch.zeros(batch_size, 128, 16, 16, 16, device=device),
+            torch.zeros(batch_size, 256, 8, 8, 8, device=device)
+        )
+        return self.decoder(z, dummy_skips)
+
+# Add a function to test the model and memory usage
+def test_autoencoder(batch_size=2):
+    """
+    Test the autoencoder with dummy data and print memory usage.
+    """
+    print("\nTesting Autoencoder Architecture...")
+
+    try:
+        # Create model and move to GPU
+        model = BaseAutoencoder()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        # Print model summary
+        print("\nModel Architecture:")
+        print(model)
+
+        # Create dummy input
+        dummy_input = torch.randn(batch_size, 1, 128, 128, 128, device=device)
+
+        # Print initial memory usage
+        print("\nInitial GPU Memory Usage:")
+        print_gpu_memory_stats()
+
+        # Test forward pass
+        print("\nTesting forward pass...")
+        with torch.no_grad():
+            output = model(dummy_input)
+
+        # Print output shape and final memory usage
+        print(f"\nOutput shape: {output.shape}")
+        print("\nFinal GPU Memory Usage:")
+        print_gpu_memory_stats()
+
+        # Clean up
+        del model, dummy_input, output
+        torch.cuda.empty_cache()
+
+        print("\nAutoencoder test completed successfully!")
+
+    except Exception as e:
+        print(f"Error testing autoencoder: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+# Test the model
+if __name__ == "__main__":
+    test_autoencoder()
+
+# Cell 12: Training Utilities and Configuration
+import os
+import json
+import time
+from pathlib import Path
+import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+class TrainingConfig:
+    """Training configuration with default values"""
+    def __init__(self, **kwargs):
+        self.learning_rate = kwargs.get('learning_rate', 1e-4)
+        self.batch_size = kwargs.get('batch_size', 2)
+        self.epochs = kwargs.get('epochs', 100)
+        self.early_stopping_patience = kwargs.get('early_stopping_patience', 10)
+        self.checkpoint_dir = kwargs.get('checkpoint_dir', 'checkpoints')
+        self.model_name = kwargs.get('model_name', 'autoencoder')
+
+        # Create checkpoint directory if it doesn't exist
+        Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+class EarlyStopping:
+    """Early stopping handler with patience"""
+    def __init__(self, patience=10, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.should_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            return False
+
+        if val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+
+        return self.should_stop
+
+class CheckpointHandler:
+    """Handles saving and loading of model checkpoints"""
+    def __init__(self, checkpoint_dir, model_name):
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.model_name = model_name
+        self.checkpoint_path = self.checkpoint_dir / f"{model_name}_checkpoint.pth"
+        self.metadata_path = self.checkpoint_dir / f"{model_name}_metadata.json"
+
+    def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses):
+        """Save model checkpoint and training metadata"""
+        # Save model checkpoint
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+            'train_losses': train_losses,
+            'val_losses': val_losses
+        }
+        torch.save(checkpoint, self.checkpoint_path)
+
+        # Save metadata
+        metadata = {
+            'last_epoch': epoch,
+            'train_losses': train_losses,
+            'val_losses': val_losses,
+            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(self.metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=4)
+
+    def load(self, model, optimizer, scheduler):
+        """Load model checkpoint and return training metadata"""
+        if not self.checkpoint_path.exists():
+            return None
+
+        checkpoint = torch.load(self.checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if scheduler and checkpoint['scheduler_state_dict']:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        return {
+            'epoch': checkpoint['epoch'],
+            'train_losses': checkpoint['train_losses'],
+            'val_losses': checkpoint['val_losses']
+        }
+
+def print_gpu_memory_stats():
+    """Print current GPU memory usage"""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / (1024 ** 2)
+        reserved = torch.cuda.memory_reserved() / (1024 ** 2)
+        print(f"GPU Memory Allocated: {allocated:.2f} MB")
+        print(f"GPU Memory Reserved: {reserved:.2f} MB")
+
+# Cell 13: Training Loop Implementation
+import torch.nn as nn
+from tqdm.notebook import tqdm
+import matplotlib.pyplot as plt
+
+def train_autoencoder(model, train_loader, val_loader, config=None):
+    """
+    Main training loop with checkpoint support and memory management
+    """
+    if config is None:
+        config = TrainingConfig()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Initialize training components
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    early_stopping = EarlyStopping(patience=config.early_stopping_patience)
+    checkpoint_handler = CheckpointHandler(config.checkpoint_dir, config.model_name)
+
+    # Initialize or load training state
+    start_epoch = 0
+    train_losses = []
+    val_losses = []
+
+    # Try to load checkpoint
+    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
+    if checkpoint_data:
+        start_epoch = checkpoint_data['epoch'] + 1
+        train_losses = checkpoint_data['train_losses']
+        val_losses = checkpoint_data['val_losses']
+        print(f"Resuming training from epoch {start_epoch}")
+
+    print(f"Training on device: {device}")
+    print(f"Starting training for {config.epochs} epochs")
+
+    try:
+        for epoch in range(start_epoch, config.epochs):
+            # Training phase
+            model.train()
+            epoch_loss = 0
+            train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
+
+            for batch in train_pbar:
+                optimizer.zero_grad()
+
+                # Get volumes and move to GPU
+                volumes = batch['volume'].to(device)
+
+                # Forward pass
+                reconstructed = model(volumes)
+                loss = criterion(reconstructed, volumes)
+
+                # Backward pass
+                loss.backward()
+                optimizer.step()
+
+                # Update progress bar
+                epoch_loss += loss.item()
+                train_pbar.set_postfix({'loss': loss.item()})
+
+                # Clean up
+                del volumes, reconstructed
+                torch.cuda.empty_cache()
+
+            avg_train_loss = epoch_loss / len(train_loader)
+            train_losses.append(avg_train_loss)
+
+            # Validation phase
+            model.eval()
+            val_loss = 0
+            val_pbar = tqdm(val_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Val]')
+
+            with torch.no_grad():
+                for batch in val_pbar:
+                    volumes = batch['volume'].to(device)
+                    reconstructed = model(volumes)
+                    loss = criterion(reconstructed, volumes)
+                    val_loss += loss.item()
+
+                    # Clean up
+                    del volumes, reconstructed
+                    torch.cuda.empty_cache()
+
+            avg_val_loss = val_loss / len(val_loader)
+            val_losses.append(avg_val_loss)
+
+            # Update learning rate
+            scheduler.step(avg_val_loss)
+
+            # Save checkpoint
+            checkpoint_handler.save(
+                model, optimizer, scheduler,
+                epoch, train_losses, val_losses
+            )
+
+            # Print epoch summary
+            print(f"\nEpoch {epoch+1}/{config.epochs}")
+            print(f"Train Loss: {avg_train_loss:.6f}")
+            print(f"Val Loss: {avg_val_loss:.6f}")
+            print_gpu_memory_stats()
+
+            # Early stopping check
+            if early_stopping(avg_val_loss):
+                print("\nEarly stopping triggered!")
+                break
+
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user!")
+
+    finally:
+        # Plot training history
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_losses, label='Train Loss')
+        plt.plot(val_losses, label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(os.path.join(config.checkpoint_dir, f"{config.model_name}_training_history.png"))
+        plt.show()
+
+        return train_losses, val_losses
+
+# Example usage
+if __name__ == "__main__":
+    # Create model and dataloaders (assuming they're already defined)
+    model = BaseAutoencoder()
+
+    # Configure training
+    config = TrainingConfig(
+        learning_rate=1e-4,
+        batch_size=2,
+        epochs=100,
+        checkpoint_dir='checkpoints',
+        model_name='autoencoder_v1'
+    )
+
+    # Train model
+    train_losses, val_losses = train_autoencoder(model, train_loader, val_loader, config)
+
