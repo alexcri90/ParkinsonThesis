@@ -1,341 +1,329 @@
+"""
+model.py
+
+This file defines a semi-supervised VAE model for 3D DATSCAN images
+and provides training and evaluation routines with progress bars and
+checkpointing to enable pausing and resuming training.
+
+Requirements:
+- PyTorch
+- tqdm
+- nVidia GPU (e.g. 4070Ti) is recommended
+
+Author: [Your Name]
+Date: [Today's Date]
+"""
+
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.amp import autocast, GradScaler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-import numpy as np
-import os
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.conv1 = nn.Conv3d(in_channels, in_channels, 3, padding=1)
-        self.bn1 = nn.BatchNorm3d(in_channels)
-        self.conv2 = nn.Conv3d(in_channels, in_channels, 3, padding=1)
-        self.bn2 = nn.BatchNorm3d(in_channels)
-        
-    def forward(self, x):
-        residual = x
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
-        out += residual
-        return F.relu(out)
+###############################################################################
+# Model Definition
+###############################################################################
 
-class SelfAttention3D(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.query = nn.Conv3d(in_channels, in_channels//8, 1)
-        self.key = nn.Conv3d(in_channels, in_channels//8, 1)
-        self.value = nn.Conv3d(in_channels, in_channels, 1)
-        self.gamma = nn.Parameter(torch.zeros(1))
-        
-    def forward(self, x):
-        batch_size, C, D, H, W = x.size()
-        q = self.query(x).view(batch_size, -1, D*H*W)
-        k = self.key(x).view(batch_size, -1, D*H*W)
-        v = self.value(x).view(batch_size, -1, D*H*W)
-        
-        attention = F.softmax(torch.bmm(q.permute(0,2,1), k), dim=2)
-        out = torch.bmm(v, attention.permute(0,2,1))
-        out = out.view(batch_size, C, D, H, W)
-        return self.gamma * out + x
+class SemiSupervisedVAE(nn.Module):
+    def __init__(self, latent_dim=128, num_classes=3):  # Directly use num_classes
+        """
+        Args:
+            latent_dim (int): Dimension of the latent space.
+            num_classes (int): Number of classes for classification (PD, SWEDD, Control).
+        """
+        super(SemiSupervisedVAE, self).__init__()
+        self.latent_dim = latent_dim
+        self.num_classes = num_classes
 
-class Encoder(nn.Module):
-    def __init__(self, latent_dim):
-        super().__init__()
-        # Initial convolution block
-        self.conv1 = nn.Conv3d(1, 16, kernel_size=3, stride=2, padding=1)  # Reduced from 32 to 16
-        self.bn1 = nn.BatchNorm3d(16)
-        self.res1 = ResidualBlock(16)
-        
-        # Second block
-        self.conv2 = nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1)  # Reduced from 64 to 32
-        self.bn2 = nn.BatchNorm3d(32)
-        self.res2 = ResidualBlock(32)
-        
-        # Third block
-        self.conv3 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)  # Reduced from 128 to 64
-        self.bn3 = nn.BatchNorm3d(64)
-        self.res3 = ResidualBlock(64)
-        
-        # Fourth block
-        self.conv4 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1)  # Reduced from 256 to 128
-        self.bn4 = nn.BatchNorm3d(128)
-        self.res4 = ResidualBlock(128)
-        
-        # Attention mechanism
-        self.attention = SelfAttention3D(128)  # Updated to match new channel count
-        
-        # For input volume 128x128x128, after 4 stride-2 convs:
-        # 128 -> 64 -> 32 -> 16 -> 8
-        self.flatten_size = 128 * 8 * 8 * 8  # Reduced from 256 to 128
-        
-        self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
-        self.fc_logvar = nn.Linear(self.flatten_size, latent_dim)
-        
-        self.dropout = nn.Dropout3d(0.1)
-        
-        # Initialize weights properly
-        for m in self.modules():
-            if isinstance(m, nn.Conv3d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm3d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
-    
-    def forward(self, x):
-        # Add assertions for debugging
-        assert torch.isfinite(x).all(), "Input contains nan or inf"
-        
-        x = F.relu(self.bn1(self.conv1(x)))
-        assert torch.isfinite(x).all(), "After conv1"
-        x = self.res1(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn2(self.conv2(x)))
-        assert torch.isfinite(x).all(), "After conv2"
-        x = self.res2(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn3(self.conv3(x)))
-        assert torch.isfinite(x).all(), "After conv3"
-        x = self.res3(x)
-        x = self.dropout(x)
-        
-        x = F.relu(self.bn4(self.conv4(x)))
-        assert torch.isfinite(x).all(), "After conv4"
-        x = self.res4(x)
-        
-        x = self.attention(x)
-        assert torch.isfinite(x).all(), "After attention"
-        
-        x = x.view(x.size(0), -1)
-        
-        # Scale down before FC layers
-        x = x * 0.1
-        
-        mu = self.fc_mu(x)
-        logvar = self.fc_logvar(x)
-        
+        # -------------------------
+        # Encoder: 3D Convolutions
+        # Input shape: (batch, 1, 128, 128, 128)
+        # Output after conv5: (batch, 512, 4, 4, 4)
+        # -------------------------
+        self.conv1 = nn.Conv3d(1, 32, kernel_size=3, stride=2, padding=1)   # -> (32,64,64,64)
+        self.conv2 = nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1)  # -> (64,32,32,32)
+        self.conv3 = nn.Conv3d(64, 128, kernel_size=3, stride=2, padding=1) # -> (128,16,16,16)
+        self.conv4 = nn.Conv3d(128, 256, kernel_size=3, stride=2, padding=1) # -> (256,8,8,8)
+        self.conv5 = nn.Conv3d(256, 512, kernel_size=3, stride=2, padding=1) # -> (512,4,4,4)
+
+        # Flatten the output and compress to an intermediate vector.
+        self.fc1 = nn.Linear(512 * 4 * 4 * 4, 1024)
+        self.fc_mu = nn.Linear(1024, latent_dim)
+        self.fc_logvar = nn.Linear(1024, latent_dim)
+
+        # -------------------------
+        # Decoder: Fully Connected + 3D Transposed Convolutions
+        # -------------------------
+        self.fc2 = nn.Linear(latent_dim, 1024)
+        self.fc3 = nn.Linear(1024, 512 * 4 * 4 * 4)
+        # The deconvolutions mirror the encoder:
+        self.deconv1 = nn.ConvTranspose3d(512, 256, kernel_size=3, stride=2,
+                                          padding=1, output_padding=1)  # -> (256,8,8,8)
+        self.deconv2 = nn.ConvTranspose3d(256, 128, kernel_size=3, stride=2,
+                                          padding=1, output_padding=1)  # -> (128,16,16,16)
+        self.deconv3 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2,
+                                          padding=1, output_padding=1)  # -> (64,32,32,32)
+        self.deconv4 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2,
+                                          padding=1, output_padding=1)  # -> (32,64,64,64)
+        self.deconv5 = nn.ConvTranspose3d(32, 1, kernel_size=3, stride=2,
+                                          padding=1, output_padding=1)  # -> (1,128,128,128)
+
+        # -------------------------
+        # Classification head
+        # -------------------------
+        self.classification_head = nn.Linear(latent_dim, num_classes) # Single classification head
+
+    def encode(self, x):
+        """Encodes the input into latent space parameters."""
+        h = F.relu(self.conv1(x))
+        h = F.relu(self.conv2(h))
+        h = F.relu(self.conv3(h))
+        h = F.relu(self.conv4(h))
+        h = F.relu(self.conv5(h))
+        h = h.view(h.size(0), -1)  # Flatten
+        h = F.relu(self.fc1(h))
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
         return mu, logvar
 
-class Decoder(nn.Module):
-    def __init__(self, latent_dim):
-        super().__init__()
-        self.flatten_size = 128 * 8 * 8 * 8  # Reduced to match encoder
-        
-        self.dropout = nn.Dropout(0.1)
-        
-        self.fc = nn.Linear(latent_dim, self.flatten_size)
-        
-        self.deconv1 = nn.ConvTranspose3d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv2 = nn.ConvTranspose3d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv3 = nn.ConvTranspose3d(32, 16, kernel_size=3, stride=2, padding=1, output_padding=1)
-        self.deconv4 = nn.ConvTranspose3d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1)
-        
-        self.bn1 = nn.BatchNorm3d(64)
-        self.bn2 = nn.BatchNorm3d(32)
-        self.bn3 = nn.BatchNorm3d(16)
-        
-        # Initialize weights
-        for m in self.modules():
-            if isinstance(m, nn.ConvTranspose3d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, nn.BatchNorm3d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
-
-    def forward(self, x):
-        # Scale input to avoid explosion
-        x = x * 0.1
-        
-        x = self.dropout(self.fc(x))
-        x = x.view(x.size(0), 128, 8, 8, 8)
-        
-        x = self.dropout(F.relu(self.bn1(self.deconv1(x))))
-        x = self.dropout(F.relu(self.bn2(self.deconv2(x))))
-        x = self.dropout(F.relu(self.bn3(self.deconv3(x))))
-        x = torch.sigmoid(self.deconv4(x))  # Added sigmoid for [0,1] output
-        
-        return x
-
-class DATScanVAE(nn.Module):
-    def __init__(self, latent_dim=128):
-        super().__init__()
-        self.latent_dim = latent_dim
-        self.encoder = Encoder(latent_dim)
-        self.decoder = Decoder(latent_dim)
-    
     def reparameterize(self, mu, logvar):
-        if self.training:
-            std = torch.exp(0.5 * logvar)
-            eps = torch.randn_like(std)
-            return mu + eps * std
-        else:
-            return mu
-    
+        """Samples a latent vector using the reparameterization trick."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z):
+        """Decodes the latent vector back to the image space."""
+        h = F.relu(self.fc2(z))
+        h = F.relu(self.fc3(h))
+        h = h.view(-1, 512, 4, 4, 4)
+        h = F.relu(self.deconv1(h))
+        h = F.relu(self.deconv2(h))
+        h = F.relu(self.deconv3(h))
+        h = F.relu(self.deconv4(h))
+        recon = torch.sigmoid(self.deconv5(h))
+        return recon
+
     def forward(self, x):
-        mu, logvar = self.encoder(x)
+        """Performs a forward pass through the VAE.
+
+        Returns:
+            recon: Reconstructed image.
+            mu: Mean of the latent Gaussian.
+            logvar: Log variance of the latent Gaussian.
+            class_pred: Prediction for patient group.
+        """
+        mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        recon = self.decoder(z)
-        return recon, mu, logvar
-    
-    @torch.no_grad()
-    def generate(self, num_samples=1, device=torch.device('cuda')):
-        z = torch.randn(num_samples, self.latent_dim, device=device)
-        logits = self.decoder(z)
-        samples = torch.sigmoid(logits)
-        return samples
+        recon = self.decode(z)
+        class_pred = self.classification_head(z) # Single classification head
+        return recon, mu, logvar, class_pred
 
-class DATSCANModel(nn.Module):
-    def __init__(self, input_shape=(1, 128, 128, 128)):
-        super(DATSCANModel, self).__init__()
-        
-        # Ensure input shape is consistent
-        self.input_shape = input_shape
-        
-        # Define expected input dimensions in convolution layers
-        self.conv1 = nn.Conv3d(in_channels=1, out_channels=32, kernel_size=3, padding=1)
-        # ...existing code...
-    
-    def forward(self, x):
-        # Ensure input has correct shape
-        if len(x.shape) != 5:  # [batch, channels, height, width, depth]
-            raise ValueError(f"Expected 5D input tensor, got shape {x.shape}")
-        
-        # ...existing code...
+    def get_latent(self, x):
+        """Returns the latent vector (sampled) for a given input x."""
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        return z
 
-def train_vae(model, train_loader, num_epochs, learning_rate, device, save_path, start_epoch=0, history=None):
+###############################################################################
+# Loss Function
+###############################################################################
+
+def loss_function(recon, x, mu, logvar, class_pred, labels, beta=1.0, class_weight=1.0):
     """
-    Revised training function for the DATScanVAE model (suitable for medical applications on an nVidia 4070Ti):
-      - Total epochs: 150
-      - Learning rate: 5e-5
-      - Warmup: first 10 epochs with beta=0; then linearly increase beta to max_beta over 50 epochs.
-      - Reconstruction loss computed as per-voxel MSE (reduction='mean') scaled by recon_scale (100.0)
-      - Uses torch.amp.autocast with device_type='cuda'
-      - Applies gradient clipping and detailed logging.
+    Computes the VAE loss.
+
+    Args:
+        recon: Reconstructed images.
+        x: Original images.
+        mu: Mean from the encoder.
+        logvar: Log variance from the encoder.
+        class_pred: Prediction for patient group.
+        labels: Ground truth labels for patient group.
+        beta (float): Weight for the KL divergence term.
+        class_weight (float): Weight for the classification loss.
+
+    Returns:
+        total_loss: Combined loss.
+        recon_loss: Reconstruction loss.
+        kl_loss: KL divergence loss.
+        class_loss: Classification loss.
     """
-    print("Initializing/Resuming training with medical-grade settings...")
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 
-        mode='min',
-        factor=0.5,
-        patience=5,
-        min_lr=1e-7
-    )
-    
-    # Use mean reduction for reconstruction loss (per voxel)
-    criterion = torch.nn.MSELoss(reduction='mean').to(device)
-    history = history or {'loss': [], 'kl_loss': [], 'recon_loss': []}
-    
-    # Extended KL warmup parameters:
-    warmup_epochs = 10         # First 10 epochs: zero KL contribution.
-    annealing_epochs = 50      # Then ramp up beta over the next 50 epochs.
-    max_beta = 0.1             # Maximum beta value.
-    
-    recon_scale = 100.0        # Scaling factor for the reconstruction loss.
-    max_grad_norm = 1.0        # Gradient clipping threshold.
-    
-    scaler = torch.cuda.amp.GradScaler()
-    
-    print(f"\nStarting training from epoch {start_epoch+1} to {num_epochs}")
-    
+    # Reconstruction loss (using binary cross-entropy since the output is sigmoid-activated)
+    recon_loss = F.binary_cross_entropy(recon, x, reduction='sum')
+    # KL Divergence
+    kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+    # Classification loss
+    class_loss = F.cross_entropy(class_pred, labels, reduction='sum')
+
+    total_loss = recon_loss + beta * kl_loss + class_weight * class_loss
+    return total_loss, recon_loss, kl_loss, class_loss
+
+###############################################################################
+# Training, Evaluation, and Latent Extraction Functions
+###############################################################################
+
+def train_model(model, train_loader, optimizer, device, num_epochs, checkpoint_path,
+                start_epoch=0, beta=1.0, class_weight=1.0):
+    """
+    Trains the model with progress bars and checkpointing.
+
+    Args:
+        model: The VAE model.
+        train_loader: DataLoader for training data.
+        optimizer: Optimizer.
+        device: Device to run training on.
+        num_epochs (int): Number of epochs to train.
+        checkpoint_path (str): File path to save checkpoints.
+        start_epoch (int): Epoch number to resume from.
+        beta (float): Weight for the KL divergence term.
+        class_weight (float): Weight for the classification loss.
+
+    Returns:
+        history (dict): Dictionary containing epoch numbers and losses.
+    """
+    history = {'epoch': [], 'loss': [], 'recon_loss': [], 'kl_loss': [], 'class_loss': []}
+
     for epoch in range(start_epoch, num_epochs):
         model.train()
-        epoch_loss = 0.0
-        epoch_kl_loss = 0.0
-        epoch_recon_loss = 0.0
-        
-        # Compute beta using the modified warmup schedule:
-        if epoch < warmup_epochs:
-            beta = 0.0
-        else:
-            beta = min(max_beta, ((epoch - warmup_epochs + 1) / annealing_epochs) * max_beta)
-        
-        pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{num_epochs}')
-        for batch_idx, data in enumerate(pbar):
-            try:
-                data = data.to(device, non_blocking=True)
-                optimizer.zero_grad(set_to_none=True)
-                
-                # Use autocast with device_type='cuda'
-                with torch.amp.autocast(device_type='cuda'):
-                    recon, mu, logvar = model(data)
-                    recon_loss = criterion(recon, data) * recon_scale
-                    kl_loss = -0.5 * torch.mean(1 + logvar - mu.pow(2) - logvar.exp())
-                    loss = recon_loss + beta * kl_loss
-                
-                if torch.isnan(loss):
-                    continue
-                
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
-                scaler.step(optimizer)
-                scaler.update()
-                
-                epoch_loss += loss.item()
-                epoch_kl_loss += kl_loss.item()
-                epoch_recon_loss += recon_loss.item()
-                
+        running_loss = 0.0
+        running_recon_loss = 0.0
+        running_kl_loss = 0.0
+        running_class_loss = 0.0
+
+        # Progress bar for the epoch
+        with tqdm(total=len(train_loader), desc=f"Epoch {epoch+1}/{num_epochs}", unit="batch") as pbar:
+            for images, labels in train_loader:  # Expect batch to be (images, labels)
+                images = images.to(device)
+                labels = labels.to(device)
+
+                optimizer.zero_grad()
+                recon, mu, logvar, class_pred = model(images)
+                loss, recon_loss, kl_loss, class_loss = loss_function(
+                    recon, images, mu, logvar, class_pred, labels, beta, class_weight)
+                loss.backward()
+                optimizer.step()
+
+                running_loss += loss.item()
+                running_recon_loss += recon_loss.item()
+                running_kl_loss += kl_loss.item()
+                running_class_loss += class_loss.item()
+
                 pbar.set_postfix({
-                    'loss': f'{loss.item():.4f}',
-                    'kl': f'{kl_loss.item():.4f}',
-                    'recon': f'{recon_loss.item():.4f}',
-                    'beta': f'{beta:.4f}',
-                    'lr': f'{optimizer.param_groups[0]["lr"]:.2e}'
+                    "loss": f"{loss.item():.2f}",
+                    "recon": f"{recon_loss.item():.2f}",
+                    "KL": f"{kl_loss.item():.2f}",
+                    "class": f"{class_loss.item():.2f}"
                 })
-                
-            except RuntimeError as e:
-                if "out of memory" in str(e):
-                    print('\nGPU out of memory! Clearing cache and skipping batch...')
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                    continue
-                else:
-                    raise e
-        
-        num_batches = max(1, len(train_loader))
-        avg_loss = epoch_loss / num_batches
-        avg_kl_loss = epoch_kl_loss / num_batches
-        avg_recon_loss = epoch_recon_loss / num_batches
-        
-        scheduler.step(avg_loss)
-        
+                pbar.update(1)
+
+        avg_loss = running_loss / len(train_loader.dataset)
+        avg_recon_loss = running_recon_loss / len(train_loader.dataset)
+        avg_kl_loss = running_kl_loss / len(train_loader.dataset)
+        avg_class_loss = running_class_loss / len(train_loader.dataset)
+
+        history['epoch'].append(epoch)
         history['loss'].append(avg_loss)
-        history['kl_loss'].append(avg_kl_loss)
         history['recon_loss'].append(avg_recon_loss)
-        
-        # Detailed logging every 5 epochs
-        if (epoch + 1) % 5 == 0:
-            print(f'\nEpoch {epoch+1}/{num_epochs}:')
-            print(f'  Average Loss: {avg_loss:.4f}')
-            print(f'  KL Loss: {avg_kl_loss:.4f}')
-            print(f'  Reconstruction Loss: {avg_recon_loss:.4f}')
-            print(f'  Beta: {beta:.4f}')
-            print(f'  Learning Rate: {optimizer.param_groups[0]["lr"]:.6f}')
-        
-        # Save checkpoint every 5 epochs and at the end.
-        if (epoch + 1) % 5 == 0 or epoch == num_epochs - 1:
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'loss': avg_loss,
-                'history': history,
-                'learning_rate': optimizer.param_groups[0]['lr'],
-                'beta': beta
-            }
-            torch.save(checkpoint, save_path)
-            print(f"Checkpoint saved at epoch {epoch + 1}")
-    
+        history['kl_loss'].append(avg_kl_loss)
+        history['class_loss'].append(avg_class_loss)
+
+        print(f"\nEpoch {epoch+1} completed. Average loss: {avg_loss:.4f}, Recon: {avg_recon_loss:.4f}, KL: {avg_kl_loss:.4f}, Class: {avg_class_loss:.4f}")
+
+        # Save checkpoint after each epoch
+        checkpoint = {
+            'epoch': epoch + 1, # Save next epoch number
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'history': history
+        }
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}\n")
+
     return history
+
+def evaluate_model(model, val_loader, device, beta=1.0, class_weight=1.0):
+    """
+    Evaluates the model on a validation set.
+
+    Args:
+        model: The VAE model.
+        val_loader: DataLoader for validation data.
+        device: Device to run evaluation on.
+        beta (float): Weight for the KL divergence term.
+        class_weight (float): Weight for the classification loss.
+
+    Returns:
+        avg_loss (float): Average loss over the validation set.
+    """
+    model.eval()
+    running_loss = 0.0
+
+    with torch.no_grad():
+        for images, labels in tqdm(val_loader, desc="Evaluating", unit="batch"):
+            images = images.to(device)
+            labels = labels.to(device)
+
+            recon, mu, logvar, class_pred = model(images)
+            loss, _, _, _ = loss_function(
+                recon, images, mu, logvar, class_pred, labels, beta, class_weight)
+            running_loss += loss.item()
+
+    avg_loss = running_loss / len(val_loader.dataset)
+    print(f"Validation Loss: {avg_loss:.4f}")
+    return avg_loss
+
+def extract_latent_space(model, data_loader, device):
+    """
+    Extracts latent representations for the entire dataset.
+
+    Args:
+        model: The VAE model.
+        data_loader: DataLoader for the dataset.
+        device: Device to run extraction on.
+
+    Returns:
+        latent_space (torch.Tensor): Tensor containing latent vectors.
+        labels (torch.Tensor): Tensor containing corresponding labels.
+    """
+    model.eval()
+    latent_vectors = []
+    all_labels = []
+
+    with torch.no_grad():
+        for images, labels in tqdm(data_loader, desc="Extracting latent space", unit="batch"):
+            images = images.to(device)
+            z = model.get_latent(images)
+            latent_vectors.append(z.cpu())
+            all_labels.append(labels.cpu())
+
+    latent_space = torch.cat(latent_vectors, dim=0)
+    labels = torch.cat(all_labels, dim=0)
+    return latent_space, labels
+
+###############################################################################
+# Optional Testing Block
+###############################################################################
+
+if __name__ == '__main__':
+    # Quick test to verify that the model runs on dummy data.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print("Using device:", device)
+
+    # Create a dummy input tensor: (batch_size, 1, 128, 128, 128)
+    dummy_input = torch.randn(2, 1, 128, 128, 128).to(device)
+    dummy_labels = torch.randint(0, 3, (2,)).to(device) # Dummy labels (0, 1, 2)
+
+    # Instantiate the model.
+    model = SemiSupervisedVAE(latent_dim=128, num_classes=3).to(device)
+
+    # Forward pass
+    recon, mu, logvar, class_pred = model(dummy_input)
+
+    print("Output shapes:")
+    print("  Reconstruction:", recon.shape)      # Expected: (2, 1, 128, 128, 128)
+    print("  Mu:", mu.shape)                       # Expected: (2, 128)
+    print("  Logvar:", logvar.shape)               # Expected: (2, 128)
+    print("  Class predictions:", class_pred.shape) # Expected: (2, 3)

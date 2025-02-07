@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <architecture>
     <introduction>
         The objective of this project is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. By leveraging unsupervised learning techniques, the goal is to uncover intrinsic patterns and features within the imaging data that could enhance the understanding of Parkinson's Disease progression.
@@ -28,55 +29,142 @@
             </example_path>
         </dataset_description>
     </data_understanding>
+    <project_setup>
+        <dependencies>
+            <installation>
+                Required packages to be installed:
+                - scikit-learn, scikit-image: For image processing
+                - SimpleITK: Medical image I/O
+                - nibabel, nilearn: Neuroimaging tools
+                - albumentations: Image augmentation
+                - seaborn: Statistical visualization
+                - torch: Deep learning framework
+                - pandas, numpy: Data manipulation
+                - matplotlib: Plotting
+                - tqdm: Progress bars
+                - pydicom: DICOM file handling
+                - scipy: Scientific computing
+                - gc: Garbage collection
+            </installation>
+        </dependencies>
+        <gpu_setup>
+            - Configure CUDA device detection
+            - Set memory management options for NVIDIA 4070Ti
+            - Enable CUDNN benchmarking
+            - Implement memory tracking utilities
+        </gpu_setup>
+    </project_setup>
     <ingestion_and_preprocessing>
         <data_loading>
-            Develop a script to recursively traverse the nested folder structure to locate all DICOM files. Use libraries like pydicom to read DICOM files into NumPy arrays.
+            <file_collection>
+                <path_validation>
+                - Primary validation rule: Exclude ANY file containing "br_raw" in path
+                - Implement strict pattern matching for "br_raw" string
+                - Log all excluded files for quality assurance
+                - Raise warning if proportion of raw files is unexpectedly high
+                </path_validation>
+                <collection_steps>
+                - Traverse nested folder structure recursively
+                - Apply raw file exclusion BEFORE any other processing
+                - Create DataFrame with validated paths and labels
+                - Track statistics of excluded vs included files
+                - Save clean paths to CSV for reproducibility
+                </collection_steps>
+                <quality_assurance>
+                - Verify no "br_raw" files made it through filtering
+                - Document proportion of excluded files
+                - Validate final path structure matches expected pattern
+                - Generate QA report of file selection process
+                </quality_assurance>
+            </file_collection>
+            <dicom_handling>
+                - Load DICOM with pydicom
+                - Extract pixel arrays as float32
+                - Apply RescaleSlope and RescaleIntercept
+                - Implement memory-efficient batch loading
+                - Track DICOM orientation information
+            </dicom_handling>
         </data_loading>
         <data_preprocessing>
-            - Intensity Normalization: 
+            <intensity_normalization>
                 - Set minimum to 0
                 - Truncate negative values
-                - Normalize pixel intensities using min-max scaling
-            - Volume Processing:
-                - Maintain full 128x128x128 brain volume
-                - Preserve all anatomical information including striatum and surrounding regions
-                - Apply consistent processing across the entire volume
-            - Dimension Standardization:
+                - Apply min-max scaling per volume
+                - Validate normalization ranges
+            </intensity_normalization>
+            <volume_processing>
                 - Target shape: (128, 128, 128)
-                - Preserve aspect ratio using zero-padding instead of stretching
-                - Apply padding symmetrically around the brain region
-            - Brain Masking:
-                - Apply threshold-based brain masks to focus on brain tissue
-                - Remove non-brain regions while preserving anatomical proportions
-            - Data Validation:
-                - Verify volume integrity and proper padding
-                - Confirm intensity normalization effectiveness
-                - Validate anatomical preservation
+                - Preserve aspect ratio using zero-padding
+                - Apply symmetrical padding around brain
+                - Implement memory-efficient resizing
+            </volume_processing>
+            <brain_masking>
+                - Apply Otsu thresholding
+                - Perform morphological operations
+                - Validate mask coverage
+                - Preserve anatomical proportions
+            </brain_masking>
+            <dataloader_implementation>
+                - Create PyTorch Dataset class
+                - Implement efficient batch processing
+                - Enable multi-worker data loading
+                - Monitor memory usage during loading
+            </dataloader_implementation>
         </data_preprocessing>
     </ingestion_and_preprocessing>
     <eda>
+        <memory_management>
+            - Implement batch processing for large datasets
+            - Track system and GPU memory usage
+            - Clear cache between processing steps
+            - Optimize visualization memory footprint
+        </memory_management>
         <statistical_analysis>
-            - Descriptive Statistics: Compute mean, median, standard deviation, and other summary statistics for the dataset.
-            - Distribution Analysis: 
-                - Examine the distribution of pixel intensities and voxel values
-                - Analyze variance distribution across the full volume
-                - Special focus on striatal region characteristics
-            - Correlation Analysis: Investigate relationships between different regions of the brain.
+            <basic_statistics>
+                - Compute per-group sample counts
+                - Calculate unique patient distributions
+                - Analyze class balance
+                - Track temporal distribution of scans
+            </basic_statistics>
+            <intensity_analysis>
+                - Calculate per-group intensity statistics
+                - Analyze distribution shapes
+                - Compute skewness and kurtosis
+                - Track outliers and anomalies
+            </intensity_analysis>
+            <spatial_analysis>
+                - Compute slice-wise statistics
+                - Analyze variance across dimensions
+                - Calculate spatial gradients
+                - Identify regions of interest
+            </spatial_analysis>
         </statistical_analysis>
         <visualization>
-            - Image Visualization:
-                - Display sample volumes to understand data quality and variability
-                - Visualize padding and aspect ratio preservation
-                - Show full brain volume characteristics
-            - Variance Analysis:
-                - Plot variance distributions across all dimensions
-                - Identify regions of high information content
-                - Map intensity patterns across the volume
-            - Quality Control:
-                - Visualize preprocessing steps' impact
-                - Verify anatomical preservation
-                - Confirm proper padding implementation
+            <distribution_plots>
+                - Create boxplots for group comparisons
+                - Generate violin plots for distributions
+                - Plot histograms with density curves
+                - Implement statistical annotations
+            </distribution_plots>
+            <volume_visualization>
+                - Display orthogonal views (axial, sagittal, coronal)
+                - Create interactive slice viewers
+                - Show intensity distributions per slice
+                - Visualize padding effectiveness
+            </volume_visualization>
+            <comparative_analysis>
+                - Generate group-wise mean volumes
+                - Create difference maps between groups
+                - Visualize variance patterns
+                - Plot ROI characteristics
+            </comparative_analysis>
         </visualization>
+        <quality_control>
+            - Validate preprocessing effectiveness
+            - Check for data leakage
+            - Verify class balance impact
+            - Monitor outlier influence
+        </quality_control>
     </eda>
     <model>
         <selection>
@@ -111,7 +199,7 @@
         </selection>
         <training>
             - Training Setup: 
-                - Use frameworks like TensorFlow or PyTorch
+                - Use PyTorch framework
                 - Leverage GPU acceleration on NVIDIA 4070Ti
                 - Implement memory-efficient batch processing
             - Hyperparameters:
