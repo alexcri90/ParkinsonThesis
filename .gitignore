@@ -2,8 +2,9 @@
 .venv/
 preprocessed_data/
 
-# Ignore everything in the Images folder
+# Ignore everything in the heavy folders
 Images/
+checkpoints/
 
 # Ignore the draft .py and .xml structure files
 notebook.py
