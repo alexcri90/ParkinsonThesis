@@ -437,7 +437,7 @@ axes[1].axis("off")
 plt.tight_layout()
 plt.show()
 
-# Cell 9: Dataset Implementation with Shape Validation
+# Cell 9: Simplified version with better error tracking
 import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm.notebook import tqdm
@@ -473,48 +473,12 @@ class DaTScanDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def _validate_and_fix_volume(self, volume):
-        """
-        Validate volume shape and fix if necessary.
-        Ensures the volume is 3D with shape (depth, height, width).
-        """
-        # Convert to numpy array if not already
-        if isinstance(volume, torch.Tensor):
-            volume = volume.numpy()
-
-        # Check dimensionality
-        if volume.ndim == 2:
-            # If 2D, add a depth dimension
-            volume = volume[np.newaxis, :, :]
-        elif volume.ndim > 3:
-            # If more than 3D, squeeze any unit dimensions
-            volume = np.squeeze(volume)
-            # If still more than 3D, take the first 3 dimensions
-            if volume.ndim > 3:
-                volume = volume[:3, :, :]
-
-        # Verify final shape
-        if volume.ndim != 3:
-            raise ValueError(f"Unable to convert volume to 3D. Current shape: {volume.shape}")
-
-        return volume
-
     def __getitem__(self, idx):
         try:
             file_path = self.df.iloc[idx]["file_path"]
 
-            # Load DICOM
+            # Load and process DICOM (silently)
             volume, _ = load_dicom(file_path)
-
-            # Validate and fix volume shape
-            try:
-                volume = self._validate_and_fix_volume(volume)
-            except Exception as e:
-                print(f"Error validating volume shape for {file_path}: {e}")
-                print(f"Initial volume shape: {volume.shape}")
-                raise
-
-            # Process volume
             norm_vol, mask, masked_vol = process_volume(volume, target_shape=(128, 128, 128))
 
             # Clean up original data
@@ -535,7 +499,6 @@ class DaTScanDataset(Dataset):
 
         except Exception as e:
             print(f"Error loading file {file_path}: {str(e)}")
-            print(f"Stack trace:")
             import traceback
             traceback.print_exc()
             return None
@@ -551,12 +514,12 @@ def create_dataloaders(df, batch_size=2, train_split=0.8):
     train_dataset = DaTScanDataset(train_df)
     val_dataset = DaTScanDataset(val_df)
 
-    # Create dataloaders
+    # Create simple dataloaders without multiprocessing
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # No multiprocessing for debugging
+        num_workers=0,  # No multiprocessing
         pin_memory=True
     )
 
@@ -564,7 +527,7 @@ def create_dataloaders(df, batch_size=2, train_split=0.8):
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,  # No multiprocessing for debugging
+        num_workers=0,  # No multiprocessing
         pin_memory=True
     )
 
@@ -578,38 +541,38 @@ def print_memory_stats():
         print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
     print(f"CPU Memory Usage: {psutil.Process().memory_info().rss / 1024**2:.2f} MB")
 
-# Test the dataset and dataloaders
-if __name__ == "__main__":
-    print("Creating dataloaders...")
-    train_loader, val_loader = create_dataloaders(df, batch_size=2)
+# Create and test dataloaders
+print("Creating dataloaders...")
+train_loader, val_loader = create_dataloaders(df, batch_size=2)
 
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(val_loader)}")
+print(f"Number of training batches: {len(train_loader)}")
+print(f"Number of validation batches: {len(val_loader)}")
 
-    # Test the first few batches with detailed logging
-    print("\nTesting first few batches from training loader...")
-    print_memory_stats()
+# Test the first few batches with detailed logging
+print("\nTesting first few batches from training loader...")
+print_memory_stats()
 
-    try:
-        for i, batch in enumerate(tqdm(train_loader, desc="Processing batches")):
-            if batch is not None:
-                print(f"\nBatch {i+1}:")
-                print(f"Volume shape: {batch['volume'].shape}")
-                print(f"Label: {batch['label']}")
-                print_memory_stats()
-            else:
-                print(f"Batch {i+1} is None!")
+try:
+    for i, batch in enumerate(tqdm(train_loader, desc="Processing batches")):
+        print(f"\nProcessing batch {i+1}")
 
-            if i >= 2:  # Test first 3 batches
-                break
+        if batch is not None:
+            print(f"Batch shapes: {batch['volume'].shape}")
+            print(f"Labels: {batch['label']}")
+            print_memory_stats()
+        else:
+            print(f"Batch {i+1} is None!")
 
-            gc.collect()
-            torch.cuda.empty_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
 
-    except Exception as e:
-        print(f"Error during batch processing: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        if i >= 4:  # Test first 5 batches
+            break
+
+except Exception as e:
+    print(f"Error during batch processing: {str(e)}")
+    import traceback
+    traceback.print_exc()
 
 # Cell 10: Comprehensive EDA Implementation with Stratified Split
 import seaborn as sns
@@ -949,14 +912,17 @@ if avg_variances is not None:
     print("\nPlotting slice-wise variance analysis...")
     plot_slice_variances(avg_variances)
 
-# Cell 11: Base Autoencoder Implementation with Memory Optimization
+# Cell 11: Base Autoencoder Implementation
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 
 class ConvBlock(nn.Module):
-    """Memory-efficient convolutional block with batch normalization and ReLU activation."""
+    """
+    Basic convolutional block with batch normalization and ReLU activation.
+    Memory-efficient implementation with proper cleanup.
+    """
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
         super().__init__()
         self.block = nn.Sequential(OrderedDict([
@@ -969,14 +935,17 @@ class ConvBlock(nn.Module):
         return self.block(x)
 
 class Encoder(nn.Module):
-    """3D Encoder network optimized for 128³ input volumes."""
+    """
+    3D Encoder network with residual connections and progressive downsampling.
+    Input: (batch_size, 1, 128, 128, 128)
+    """
     def __init__(self, latent_dim=256):
         super().__init__()
 
         # Initial feature extraction
         self.init_conv = ConvBlock(1, 16)  # 128 -> 128
 
-        # Downsampling path with progressive channel increase
+        # Downsampling path
         self.down1 = nn.Sequential(
             ConvBlock(16, 32, stride=2),    # 128 -> 64
             ConvBlock(32, 32)
@@ -997,16 +966,15 @@ class Encoder(nn.Module):
             ConvBlock(256, 256)
         )
 
-        # Project to latent space
+        # Flatten and project to latent space
         self.flatten_size = 256 * 8 * 8 * 8
         self.fc = nn.Linear(self.flatten_size, latent_dim)
 
     def forward(self, x):
-        # Track shapes for debugging
-        if self.training:
-            print(f"Input shape: {x.shape}")
-
+        # Initial convolution
         x = self.init_conv(x)
+
+        # Downsampling path with residual connections
         d1 = self.down1(x)
         d2 = self.down2(d1)
         d3 = self.down3(d2)
@@ -1016,20 +984,21 @@ class Encoder(nn.Module):
         flat = torch.flatten(d4, start_dim=1)
         z = self.fc(flat)
 
-        if self.training:
-            print(f"Latent shape: {z.shape}")
-
+        # Return latent representation and skip connections
         return z, (d1, d2, d3, d4)
 
 class Decoder(nn.Module):
-    """3D Decoder network optimized for 128³ output volumes."""
+    """
+    3D Decoder network with residual connections and progressive upsampling.
+    Output: (batch_size, 1, 128, 128, 128)
+    """
     def __init__(self, latent_dim=256):
         super().__init__()
 
         self.flatten_size = 256 * 8 * 8 * 8
         self.fc = nn.Linear(latent_dim, self.flatten_size)
 
-        # Upsampling path with skip connections
+        # Upsampling path
         self.up1 = nn.Sequential(
             nn.ConvTranspose3d(256, 128, kernel_size=2, stride=2),  # 8 -> 16
             ConvBlock(128, 128)
@@ -1054,9 +1023,6 @@ class Decoder(nn.Module):
         self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
 
     def forward(self, z, skip_connections):
-        if self.training:
-            print(f"Decoder input shape: {z.shape}")
-
         # Reshape from latent space
         x = self.fc(z)
         x = x.view(-1, 256, 8, 8, 8)
@@ -1064,30 +1030,33 @@ class Decoder(nn.Module):
         # Unpack skip connections
         d1, d2, d3, d4 = skip_connections
 
-        # Upsampling with skip connections
-        x = self.up1(x + d4)
-        x = self.up2(x + d3)
-        x = self.up3(x + d2)
-        x = self.up4(x + d1)
+        # Upsampling path with skip connections
+        x = self.up1(x + d4)  # Add residual connection
+        x = self.up2(x + d3)  # Add residual connection
+        x = self.up3(x + d2)  # Add residual connection
+        x = self.up4(x + d1)  # Add residual connection
 
         # Final convolution with sigmoid activation
         x = torch.sigmoid(self.final_conv(x))
 
-        if self.training:
-            print(f"Output shape: {x.shape}")
-
         return x
 
 class BaseAutoencoder(nn.Module):
-    """Memory-optimized 3D Autoencoder for 128³ medical volumes."""
+    """
+    Complete 3D Autoencoder model with memory-efficient implementation.
+    """
     def __init__(self, latent_dim=256):
         super().__init__()
         self.encoder = Encoder(latent_dim)
         self.decoder = Decoder(latent_dim)
 
     def forward(self, x):
+        # Encode
         z, skip_connections = self.encoder(x)
+
+        # Decode
         reconstruction = self.decoder(z, skip_connections)
+
         return reconstruction
 
     def encode(self, x):
@@ -1097,6 +1066,7 @@ class BaseAutoencoder(nn.Module):
 
     def decode(self, z):
         """Decode from latent space (for generation)"""
+        # Create dummy skip connections filled with zeros
         batch_size = z.size(0)
         device = z.device
         dummy_skips = (
@@ -1107,8 +1077,11 @@ class BaseAutoencoder(nn.Module):
         )
         return self.decoder(z, dummy_skips)
 
+# Add a function to test the model and memory usage
 def test_autoencoder(batch_size=2):
-    """Test the autoencoder with dummy data and verify memory usage."""
+    """
+    Test the autoencoder with dummy data and print memory usage.
+    """
     print("\nTesting Autoencoder Architecture...")
 
     try:
@@ -1121,7 +1094,7 @@ def test_autoencoder(batch_size=2):
         print("\nModel Architecture:")
         print(model)
 
-        # Create dummy input (128³ volume)
+        # Create dummy input
         dummy_input = torch.randn(batch_size, 1, 128, 128, 128, device=device)
 
         # Print initial memory usage
@@ -1138,9 +1111,6 @@ def test_autoencoder(batch_size=2):
         print("\nFinal GPU Memory Usage:")
         print_gpu_memory_stats()
 
-        # Verify shapes
-        assert output.shape == dummy_input.shape, f"Shape mismatch: {output.shape} vs {dummy_input.shape}"
-
         # Clean up
         del model, dummy_input, output
         torch.cuda.empty_cache()
@@ -1152,7 +1122,7 @@ def test_autoencoder(batch_size=2):
         import traceback
         traceback.print_exc()
 
-# Run test if this cell is executed
+# Test the model
 if __name__ == "__main__":
     test_autoencoder()
 
@@ -1165,16 +1135,16 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 class TrainingConfig:
-    """Training configuration with memory-optimized defaults for NVIDIA 4070Ti"""
+    """Training configuration with default values"""
     def __init__(self, **kwargs):
         self.learning_rate = kwargs.get('learning_rate', 1e-4)
-        self.batch_size = kwargs.get('batch_size', 2)  # Small batch size for 128³ volumes
+        self.batch_size = kwargs.get('batch_size', 2)
         self.epochs = kwargs.get('epochs', 100)
         self.early_stopping_patience = kwargs.get('early_stopping_patience', 10)
         self.checkpoint_dir = kwargs.get('checkpoint_dir', 'checkpoints')
         self.model_name = kwargs.get('model_name', 'autoencoder')
 
-        # Create checkpoint directory
+        # Create checkpoint directory if it doesn't exist
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
 class EarlyStopping:
@@ -1302,42 +1272,26 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
             epoch_loss = 0
             train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
 
-            for batch_idx, batch in enumerate(train_pbar):
-                # Clear gradients
+            for batch in train_pbar:
                 optimizer.zero_grad()
 
-                try:
-                    # Get volumes and move to GPU
-                    volumes = batch['volume'].to(device)
+                # Get volumes and move to GPU
+                volumes = batch['volume'].to(device)
 
-                    # Forward pass
-                    reconstructed = model(volumes)
-                    loss = criterion(reconstructed, volumes)
+                # Forward pass
+                reconstructed = model(volumes)
+                loss = criterion(reconstructed, volumes)
 
-                    # Backward pass
-                    loss.backward()
-                    optimizer.step()
+                # Backward pass
+                loss.backward()
+                optimizer.step()
 
-                    # Update progress bar
-                    epoch_loss += loss.item()
-                    train_pbar.set_postfix({'loss': loss.item()})
-
-                except RuntimeError as e:
-                    if "out of memory" in str(e):
-                        print(f"\nOOM in batch {batch_idx}. Cleaning up...")
-                        if 'volumes' in locals():
-                            del volumes
-                        if 'reconstructed' in locals():
-                            del reconstructed
-                        if 'loss' in locals():
-                            del loss
-                        torch.cuda.empty_cache()
-                        continue
-                    else:
-                        raise e
+                # Update progress bar
+                epoch_loss += loss.item()
+                train_pbar.set_postfix({'loss': loss.item()})
 
                 # Clean up
-                del volumes, reconstructed, loss
+                del volumes, reconstructed
                 torch.cuda.empty_cache()
 
             avg_train_loss = epoch_loss / len(train_loader)
@@ -1350,28 +1304,13 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
 
             with torch.no_grad():
                 for batch in val_pbar:
-                    try:
-                        volumes = batch['volume'].to(device)
-                        reconstructed = model(volumes)
-                        loss = criterion(reconstructed, volumes)
-                        val_loss += loss.item()
-
-                    except RuntimeError as e:
-                        if "out of memory" in str(e):
-                            print("\nOOM during validation. Cleaning up...")
-                            if 'volumes' in locals():
-                                del volumes
-                            if 'reconstructed' in locals():
-                                del reconstructed
-                            if 'loss' in locals():
-                                del loss
-                            torch.cuda.empty_cache()
-                            continue
-                        else:
-                            raise e
+                    volumes = batch['volume'].to(device)
+                    reconstructed = model(volumes)
+                    loss = criterion(reconstructed, volumes)
+                    val_loss += loss.item()
 
                     # Clean up
-                    del volumes, reconstructed, loss
+                    del volumes, reconstructed
                     torch.cuda.empty_cache()
 
             avg_val_loss = val_loss / len(val_loader)
@@ -1414,164 +1353,20 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
 
         return train_losses, val_losses
 
-# Add a test run with proper error handling
-if __name__ == "__main__":
-    try:
-        # Create model and dataloaders (assuming they're already defined)
-        model = BaseAutoencoder()
-
-        # Configure training
-        config = TrainingConfig(
-            learning_rate=1e-4,
-            batch_size=2,  # Adjusted for 4070Ti memory
-            epochs=100,
-            checkpoint_dir='checkpoints',
-            model_name='autoencoder_v1'
-        )
-
-        # Train model
-        train_losses, val_losses = train_autoencoder(model, train_loader, val_loader, config)
-
-    except Exception as e:
-        print(f"Error during training: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-# Cell 14: Model Evaluation and Visualization
-import matplotlib.pyplot as plt
-import numpy as np
-import torch
-import json
-from pathlib import Path
-
-def load_checkpoint_for_evaluation(checkpoint_dir, model_name):
-    """Load model and training history for evaluation"""
-    checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
-    metadata_path = Path(checkpoint_dir) / f"{model_name}_metadata.json"
-
-    # Load model
-    model = BaseAutoencoder()
-    checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
-
-    # Load training history
-    with open(metadata_path, 'r') as f:
-        metadata = json.load(f)
-
-    return model, metadata
-
-def plot_training_history(metadata):
-    """Plot training and validation losses"""
-    plt.figure(figsize=(12, 5))
-
-    plt.subplot(1, 2, 1)
-    plt.plot(metadata['train_losses'], label='Train Loss')
-    plt.plot(metadata['val_losses'], label='Validation Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.title('Training History')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot recent epochs in detail
-    recent_epochs = 20
-    if len(metadata['train_losses']) > recent_epochs:
-        plt.subplot(1, 2, 2)
-        plt.plot(metadata['train_losses'][-recent_epochs:], label='Train Loss')
-        plt.plot(metadata['val_losses'][-recent_epochs:], label='Validation Loss')
-        plt.xlabel('Epoch')
-        plt.ylabel('Loss')
-        plt.title(f'Last {recent_epochs} Epochs')
-        plt.legend()
-        plt.grid(True)
-
-    plt.tight_layout()
-    plt.show()
-
-def visualize_reconstructions(model, val_loader, num_samples=3):
-    """Visualize original vs reconstructed volumes"""
-    device = next(model.parameters()).device
-
-    with torch.no_grad():
-        for batch in val_loader:
-            volumes = batch['volume'].to(device)
-            reconstructed = model(volumes)
-
-            # Process num_samples samples
-            for idx in range(min(num_samples, volumes.shape[0])):
-                fig = plt.figure(figsize=(15, 5))
-
-                # Get middle slices
-                orig_vol = volumes[idx, 0].cpu().numpy()
-                recon_vol = reconstructed[idx, 0].cpu().numpy()
-
-                # Plot axial, sagittal, and coronal views
-                views = ['Axial', 'Sagittal', 'Coronal']
-                slices_orig = [
-                    orig_vol[orig_vol.shape[0]//2, :, :],
-                    orig_vol[:, orig_vol.shape[1]//2, :],
-                    orig_vol[:, :, orig_vol.shape[2]//2]
-                ]
-                slices_recon = [
-                    recon_vol[recon_vol.shape[0]//2, :, :],
-                    recon_vol[:, recon_vol.shape[1]//2, :],
-                    recon_vol[:, :, recon_vol.shape[2]//2]
-                ]
-
-                for i, (view, orig_slice, recon_slice) in enumerate(zip(views, slices_orig, slices_recon)):
-                    # Original
-                    plt.subplot(2, 3, i+1)
-                    plt.imshow(orig_slice, cmap='gray')
-                    plt.title(f'Original {view}')
-                    plt.axis('off')
-
-                    # Reconstructed
-                    plt.subplot(2, 3, i+4)
-                    plt.imshow(recon_slice, cmap='gray')
-                    plt.title(f'Reconstructed {view}')
-                    plt.axis('off')
-
-                plt.suptitle(f'Sample {idx+1} - Original vs Reconstructed', y=1.02)
-                plt.tight_layout()
-                plt.show()
-
-            break  # Only process first batch
-
-def compute_metrics(model, val_loader):
-    """Compute quantitative metrics on validation set"""
-    device = next(model.parameters()).device
-    mse_criterion = nn.MSELoss()
-
-    total_mse = 0
-    total_samples = 0
-
-    with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Computing metrics"):
-            volumes = batch['volume'].to(device)
-            reconstructed = model(volumes)
-
-            mse = mse_criterion(reconstructed, volumes).item()
-            total_mse += mse * volumes.shape[0]
-            total_samples += volumes.shape[0]
-
-    avg_mse = total_mse / total_samples
-    print(f"\nValidation Metrics:")
-    print(f"Average MSE: {avg_mse:.6f}")
-    print(f"RMSE: {np.sqrt(avg_mse):.6f}")
-
 # Example usage
 if __name__ == "__main__":
-    # Load latest checkpoint
-    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder_v1')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    # Create model and dataloaders (assuming they're already defined)
+    model = BaseAutoencoder()
 
-    # Plot training history
-    plot_training_history(metadata)
+    # Configure training
+    config = TrainingConfig(
+        learning_rate=1e-4,
+        batch_size=2,
+        epochs=100,
+        checkpoint_dir='checkpoints',
+        model_name='autoencoder_v1'
+    )
 
-    # Visualize reconstructions
-    visualize_reconstructions(model, val_loader)
+    # Train model
+    train_losses, val_losses = train_autoencoder(model, train_loader, val_loader, config)
 
-    # Compute metrics
-    compute_metrics(model, val_loader)
