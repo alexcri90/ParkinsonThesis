@@ -7,7 +7,6 @@ Original file is located at
     https://colab.research.google.com/drive/1zkbb1EDlzyb3Th4K0IOr--4MKPeUN-z5
 """
 
-# Commented out IPython magic to ensure Python compatibility.
 # Cell 1: Install dependencies
 # Uncomment and run the following command if dependencies are not already installed.
 # %pip install scikit-learn scikit-image SimpleITK nibabel nilearn albumentations seaborn pandas numpy matplotlib tqdm pydicom scipy
@@ -998,6 +997,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 
+import torch.cuda.amp as amp
+
+class BaseAutoencoder(nn.Module):
+    """Memory-optimized 3D Autoencoder with mixed precision support."""
+    def __init__(self, latent_dim=256):
+        super().__init__()
+        self.encoder = Encoder(latent_dim)
+        self.decoder = Decoder(latent_dim)
+        # Enable CUDA benchmarking for optimal convolution algorithms
+        torch.backends.cudnn.benchmark = True
+
+    def forward(self, x):
+        # Forward pass remains the same for compatibility
+        z, skip_connections = self.encoder(x)
+        reconstruction = self.decoder(z, skip_connections)
+        return reconstruction
+
 class ConvBlock(nn.Module):
     """Memory-efficient convolutional block with batch normalization and ReLU activation."""
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
@@ -1208,14 +1224,18 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 class TrainingConfig:
-    """Training configuration with memory-optimized defaults for NVIDIA 4070Ti"""
+    """Training configuration optimized for NVIDIA 4070Ti"""
     def __init__(self, **kwargs):
         self.learning_rate = kwargs.get('learning_rate', 1e-4)
-        self.batch_size = kwargs.get('batch_size', 2)  # Small batch size for 128³ volumes
+        self.batch_size = kwargs.get('batch_size', 8)  # Increased from 2 to 8
+        self.accumulation_steps = kwargs.get('accumulation_steps', 4)  # New: gradient accumulation
         self.epochs = kwargs.get('epochs', 100)
         self.early_stopping_patience = kwargs.get('early_stopping_patience', 10)
         self.checkpoint_dir = kwargs.get('checkpoint_dir', 'checkpoints')
         self.model_name = kwargs.get('model_name', 'autoencoder')
+        self.use_mixed_precision = kwargs.get('use_mixed_precision', True)  # Enable by default
+        self.num_workers = kwargs.get('num_workers', 4)  # Optimize data loading
+        self.pin_memory = kwargs.get('pin_memory', True)  # Faster data transfer to GPU
 
         # Create checkpoint directory
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -1306,9 +1326,7 @@ from tqdm.notebook import tqdm
 import matplotlib.pyplot as plt
 
 def train_autoencoder(model, train_loader, val_loader, config=None):
-    """
-    Main training loop with checkpoint support and memory management
-    """
+    """GPU-optimized training loop with mixed precision and gradient accumulation"""
     if config is None:
         config = TrainingConfig()
 
@@ -1322,12 +1340,13 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
     checkpoint_handler = CheckpointHandler(config.checkpoint_dir, config.model_name)
 
-    # Initialize or load training state
+    # Mixed precision setup
+    scaler = amp.GradScaler(enabled=config.use_mixed_precision)
+
+    # Load checkpoint if available
     start_epoch = 0
     train_losses = []
     val_losses = []
-
-    # Try to load checkpoint
     checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
     if checkpoint_data:
         start_epoch = checkpoint_data['epoch'] + 1
@@ -1335,49 +1354,43 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
         val_losses = checkpoint_data['val_losses']
         print(f"Resuming training from epoch {start_epoch}")
 
-    print(f"Training on device: {device}")
-    print(f"Starting training for {config.epochs} epochs")
-
     try:
         for epoch in range(start_epoch, config.epochs):
-            # Training phase
             model.train()
             epoch_loss = 0
+            optimizer.zero_grad()  # Zero gradients at epoch start
+
             train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
 
             for batch_idx, batch in enumerate(train_pbar):
-                # Clear gradients
-                optimizer.zero_grad()
-
                 try:
-                    # Get volumes and move to GPU
-                    volumes = batch['volume'].to(device)
+                    volumes = batch['volume'].to(device, non_blocking=True)
 
-                    # Forward pass
-                    reconstructed = model(volumes)
-                    loss = criterion(reconstructed, volumes)
+                    # Mixed precision forward pass
+                    with amp.autocast(enabled=config.use_mixed_precision):
+                        reconstructed = model(volumes)
+                        loss = criterion(reconstructed, volumes)
+                        # Scale loss by accumulation steps
+                        loss = loss / config.accumulation_steps
 
-                    # Backward pass
-                    loss.backward()
-                    optimizer.step()
+                    # Mixed precision backward pass
+                    scaler.scale(loss).backward()
 
-                    # Update progress bar
-                    epoch_loss += loss.item()
-                    train_pbar.set_postfix({'loss': loss.item()})
+                    # Gradient accumulation
+                    if (batch_idx + 1) % config.accumulation_steps == 0:
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad()
+
+                    epoch_loss += loss.item() * config.accumulation_steps
+                    train_pbar.set_postfix({'loss': loss.item() * config.accumulation_steps})
 
                 except RuntimeError as e:
                     if "out of memory" in str(e):
-                        print(f"\nOOM in batch {batch_idx}. Cleaning up...")
-                        if 'volumes' in locals():
-                            del volumes
-                        if 'reconstructed' in locals():
-                            del reconstructed
-                        if 'loss' in locals():
-                            del loss
+                        print(f"\nOOM in batch {batch_idx}. Adjusting batch size...")
                         torch.cuda.empty_cache()
                         continue
-                    else:
-                        raise e
+                    raise e
 
                 # Clean up
                 del volumes, reconstructed, loss
@@ -1457,22 +1470,20 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
 
         return train_losses, val_losses
 
-# Add a test run with proper error handling
+# TRAINING
 if __name__ == "__main__":
     try:
-        # Create model and dataloaders (assuming they're already defined)
         model = BaseAutoencoder()
-
-        # Configure training
         config = TrainingConfig(
             learning_rate=1e-4,
-            batch_size=6,  # Adjusted for 4070Ti memory
+            batch_size=8,  # Increased batch size
+            accumulation_steps=4,  # Gradient accumulation
             epochs=100,
-            checkpoint_dir='checkpoints',
-            model_name='autoencoder_v1'
+            use_mixed_precision=True,
+            num_workers=4,
+            pin_memory=True
         )
 
-        # Train model
         train_losses, val_losses = train_autoencoder(model, train_loader, val_loader, config)
 
     except Exception as e:
@@ -1606,7 +1617,7 @@ def compute_metrics(model, val_loader):
 # Example usage
 if __name__ == "__main__":
     # Load latest checkpoint
-    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder_v1')
+    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
@@ -1619,171 +1630,445 @@ if __name__ == "__main__":
     # Compute metrics
     compute_metrics(model, val_loader)
 
-# Add to Cell 15: Latent Space Analysis
-
+# Cell 15: Latent Space Analysis
 import torch
-from torch.utils.data import DataLoader
 import numpy as np
-from sklearn.manifold import TSNE
 import seaborn as sns
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
-from tqdm import tqdm
+from collections import defaultdict
 
 def extract_latent_representations(model, dataloader, device):
     """
-    Extract latent representations for all samples in the dataloader
-
-    Args:
-        model: Trained autoencoder model
-        dataloader: DataLoader containing the samples
-        device: Device to run the model on
-
-    Returns:
-        latent_vectors: numpy array of latent representations
-        labels: list of corresponding labels
-        paths: list of file paths (for reference)
+    Extract latent representations and corresponding labels for all samples
     """
     model.eval()
     latent_vectors = []
     labels = []
-    paths = []
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc="Extracting latent representations"):
-            # Move input to device
             volumes = batch['volume'].to(device)
-
-            # Get latent representation (using the encode method from BaseAutoencoder)
-            latent = model.encode(volumes)
-
-            # Store results
-            latent_vectors.append(latent.cpu().numpy())
+            # Get latent vectors using the encode method
+            z = model.encode(volumes)
+            latent_vectors.append(z.cpu().numpy())
             labels.extend(batch['label'])
-            paths.extend(batch['path'])
 
-            # Clean up GPU memory
-            del volumes, latent
+            # Clean up memory
+            del volumes, z
             torch.cuda.empty_cache()
 
-    # Concatenate all latent vectors
-    latent_vectors = np.concatenate(latent_vectors, axis=0)
+    return np.vstack(latent_vectors), np.array(labels)
 
-    return latent_vectors, labels, paths
-
-def visualize_latent_space_tsne(latent_vectors, labels, perplexity=30, random_state=42):
+def visualize_latent_space(latent_vectors, labels, method='tsne'):
     """
-    Visualize latent space using t-SNE
-
-    Args:
-        latent_vectors: numpy array of latent representations
-        labels: list of corresponding labels
-        perplexity: t-SNE perplexity parameter
-        random_state: Random seed for reproducibility
+    Visualize latent space using t-SNE or PCA
     """
-    # Apply t-SNE
-    tsne = TSNE(n_components=2, perplexity=perplexity, random_state=random_state)
-    latent_2d = tsne.fit_transform(latent_vectors)
-
-    # Create DataFrame for easy plotting
-    df = pd.DataFrame({
-        'x': latent_2d[:, 0],
-        'y': latent_2d[:, 1],
-        'label': labels
-    })
-
-    # Set up the plot
     plt.figure(figsize=(12, 8))
 
+    if method == 'tsne':
+        reducer = TSNE(n_components=2, random_state=42)
+        title = 't-SNE Visualization of Latent Space'
+    else:
+        reducer = PCA(n_components=2, random_state=42)
+        title = 'PCA Visualization of Latent Space'
+
+    # Reduce dimensionality
+    reduced_vecs = reducer.fit_transform(latent_vectors)
+
     # Create scatter plot
-    sns.scatterplot(data=df, x='x', y='y', hue='label', style='label', s=100)
+    unique_labels = np.unique(labels)
+    colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_labels)))
 
-    plt.title('t-SNE Visualization of Latent Space')
-    plt.xlabel('t-SNE Component 1')
-    plt.ylabel('t-SNE Component 2')
+    for label, color in zip(unique_labels, colors):
+        mask = labels == label
+        plt.scatter(reduced_vecs[mask, 0], reduced_vecs[mask, 1],
+                   label=label, color=color, alpha=0.6)
 
-    # Add legend
-    plt.legend(title='Patient Group', bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    return reduced_vecs
+
+def analyze_latent_dimensions(latent_vectors, labels):
+    """
+    Analyze the distribution of values in each latent dimension
+    """
+    plt.figure(figsize=(15, 6))
+
+    # Plot distribution of latent values per group
+    unique_labels = np.unique(labels)
+
+    # Compute mean activation per dimension for each group
+    mean_activations = defaultdict(list)
+    for label in unique_labels:
+        mask = labels == label
+        mean_activations[label] = np.mean(latent_vectors[mask], axis=0)
+
+    # Plot heatmap of mean activations
+    activation_matrix = np.vstack([mean_activations[label] for label in unique_labels])
+    plt.subplot(1, 2, 1)
+    sns.heatmap(activation_matrix, xticklabels=False, yticklabels=unique_labels)
+    plt.title('Mean Latent Dimension Activation by Group')
+    plt.xlabel('Latent Dimensions')
+    plt.ylabel('Group')
+
+    # Plot top discriminative dimensions
+    variance_ratio = np.var(activation_matrix, axis=0)
+    top_dims = np.argsort(variance_ratio)[-5:]  # Top 5 dimensions
+
+    plt.subplot(1, 2, 2)
+    for label in unique_labels:
+        mask = labels == label
+        plt.boxplot([latent_vectors[mask, dim] for dim in top_dims],
+                   positions=np.arange(len(top_dims)) + (unique_labels == label).nonzero()[0][0] * 0.3,
+                   widths=0.2, label=label)
+
+    plt.title('Distribution of Top 5 Discriminative Dimensions')
+    plt.xlabel('Dimension Index')
+    plt.ylabel('Activation')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+# Run the analysis
+if __name__ == "__main__":
+    # Load model and move to device
+    model, _ = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Extract latent representations
+    latent_vecs, labels = extract_latent_representations(model, val_loader, device)
+
+    # Visualize using t-SNE and PCA
+    print("Generating t-SNE visualization...")
+    tsne_coords = visualize_latent_space(latent_vecs, labels, method='tsne')
+
+    print("\nGenerating PCA visualization...")
+    pca_coords = visualize_latent_space(latent_vecs, labels, method='pca')
+
+    # Analyze latent dimensions
+    print("\nAnalyzing latent dimensions...")
+    analyze_latent_dimensions(latent_vecs, labels)
+
+# Cell 16: Region-based Reconstruction Analysis
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.ndimage import center_of_mass
+
+def analyze_reconstruction_quality_by_region(model, dataloader, device):
+    """
+    Analyze reconstruction quality in different brain regions
+    """
+    model.eval()
+    region_errors = defaultdict(list)
+
+    # Define regions of interest (approximate coordinates for DaTSCAN)
+    regions = {
+        'Left Striatum': (slice(54, 74), slice(54, 74), slice(44, 64)),
+        'Right Striatum': (slice(54, 74), slice(54, 74), slice(64, 84)),
+        'Background': (slice(0, 20), slice(0, 20), slice(0, 20))
+    }
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Analyzing reconstruction quality"):
+            volumes = batch['volume'].to(device)
+            reconstructed = model(volumes)
+
+            # Calculate error for each region
+            for vol_idx in range(volumes.shape[0]):
+                orig = volumes[vol_idx, 0].cpu().numpy()
+                recon = reconstructed[vol_idx, 0].cpu().numpy()
+
+                for region_name, coords in regions.items():
+                    orig_region = orig[coords]
+                    recon_region = recon[coords]
+                    mse = np.mean((orig_region - recon_region) ** 2)
+                    region_errors[region_name].append(mse)
+
+            # Clean up
+            del volumes, reconstructed
+            torch.cuda.empty_cache()
+
+    # Plot results
+    plt.figure(figsize=(10, 6))
+    plt.boxplot([region_errors[region] for region in regions.keys()],
+                labels=regions.keys())
+    plt.title('Reconstruction Error by Brain Region')
+    plt.ylabel('Mean Squared Error')
+    plt.xticks(rotation=45)
+    plt.grid(True)
+    plt.show()
+
+    # Print summary statistics
+    print("\nReconstruction Error Statistics by Region:")
+    for region in regions.keys():
+        errors = region_errors[region]
+        print(f"\n{region}:")
+        print(f"Mean MSE: {np.mean(errors):.6f}")
+        print(f"Std MSE: {np.std(errors):.6f}")
+        print(f"Min MSE: {np.min(errors):.6f}")
+        print(f"Max MSE: {np.max(errors):.6f}")
+
+# Run the analysis
+if __name__ == "__main__":
+    print("Analyzing reconstruction quality by region...")
+    analyze_reconstruction_quality_by_region(model, val_loader, device)
+
+# Cell 17: Latent Space Clinical Correlation
+import numpy as np
+from scipy.stats import spearmanr
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def analyze_latent_clinical_correlation(latent_vectors, labels):
+    """
+    Analyze correlation between latent dimensions and clinical groups
+    """
+    # Convert labels to numeric for correlation analysis
+    label_mapping = {label: idx for idx, label in enumerate(np.unique(labels))}
+    numeric_labels = np.array([label_mapping[label] for label in labels])
+
+    # Calculate correlation between each latent dimension and the clinical groups
+    correlations = []
+    p_values = []
+
+    for dim_idx in range(latent_vectors.shape[1]):
+        corr, p_val = spearmanr(latent_vectors[:, dim_idx], numeric_labels)
+        correlations.append(corr)
+        p_values.append(p_val)
+
+    # Plot correlation heatmap
+    plt.figure(figsize=(15, 5))
+
+    # Plot correlations
+    plt.subplot(1, 2, 1)
+    significant_dims = np.array(p_values) < 0.05
+    plt.bar(range(len(correlations)), correlations,
+            color=['red' if sig else 'gray' for sig in significant_dims])
+    plt.title('Correlation of Latent Dimensions with Clinical Groups')
+    plt.xlabel('Latent Dimension')
+    plt.ylabel('Correlation Coefficient')
+    plt.grid(True)
+
+    # Plot most discriminative dimensions
+    top_dims = np.argsort(np.abs(correlations))[-5:]
+    plt.subplot(1, 2, 2)
+    for label in np.unique(labels):
+        mask = labels == label
+        values = latent_vectors[mask][:, top_dims]
+        plt.violinplot(values, positions=range(len(top_dims)),
+                      showmeans=True, showextrema=True)
+
+    plt.title('Distribution of Top Discriminative Dimensions')
+    plt.xlabel('Dimension Index')
+    plt.ylabel('Activation')
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary of most significant dimensions
+    print("\nTop 5 Most Discriminative Dimensions:")
+    for dim_idx in top_dims:
+        print(f"\nDimension {dim_idx}:")
+        print(f"Correlation: {correlations[dim_idx]:.3f}")
+        print(f"P-value: {p_values[dim_idx]:.3e}")
+
+# Run the analysis
+if __name__ == "__main__":
+    print("Analyzing latent space clinical correlations...")
+    analyze_latent_clinical_correlation(latent_vecs, labels)
+
+# Cell 18: Synthetic Brain Generation
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+def generate_synthetic_brain(model, dataloader, condition='PD', num_samples=5):
+    """
+    Generate synthetic brain scans by manipulating the latent space
+
+    Args:
+        model: Trained autoencoder model
+        dataloader: DataLoader containing the validation set
+        condition: Target condition ('PD', 'Control', or 'SWEDD')
+        num_samples: Number of synthetic samples to generate
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    # First, get latent representations of real brains
+    print("Extracting latent representations...")
+    latent_vectors = []
+    conditions = []
+
+    with torch.no_grad():
+        for batch in dataloader:
+            volumes = batch['volume'].to(device)
+            labels = batch['label']
+
+            # Get latent vectors
+            z = model.encode(volumes)
+            latent_vectors.append(z.cpu().numpy())
+            conditions.extend(labels)
+
+            del volumes, z
+            torch.cuda.empty_cache()
+
+    latent_vectors = np.vstack(latent_vectors)
+    conditions = np.array(conditions)
+
+    # Calculate mean and covariance of latent vectors for target condition
+    target_mask = conditions == condition
+    target_vectors = latent_vectors[target_mask]
+    latent_mean = np.mean(target_vectors, axis=0)
+    latent_cov = np.cov(target_vectors.T)
+
+    # Generate new latent vectors by sampling from learned distribution
+    print(f"\nGenerating synthetic {condition} brains...")
+    synthetic_vectors = np.random.multivariate_normal(
+        latent_mean,
+        latent_cov + 1e-6 * np.eye(latent_cov.shape[0]),  # Add small value to ensure positive definiteness
+        size=num_samples
+    )
+
+    # Convert to torch tensor and move to device
+    synthetic_vectors = torch.tensor(synthetic_vectors, dtype=torch.float32).to(device)
+
+    # Generate synthetic brains using decoder
+    with torch.no_grad():
+        synthetic_brains = model.decode(synthetic_vectors)
+
+    # Visualize results
+    fig = plt.figure(figsize=(15, 3*num_samples))
+
+    for i in range(num_samples):
+        brain = synthetic_brains[i, 0].cpu().numpy()
+
+        # Get middle slices
+        axial = brain[brain.shape[0]//2, :, :]
+        sagittal = brain[:, brain.shape[1]//2, :]
+        coronal = brain[:, :, brain.shape[2]//2]
+
+        # Plot
+        plt.subplot(num_samples, 3, i*3 + 1)
+        plt.imshow(axial, cmap='gray')
+        plt.title(f'Synthetic {condition} - Axial' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 3, i*3 + 2)
+        plt.imshow(sagittal, cmap='gray')
+        plt.title(f'Synthetic {condition} - Sagittal' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 3, i*3 + 3)
+        plt.imshow(coronal, cmap='gray')
+        plt.title(f'Synthetic {condition} - Coronal' if i == 0 else '')
+        plt.axis('off')
 
     plt.tight_layout()
     plt.show()
 
-    return df, latent_2d
+    return synthetic_brains
 
-# Example usage:
-if __name__ == "__main__":
-    # Load the trained model
-    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder_v1')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+def interpolate_between_conditions(model, dataloader, start_condition='Control', end_condition='PD', steps=5):
+    """
+    Generate interpolated brains between two conditions
+    """
+    device = next(model.parameters()).device
+    model.eval()
 
+    # Get latent representations
     print("Extracting latent representations...")
-    latent_vectors, labels, paths = extract_latent_representations(model, val_loader, device)
+    latent_vectors = []
+    conditions = []
 
-    print("Visualizing latent space...")
-    df, latent_2d = visualize_latent_space_tsne(latent_vectors, labels)
+    with torch.no_grad():
+        for batch in dataloader:
+            volumes = batch['volume'].to(device)
+            labels = batch['label']
 
-    # Print some statistics
-    print("\nSamples per group:")
-    print(df['label'].value_counts())
+            z = model.encode(volumes)
+            latent_vectors.append(z.cpu().numpy())
+            conditions.extend(labels)
 
-# Add to Cell 15.5: Data Pipeline Verification
+            del volumes, z
+            torch.cuda.empty_cache()
 
-def verify_data_pipeline():
-    """
-    Verify each step of the data pipeline to identify where Control group data might be lost
-    """
-    # 1. Check original file collection
-    print("Step 1: Verifying file collection...")
-    included_files, excluded_files = collect_files(base_dir)
+    latent_vectors = np.vstack(latent_vectors)
+    conditions = np.array(conditions)
 
-    # Count files by group
-    group_counts = {}
-    for file_path, label in included_files:
-        group_counts[label] = group_counts.get(label, 0) + 1
+    # Get mean latent vectors for both conditions
+    start_mean = np.mean(latent_vectors[conditions == start_condition], axis=0)
+    end_mean = np.mean(latent_vectors[conditions == end_condition], axis=0)
 
-    print("\nFile counts by group after collection:")
-    for group, count in group_counts.items():
-        print(f"{group}: {count} files")
+    # Create interpolation steps
+    alphas = np.linspace(0, 1, steps)
+    interpolated_vectors = np.array([
+        (1 - alpha) * start_mean + alpha * end_mean
+        for alpha in alphas
+    ])
 
-    # 2. Check DataFrame creation
-    print("\nStep 2: Verifying DataFrame creation...")
-    df = generate_dataframe(included_files)
-    print("\nDataFrame group distribution:")
-    print(df['label'].value_counts())
+    # Generate interpolated brains
+    interpolated_vectors = torch.tensor(interpolated_vectors, dtype=torch.float32).to(device)
 
-    # 3. Check DataLoader contents
-    print("\nStep 3: Verifying DataLoader contents...")
-    train_loader, val_loader = create_dataloaders(df, batch_size=2)
+    with torch.no_grad():
+        interpolated_brains = model.decode(interpolated_vectors)
 
-    # Sample a few batches from validation loader
-    print("\nSampling validation loader labels:")
-    label_counts = {}
-    for i, batch in enumerate(val_loader):
-        if i >= 5:  # Check first 5 batches
-            break
-        labels = batch['label']
-        for label in labels:
-            label_counts[label] = label_counts.get(label, 0) + 1
+    # Visualize interpolation
+    fig = plt.figure(figsize=(15, 3*steps))
 
-    print("\nLabel counts in sampled validation batches:")
-    for label, count in label_counts.items():
-        print(f"{label}: {count}")
+    for i in range(steps):
+        brain = interpolated_brains[i, 0].cpu().numpy()
 
-    # 4. Check model outputs
-    print("\nStep 4: Verifying model outputs...")
-    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder_v1')
+        # Get middle slices
+        axial = brain[brain.shape[0]//2, :, :]
+        sagittal = brain[:, brain.shape[1]//2, :]
+        coronal = brain[:, :, brain.shape[2]//2]
+
+        # Plot
+        plt.subplot(steps, 3, i*3 + 1)
+        plt.imshow(axial, cmap='gray')
+        plt.title(f'Interpolation {i/(steps-1):.1f} - Axial' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(steps, 3, i*3 + 2)
+        plt.imshow(sagittal, cmap='gray')
+        plt.title(f'Interpolation {i/(steps-1):.1f} - Sagittal' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(steps, 3, i*3 + 3)
+        plt.imshow(coronal, cmap='gray')
+        plt.title(f'Interpolation {i/(steps-1):.1f} - Coronal' if i == 0 else '')
+        plt.axis('off')
+
+    plt.suptitle(f'Interpolation from {start_condition} to {end_condition}')
+    plt.tight_layout()
+    plt.show()
+
+    return interpolated_brains
+
+# Run the generation
+if __name__ == "__main__":
+    # Load model
+    model, _ = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    # Sample one batch and check latent representations
-    for batch in val_loader:
-        volumes = batch['volume'].to(device)
-        with torch.no_grad():
-            latent = model.encode(volumes)
-        print("\nBatch information:")
-        print(f"Labels in batch: {batch['label']}")
-        print(f"Latent shape: {latent.shape}")
-        break
+    # Generate synthetic brains for each condition
+    print("\nGenerating synthetic Control brains...")
+    synthetic_control = generate_synthetic_brain(model, val_loader, condition='Control')
 
-if __name__ == "__main__":
-    verify_data_pipeline()
+    print("\nGenerating synthetic PD brains...")
+    synthetic_pd = generate_synthetic_brain(model, val_loader, condition='PD')
+
+    print("\nGenerating synthetic SWEDD brains...")
+    synthetic_swedd = generate_synthetic_brain(model, val_loader, condition='SWEDD')
+
+    # Generate interpolation between conditions
+    print("\nGenerating interpolation from Control to PD...")
+    interpolated = interpolate_between_conditions(model, val_loader)
