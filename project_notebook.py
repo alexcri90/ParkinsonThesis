@@ -2677,6 +2677,20 @@ def train_vae(model, train_loader, val_loader, config=None):
 
     return train_losses, val_losses
 
+def create_vae_optimizer(model, config):
+    """Create optimizer for VAE training."""
+    return torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+
+def create_vae_scheduler(optimizer):
+    """Create learning rate scheduler for VAE training."""
+    return torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=5,
+        verbose=True
+    )
+
 # TRAINING
 
 if __name__ == "__main__":
