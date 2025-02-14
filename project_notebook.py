@@ -2930,3 +2930,7 @@ if __name__ == "__main__":
     print("\nAnalyzing latent space...")
     latent_vectors, labels = analyze_latent_space(model, val_loader)
 
+"""## 3. VAE Semi-Supervised
+
+### Model Setup
+"""
