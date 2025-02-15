@@ -2432,9 +2432,9 @@ class VAEConfig:
         self.learning_rate = 1e-4
 
         # Training parameters
-        self.batch_size = 2  # Conservative batch size for 12GB VRAM
+        self.batch_size = 8  # Conservative batch size for 12GB VRAM
         self.epochs = 100
-        self.accumulation_steps = 4  # Gradient accumulation for effective batch size of 8
+        self.accumulation_steps = 4  # Gradient accumulation for effective batch size of 32
 
         # Loss parameters
         self.beta_start = 0.0
@@ -2934,3 +2934,712 @@ if __name__ == "__main__":
 
 ### Model Setup
 """
+
+# Cell 27: Semi-Supervised Model Architecture
+# Common imports
+import os
+import time
+from pathlib import Path
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm.notebook import tqdm
+from collections import OrderedDict
+
+# PyTorch imports
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.cuda.amp as amp
+
+# Sklearn imports
+from sklearn.metrics import confusion_matrix, classification_report
+
+# Visualization
+import seaborn as sns
+
+class SemiSupervisedAE(nn.Module):
+    """
+    Semi-supervised autoencoder with classification branch.
+    Optimized for 128³ medical volumes on NVIDIA 4070Ti.
+    """
+    def __init__(self, latent_dim=256, num_classes=3):
+        super().__init__()
+        self.encoder = SSEncoder(latent_dim)
+        self.decoder = SSDecoder(latent_dim)
+        self.classifier = nn.Sequential(
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            nn.Linear(128, num_classes)
+        )
+        torch.backends.cudnn.benchmark = True
+
+    def forward(self, x):
+        # Encode input
+        z, skip_connections = self.encoder(x)
+
+        # Generate reconstruction
+        reconstruction = self.decoder(z, skip_connections)
+
+        # Generate classification
+        classification = self.classifier(z)
+
+        return reconstruction, classification, z
+
+class ConvBlock(nn.Module):
+    """Memory-efficient convolutional block."""
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        self.block = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding)),
+            ('bn', nn.BatchNorm3d(out_channels)),
+            ('relu', nn.ReLU(inplace=True))
+        ]))
+
+    def forward(self, x):
+        return self.block(x)
+
+class SSEncoder(nn.Module):
+    """Encoder network with shared features for reconstruction and classification."""
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        # Initial feature extraction
+        self.init_conv = ConvBlock(1, 16)  # 128 -> 128
+
+        # Downsampling path
+        self.down1 = nn.Sequential(
+            ConvBlock(16, 32, stride=2),    # 128 -> 64
+            ConvBlock(32, 32)
+        )
+
+        self.down2 = nn.Sequential(
+            ConvBlock(32, 64, stride=2),    # 64 -> 32
+            ConvBlock(64, 64)
+        )
+
+        self.down3 = nn.Sequential(
+            ConvBlock(64, 128, stride=2),   # 32 -> 16
+            ConvBlock(128, 128)
+        )
+
+        self.down4 = nn.Sequential(
+            ConvBlock(128, 256, stride=2),  # 16 -> 8
+            ConvBlock(256, 256)
+        )
+
+        # Project to latent space
+        self.flatten_size = 256 * 8 * 8 * 8
+        self.fc = nn.Linear(self.flatten_size, latent_dim)
+
+    def forward(self, x):
+        x = self.init_conv(x)
+        d1 = self.down1(x)
+        d2 = self.down2(d1)
+        d3 = self.down3(d2)
+        d4 = self.down4(d3)
+
+        # Flatten and project to latent space
+        flat = torch.flatten(d4, start_dim=1)
+        z = self.fc(flat)
+
+        return z, (d1, d2, d3, d4)
+
+class SSDecoder(nn.Module):
+    """Decoder network for reconstruction."""
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        self.flatten_size = 256 * 8 * 8 * 8
+        self.fc = nn.Linear(latent_dim, self.flatten_size)
+
+        # Upsampling path
+        self.up1 = nn.Sequential(
+            nn.ConvTranspose3d(256, 128, kernel_size=2, stride=2),  # 8 -> 16
+            ConvBlock(128, 128)
+        )
+
+        self.up2 = nn.Sequential(
+            nn.ConvTranspose3d(128, 64, kernel_size=2, stride=2),   # 16 -> 32
+            ConvBlock(64, 64)
+        )
+
+        self.up3 = nn.Sequential(
+            nn.ConvTranspose3d(64, 32, kernel_size=2, stride=2),    # 32 -> 64
+            ConvBlock(32, 32)
+        )
+
+        self.up4 = nn.Sequential(
+            nn.ConvTranspose3d(32, 16, kernel_size=2, stride=2),    # 64 -> 128
+            ConvBlock(16, 16)
+        )
+
+        # Final convolution
+        self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
+
+    def forward(self, z, skip_connections):
+        # Reshape from latent space
+        x = self.fc(z)
+        x = x.view(-1, 256, 8, 8, 8)
+
+        # Unpack skip connections
+        d1, d2, d3, d4 = skip_connections
+
+        # Upsampling with skip connections
+        x = self.up1(x + d4)
+        x = self.up2(x + d3)
+        x = self.up3(x + d2)
+        x = self.up4(x + d1)
+
+        # Final convolution with sigmoid activation
+        x = torch.sigmoid(self.final_conv(x))
+
+        return x
+
+# Cell 28: Training Configuration
+class SSAEConfig:
+    """Configuration for semi-supervised training."""
+    def __init__(self):
+        # Model parameters
+        self.latent_dim = 256
+        self.num_classes = 3
+        self.learning_rate = 1e-4
+
+        # Loss weights
+        self.recon_weight = 1.0
+        self.class_weight = 0.5
+
+        # Training parameters
+        self.batch_size = 8
+        self.epochs = 100
+        self.accumulation_steps = 4
+
+        # Early stopping
+        self.patience = 10
+        self.min_delta = 1e-6
+
+        # Optimization
+        self.use_amp = True
+        self.num_workers = 4
+        self.pin_memory = True
+
+        # Checkpoint configuration
+        self.checkpoint_dir = 'checkpoints'
+        self.model_name = 'ssae'
+        Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+class SSAELoss:
+    """Combined loss for semi-supervised training."""
+    def __init__(self, recon_weight=1.0, class_weight=0.5):
+        self.recon_weight = recon_weight
+        self.class_weight = class_weight
+        self.recon_criterion = nn.MSELoss()
+        self.class_criterion = nn.CrossEntropyLoss()
+
+    def __call__(self, recon, target, class_pred, class_target):
+        recon_loss = self.recon_criterion(recon, target)
+        class_loss = self.class_criterion(class_pred, class_target)
+
+        total_loss = (self.recon_weight * recon_loss +
+                     self.class_weight * class_loss)
+
+        return total_loss, recon_loss, class_loss
+
+# Cell 29: Label Processing
+def process_labels(labels):
+    """Convert string labels to tensor indices."""
+    label_map = {'Control': 0, 'PD': 1, 'SWEDD': 2}
+    return torch.tensor([label_map[label] for label in labels])
+
+def create_class_weights(dataloader):
+    """Calculate class weights for balanced training."""
+    label_counts = torch.zeros(3)
+    for batch in dataloader:
+        labels = process_labels(batch['label'])
+        for label in labels:
+            label_counts[label] += 1
+
+    total = label_counts.sum()
+    class_weights = total / (3 * label_counts)
+    return class_weights
+
+# Cell 30: Checkpoint Handler
+class SSAECheckpointHandler:
+    """Handles saving and loading of model checkpoints."""
+    def __init__(self, checkpoint_dir, model_name):
+        self.checkpoint_dir = Path(checkpoint_dir)
+        self.model_name = model_name
+        self.checkpoint_path = self.checkpoint_dir / f"{model_name}_checkpoint.pth"
+        self.metadata_path = self.checkpoint_dir / f"{model_name}_metadata.json"
+
+    def save(self, model, optimizer, scheduler, epoch, metrics):
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+            'metrics': metrics
+        }
+        torch.save(checkpoint, self.checkpoint_path)
+
+        metadata = {
+            'last_epoch': epoch,
+            'metrics': metrics,
+            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(self.metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=4)
+
+    def load(self, model, optimizer, scheduler):
+        if not self.checkpoint_path.exists():
+            return None
+
+        checkpoint = torch.load(self.checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if scheduler and checkpoint['scheduler_state_dict']:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        return checkpoint['epoch'], checkpoint['metrics']
+
+# Cell 31: Training Loop
+import torch.cuda.amp as amp
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+
+def train_ssae(model, train_loader, val_loader, config=None):
+    """Training loop with memory optimization for NVIDIA 4070Ti."""
+    if config is None:
+        config = SSAEConfig()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    # Initialize components
+    criterion = SSAELoss(config.recon_weight, config.class_weight)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    scaler = amp.GradScaler(enabled=config.use_amp)
+    checkpoint_handler = SSAECheckpointHandler(config.checkpoint_dir, config.model_name)
+
+    # Training tracking
+    best_val_loss = float('inf')
+    patience_counter = 0
+    metrics = {
+        'train_losses': [], 'val_losses': [],
+        'train_recon': [], 'val_recon': [],
+        'train_class': [], 'val_class': [],
+        'train_acc': [], 'val_acc': []
+    }
+
+    # Load checkpoint if available
+    start_epoch = 0
+    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
+    if checkpoint_data:
+        start_epoch, metrics = checkpoint_data
+        print(f"Resuming training from epoch {start_epoch + 1}")
+
+    try:
+        for epoch in range(start_epoch, config.epochs):
+            # Training phase
+            model.train()
+            train_loss = train_recon = train_class = 0
+            correct_preds = total_preds = 0
+
+            train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
+
+            for i, batch in enumerate(train_pbar):
+                try:
+                    volumes = batch['volume'].to(device, non_blocking=True)
+                    labels = process_labels(batch['label']).to(device)
+
+                    # Forward pass with mixed precision
+                    with amp.autocast(enabled=config.use_amp):
+                        recon, class_pred, _ = model(volumes)
+                        loss, recon_l, class_l = criterion(recon, volumes, class_pred, labels)
+                        loss = loss / config.accumulation_steps
+
+                    # Backward pass
+                    scaler.scale(loss).backward()
+
+                    # Gradient accumulation
+                    if (i + 1) % config.accumulation_steps == 0:
+                        scaler.step(optimizer)
+                        scaler.update()
+                        optimizer.zero_grad()
+
+                    # Track metrics
+                    train_loss += loss.item() * config.accumulation_steps
+                    train_recon += recon_l.item()
+                    train_class += class_l.item()
+
+                    # Track accuracy
+                    pred = class_pred.argmax(dim=1)
+                    correct_preds += (pred == labels).sum().item()
+                    total_preds += labels.size(0)
+
+                    # Update progress bar
+                    train_pbar.set_postfix({
+                        'loss': loss.item() * config.accumulation_steps,
+                        'recon': recon_l.item(),
+                        'class': class_l.item(),
+                        'acc': correct_preds/total_preds
+                    })
+
+                    # Clean up
+                    del volumes, labels, recon, class_pred
+                    torch.cuda.empty_cache()
+
+                except RuntimeError as e:
+                    if "out of memory" in str(e):
+                        print(f"\nOOM in batch {i}. Cleaning up...")
+                        if 'volumes' in locals():
+                            del volumes
+                        if 'recon' in locals():
+                            del recon
+                        torch.cuda.empty_cache()
+                        continue
+                    raise e
+
+            # Validation phase
+            model.eval()
+            val_loss = val_recon = val_class = 0
+            val_correct = val_total = 0
+            all_preds = []
+            all_labels = []
+
+            val_pbar = tqdm(val_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Val]')
+
+
+            with torch.no_grad():
+                for batch in val_pbar:
+                    try:
+                        volumes = batch['volume'].to(device)
+                        labels = process_labels(batch['label']).to(device)
+
+                        recon, class_pred, _ = model(volumes)
+                        loss, recon_l, class_l = criterion(recon, volumes, class_pred, labels)
+
+                        val_loss += loss.item()
+                        val_recon += recon_l.item()
+                        val_class += class_l.item()
+
+                        # Track predictions for metrics
+                        pred = class_pred.argmax(dim=1)
+                        val_correct += (pred == labels).sum().item()
+                        val_total += labels.size(0)
+
+                        all_preds.extend(pred.cpu().numpy())
+                        all_labels.extend(labels.cpu().numpy())
+
+                        val_pbar.set_postfix({
+                            'loss': loss.item(),
+                            'acc': val_correct/val_total
+                        })
+
+                        del volumes, labels, recon, class_pred
+                        torch.cuda.empty_cache()
+
+                    except RuntimeError as e:
+                        if "out of memory" in str(e):
+                            print("\nOOM during validation. Cleaning up...")
+                            if 'volumes' in locals():
+                                del volumes
+                            if 'recon' in locals():
+                                del recon
+                            torch.cuda.empty_cache()
+                            continue
+                        raise e
+
+            # Calculate epoch metrics
+            train_metrics = {
+                'loss': train_loss / len(train_loader),
+                'recon': train_recon / len(train_loader),
+                'class': train_class / len(train_loader),
+                'acc': correct_preds / total_preds
+            }
+
+            val_metrics = {
+                'loss': val_loss / len(val_loader),
+                'recon': val_recon / len(val_loader),
+                'class': val_class / len(val_loader),
+                'acc': val_correct / val_total
+            }
+
+            # Update tracking metrics
+            metrics['train_losses'].append(train_metrics['loss'])
+            metrics['val_losses'].append(val_metrics['loss'])
+            metrics['train_recon'].append(train_metrics['recon'])
+            metrics['val_recon'].append(val_metrics['recon'])
+            metrics['train_class'].append(train_metrics['class'])
+            metrics['val_class'].append(val_metrics['class'])
+            metrics['train_acc'].append(train_metrics['acc'])
+            metrics['val_acc'].append(val_metrics['acc'])
+
+            # Update learning rate
+            scheduler.step(val_metrics['loss'])
+
+            # Save checkpoint
+            checkpoint_handler.save(model, optimizer, scheduler, epoch, metrics)
+
+            # Print epoch summary
+            print(f"\nEpoch {epoch+1}/{config.epochs}")
+            print("Training Metrics:")
+            print(f"Loss: {train_metrics['loss']:.6f}")
+            print(f"Recon Loss: {train_metrics['recon']:.6f}")
+            print(f"Class Loss: {train_metrics['class']:.6f}")
+            print(f"Accuracy: {train_metrics['acc']:.2%}")
+
+            print("\nValidation Metrics:")
+            print(f"Loss: {val_metrics['loss']:.6f}")
+            print(f"Recon Loss: {val_metrics['recon']:.6f}")
+            print(f"Class Loss: {val_metrics['class']:.6f}")
+            print(f"Accuracy: {val_metrics['acc']:.2%}")
+
+            # Early stopping check
+            if val_metrics['loss'] < best_val_loss - config.min_delta:
+                best_val_loss = val_metrics['loss']
+                patience_counter = 0
+                # Save best model
+                torch.save(model.state_dict(),
+                         os.path.join(config.checkpoint_dir, f'{config.model_name}_best.pth'))
+            else:
+                patience_counter += 1
+                if patience_counter >= config.patience:
+                    print(f"\nEarly stopping triggered at epoch {epoch+1}")
+                    break
+
+            # Print memory stats
+            print("\nGPU Memory Stats:")
+            print_gpu_memory_stats()
+
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user!")
+
+    finally:
+        # Plot training history
+        plot_training_history(metrics)
+
+    return metrics
+
+def plot_training_history(metrics):
+    """Plot training and validation metrics history."""
+    plt.figure(figsize=(15, 10))
+
+    # Plot losses
+    plt.subplot(2, 2, 1)
+    plt.plot(metrics['train_losses'], label='Train Loss')
+    plt.plot(metrics['val_losses'], label='Val Loss')
+    plt.title('Total Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # Plot reconstruction loss
+    plt.subplot(2, 2, 2)
+    plt.plot(metrics['train_recon'], label='Train Recon')
+    plt.plot(metrics['val_recon'], label='Val Recon')
+    plt.title('Reconstruction Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # Plot classification loss
+    plt.subplot(2, 2, 3)
+    plt.plot(metrics['train_class'], label='Train Class')
+    plt.plot(metrics['val_class'], label='Val Class')
+    plt.title('Classification Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+
+    # Plot accuracy
+    plt.subplot(2, 2, 4)
+    plt.plot(metrics['train_acc'], label='Train Acc')
+    plt.plot(metrics['val_acc'], label='Val Acc')
+    plt.title('Classification Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.show()
+
+# Cell 32: Model Evaluation
+def evaluate_model(model, val_loader, config=None):
+    """Comprehensive model evaluation including reconstruction and classification metrics."""
+    if config is None:
+        config = SSAEConfig()
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    model.eval()
+
+    # Initialize metrics
+    val_recon_loss = 0
+    val_class_loss = 0
+    all_preds = []
+    all_labels = []
+    reconstructions = []
+    originals = []
+
+    criterion = SSAELoss(config.recon_weight, config.class_weight)
+
+    with torch.no_grad():
+        for batch in tqdm(val_loader, desc="Evaluating"):
+            volumes = batch['volume'].to(device)
+            labels = process_labels(batch['label']).to(device)
+
+            recon, class_pred, _ = model(volumes)
+            _, recon_l, class_l = criterion(recon, volumes, class_pred, labels)
+
+            val_recon_loss += recon_l.item()
+            val_class_loss += class_l.item()
+
+            pred = class_pred.argmax(dim=1)
+            all_preds.extend(pred.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+
+            # Store some examples for visualization
+            if len(reconstructions) < 5:
+                reconstructions.append(recon.cpu().numpy())
+                originals.append(volumes.cpu().numpy())
+
+    # Calculate average losses
+    avg_recon_loss = val_recon_loss / len(val_loader)
+    avg_class_loss = val_class_loss / len(val_loader)
+
+    # Print classification report
+    label_names = ['Control', 'PD', 'SWEDD']
+    print("\nClassification Report:")
+    print(classification_report(all_labels, all_preds, target_names=label_names))
+
+    # Plot confusion matrix
+    cm = confusion_matrix(all_labels, all_preds)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                xticklabels=label_names,
+                yticklabels=label_names)
+    plt.title('Confusion Matrix')
+    plt.xlabel('Predicted')
+    plt.ylabel('True')
+    plt.show()
+
+    # Visualize reconstructions
+    visualize_reconstructions(originals, reconstructions, label_names,
+                            [label_names[l] for l in all_labels[:5]])
+
+    return {
+        'recon_loss': avg_recon_loss,
+        'class_loss': avg_class_loss,
+        'predictions': all_preds,
+        'true_labels': all_labels
+    }
+
+def visualize_reconstructions(originals, reconstructions, label_names, true_labels):
+    """Visualize original vs reconstructed volumes."""
+    num_samples = len(originals)
+    plt.figure(figsize=(15, 3*num_samples))
+
+    for i in range(num_samples):
+        orig = originals[i][0]
+        recon = reconstructions[i][0]
+
+        # Get middle slices
+        orig_axial = orig[orig.shape[0]//2, :, :]
+        orig_sagittal = orig[:, orig.shape[1]//2, :]
+        orig_coronal = orig[:, :, orig.shape[2]//2]
+
+        recon_axial = recon[recon.shape[0]//2, :, :]
+        recon_sagittal = recon[:, recon.shape[1]//2, :]
+        recon_coronal = recon[:, :, recon.shape[2]//2]
+
+        # Plot original
+        plt.subplot(num_samples, 6, i*6 + 1)
+        plt.imshow(orig_axial, cmap='gray')
+        plt.title(f'Original Axial\n{true_labels[i]}' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 6, i*6 + 2)
+        plt.imshow(orig_sagittal, cmap='gray')
+        plt.title('Original Sagittal' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 6, i*6 + 3)
+        plt.imshow(orig_coronal, cmap='gray')
+        plt.title('Original Coronal' if i == 0 else '')
+        plt.axis('off')
+
+        # Plot reconstruction
+        plt.subplot(num_samples, 6, i*6 + 4)
+        plt.imshow(recon_axial, cmap='gray')
+        plt.title('Reconstructed Axial' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 6, i*6 + 5)
+        plt.imshow(recon_sagittal, cmap='gray')
+        plt.title('Reconstructed Sagittal' if i == 0 else '')
+        plt.axis('off')
+
+        plt.subplot(num_samples, 6, i*6 + 6)
+        plt.imshow(recon_coronal, cmap='gray')
+        plt.title('Reconstructed Coronal' if i == 0 else '')
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+# Cell 33: Smart Training Cell
+def initialize_training():
+    """Initialize or resume training based on checkpoint existence."""
+    config = SSAEConfig()
+    model = SemiSupervisedAE(
+        latent_dim=config.latent_dim,
+        num_classes=config.num_classes
+    )
+
+    # Check for existing checkpoint
+    checkpoint_path = Path(config.checkpoint_dir) / f"{config.model_name}_checkpoint.pth"
+    if checkpoint_path.exists():
+        print("\nFound existing checkpoint. Resuming training...")
+    else:
+        print("\nNo checkpoint found. Starting new training...")
+
+    return model, config
+
+if __name__ == "__main__":
+    training_completed = False
+
+    try:
+        # Initialize or resume
+        model, config = initialize_training()
+
+        # Start or resume training
+        metrics = train_ssae(model, train_loader, val_loader, config)
+
+        # Set flag for successful completion
+        training_completed = True
+
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user. Progress has been saved to checkpoint.")
+        print("Run this cell again to resume training from the last checkpoint.")
+    except Exception as e:
+        print(f"\nError during execution: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+    # Only run evaluation if training completed normally
+    if training_completed:
+        try:
+            print("\nTraining completed successfully. Starting evaluation...")
+            evaluation_results = evaluate_model(model, val_loader, config)
+            print("\nEvaluation completed. Results saved in 'evaluation_results'")
+        except Exception as e:
+            print(f"\nError during evaluation: {str(e)}")
+            traceback.print_exc()
+
