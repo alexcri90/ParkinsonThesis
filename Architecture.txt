@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<architecture>
+    <introduction>
+        The objective of this project is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. By leveraging unsupervised learning techniques, the goal is to uncover intrinsic patterns and features within the imaging data that could enhance the understanding of Parkinson's Disease progression.
+    </introduction>
+    <data_understanding>
+        <data_sources>
+            <source_1>
+                <name>Parkinson's Progression Markers Initiative (PPMI)</name>
+                <description>The PPMI dataset is a large, multicenter study that aims to identify biomarkers of Parkinson's Disease progression.</description>
+                <link>https://www.ppmi-info.org/</link>
+            </source_1>
+        </data_sources>
+        <dataset_description>
+            <dicom_structure>
+                The dataset is organized in a nested structure, as follows:
+                - **Images Folder**: Contains three subfolders:
+                    - **PPMI_Images_PD**: Folder for PD images.
+                    - **PPMI_Images_SWEDD**: Folder for SWEDD images.
+                    - **PPMI_Images_Cont**: Folder for Control images.
+                - **Patient ID Folder**: Each patient has a unique numerical code as the folder name.
+                - **Reconstructed_DaTSCAN Folder**: A folder named "Reconstructed_DaTSCAN".
+                - **Exam Date Folders**: Each exam is stored in a folder named with the format `YYYY_MM_DD_hh_mm_ss.v` (Year, Month, Day, Hours, Minutes, Seconds, Version).
+                - **Exam Identifier Folder**: Named with `I<exam_code>`, for example, `I123456`.
+                - **DICOM File**: The image file, named like `S<some_numbers>_I<some_numbers>.dcm`.
+            </dicom_structure>
+            <example_path>
+                Images/PPMI_Images_PD/3000/Reconstructed_DaTSCAN/2011-01-20_16_28_47.0/I323662/PPMI_3000_NM_Reconstructed_DaTSCAN_Br_20120814154829508_1_S117534_I323662.dcm
+            </example_path>
+        </dataset_description>
+    </data_understanding>
+    <project_setup>
+        <dependencies>
+            <installation>
+                Required packages to be installed:
+                - scikit-learn, scikit-image: For image processing
+                - SimpleITK: Medical image I/O
+                - nibabel, nilearn: Neuroimaging tools
+                - albumentations: Image augmentation
+                - seaborn: Statistical visualization
+                - torch: Deep learning framework
+                - pandas, numpy: Data manipulation
+                - matplotlib: Plotting
+                - tqdm: Progress bars
+                - pydicom: DICOM file handling
+                - scipy: Scientific computing
+                - gc: Garbage collection
+            </installation>
+        </dependencies>
+        <gpu_setup>
+            - Configure CUDA device detection
+            - Set memory management options for NVIDIA 4070Ti
+            - Enable CUDNN benchmarking
+            - Implement memory tracking utilities
+        </gpu_setup>
+    </project_setup>
+    <ingestion_and_preprocessing>
+        <data_loading>
+            <file_collection>
+                <path_validation>
+                - Primary validation rule: Exclude ANY file containing "br_raw" in path
+                - Implement strict pattern matching for "br_raw" string
+                - Log all excluded files for quality assurance
+                - Raise warning if proportion of raw files is unexpectedly high
+                </path_validation>
+                <collection_steps>
+                - Traverse nested folder structure recursively
+                - Apply raw file exclusion BEFORE any other processing
+                - Create DataFrame with validated paths and labels
+                - Track statistics of excluded vs included files
+                - Save clean paths to CSV for reproducibility
+                </collection_steps>
+                <quality_assurance>
+                - Verify no "br_raw" files made it through filtering
+                - Document proportion of excluded files
+                - Validate final path structure matches expected pattern
+                - Generate QA report of file selection process
+                </quality_assurance>
+            </file_collection>
+            <dicom_handling>
+                - Load DICOM with pydicom
+                - Extract pixel arrays as float32
+                - Apply RescaleSlope and RescaleIntercept
+                - Implement memory-efficient batch loading
+                - Track DICOM orientation information
+            </dicom_handling>
+        </data_loading>
+        <data_preprocessing>
+            <intensity_normalization>
+                - Set minimum to 0
+                - Truncate negative values
+                - Apply min-max scaling per volume
+                - Validate normalization ranges
+            </intensity_normalization>
+            <volume_processing>
+                - Target shape: (128, 128, 128)
+                - Preserve aspect ratio using zero-padding
+                - Apply symmetrical padding around brain
+                - Implement memory-efficient resizing
+            </volume_processing>
+            <brain_masking>
+                - Apply Otsu thresholding
+                - Perform morphological operations
+                - Validate mask coverage
+                - Preserve anatomical proportions
+            </brain_masking>
+            <dataloader_implementation>
+                - Create PyTorch Dataset class
+                - Implement efficient batch processing
+                - Enable multi-worker data loading
+                - Monitor memory usage during loading
+            </dataloader_implementation>
+        </data_preprocessing>
+    </ingestion_and_preprocessing>
+    <eda>
+        <memory_management>
+            - Implement batch processing for large datasets
+            - Track system and GPU memory usage
+            - Clear cache between processing steps
+            - Optimize visualization memory footprint
+        </memory_management>
+        <statistical_analysis>
+            <basic_statistics>
+                - Compute per-group sample counts
+                - Calculate unique patient distributions
+                - Analyze class balance
+                - Track temporal distribution of scans
+            </basic_statistics>
+            <intensity_analysis>
+                - Calculate per-group intensity statistics
+                - Analyze distribution shapes
+                - Compute skewness and kurtosis
+                - Track outliers and anomalies
+            </intensity_analysis>
+            <spatial_analysis>
+                - Compute slice-wise statistics
+                - Analyze variance across dimensions
+                - Calculate spatial gradients
+                - Identify regions of interest
+            </spatial_analysis>
+        </statistical_analysis>
+        <visualization>
+            <distribution_plots>
+                - Create boxplots for group comparisons
+                - Generate violin plots for distributions
+                - Plot histograms with density curves
+                - Implement statistical annotations
+            </distribution_plots>
+            <volume_visualization>
+                - Display orthogonal views (axial, sagittal, coronal)
+                - Create interactive slice viewers
+                - Show intensity distributions per slice
+                - Visualize padding effectiveness
+            </volume_visualization>
+            <comparative_analysis>
+                - Generate group-wise mean volumes
+                - Create difference maps between groups
+                - Visualize variance patterns
+                - Plot ROI characteristics
+            </comparative_analysis>
+        </visualization>
+        <quality_control>
+            - Validate preprocessing effectiveness
+            - Check for data leakage
+            - Verify class balance impact
+            - Monitor outlier influence
+        </quality_control>
+    </eda>
+    <model>
+        <selection>
+            <unsupervised_models>
+                - Autoencoders: Train deep autoencoders to learn latent representations of the imaging data.
+                - Variational Autoencoders (VAEs): Utilize VAEs to model the underlying distribution of the data.
+                - Generative Adversarial Networks (GANs): Explore Deep Convolutional GANs for generating synthetic images and learning latent features.
+                - Principal Component Analysis (PCA): Apply PCA for dimensionality reduction and feature extraction.
+                - t-Distributed Stochastic Neighbor Embedding (t-SNE): Use t-SNE for visualizing high-dimensional data in 2D or 3D space.
+                - UMAP: Employ Uniform Manifold Approximation and Projection (UMAP) for nonlinear dimensionality reduction.
+            </unsupervised_models>
+            <model_architecture>
+                - Input Layer: 
+                    - Shape: (1, 128, 128, 128) for full brain volumes
+                    - Single channel grayscale images
+                    - Zero-padded to maintain aspect ratio
+                - Encoder:
+                    - Convolutional layers with stride 2 for downsampling
+                    - Residual connections for better gradient flow
+                    - Batch normalization and ReLU activation
+                    - Self-attention mechanism for spatial relationships
+                - Latent Space:
+                    - Dense bottleneck layer
+                    - Reparameterization for VAE
+                    - Size optimized for reconstruction quality
+                - Decoder:
+                    - Mirror encoder architecture
+                    - Transposed convolutions for upsampling
+                    - Batch normalization and ReLU activation
+                    - Final sigmoid activation for intensity scaling
+            </model_architecture>
+        </selection>
+        <training>
+            - Training Setup: 
+                - Use PyTorch framework
+                - Leverage GPU acceleration on NVIDIA 4070Ti
+                - Implement memory-efficient batch processing
+            - Hyperparameters:
+                - Batch size optimized for GPU memory (2-4 for full volumes)
+                - Learning rate with scheduling
+                - KL divergence weight annealing
+            - Optimization:
+                - Adam optimizer with weight decay
+                - Gradient clipping for stability
+                - Early stopping based on validation loss
+            - Memory Management:
+                - Efficient data loading with proper memory pinning
+                - GPU memory monitoring and optimization
+                - Batch size adjustment based on available resources
+        </training>
+        <evaluation>
+            - Reconstruction Error:
+                - Mean Squared Error for image fidelity
+                - Structural Similarity Index (SSIM)
+                - Analysis across full brain volume
+            - Latent Space Analysis:
+                - Visualization using dimensionality reduction
+                - Cluster analysis for patient groups
+                - Feature importance in the latent space
+            - Clinical Relevance:
+                - Correlation with disease progression
+                - Group separation analysis
+                - Feature interpretability
+                - Special attention to striatal region patterns
+        </evaluation>
+    </model>
+    <workflow_pipeline>
+        <data_pipeline>
+            Step 1: Data loading and preprocessing of full brain volumes
+            Step 2: EDA with emphasis on whole-brain analysis
+        </data_pipeline>
+        <model_pipeline>
+            Step 3: Define model architectures for 128³ volumes
+            Step 4: Training scripts with memory optimization
+            Step 5: Evaluation scripts for comprehensive analysis
+        </model_pipeline>
+        <results_pipeline>
+            Step 6: Aggregation of results across models
+            Step 7: Reporting tools for findings documentation
+        </results_pipeline>
+    </workflow_pipeline>
+</architecture>
