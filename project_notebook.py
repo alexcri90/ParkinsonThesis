@@ -2930,7 +2930,7 @@ if __name__ == "__main__":
     print("\nAnalyzing latent space...")
     latent_vectors, labels = analyze_latent_space(model, val_loader)
 
-"""## 3. VAE Semi-Supervised
+"""## 3. AE Semi-Supervised
 
 ### Model Setup
 """
@@ -3642,4 +3642,246 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"\nError during evaluation: {str(e)}")
             traceback.print_exc()
+
+# Cell 34: Semi-Supervised Model Reconstruction and Evaluation
+import torch
+import matplotlib.pyplot as plt
+import numpy as np
+from pathlib import Path
+from tqdm.notebook import tqdm
+import seaborn as sns
+from skimage.metrics import structural_similarity as ssim
+
+def load_trained_ssae(checkpoint_dir, model_name='ssae'):
+    """
+    Load trained semi-supervised model and metadata without modifying previous cells.
+
+    Args:
+        checkpoint_dir (str): Directory containing checkpoints
+        model_name (str): Name of the model checkpoint
+
+    Returns:
+        model: Loaded model
+        metadata: Training metadata
+    """
+    checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
+    metadata_path = Path(checkpoint_dir) / f"{model_name}_metadata.json"
+
+    # Initialize model with same configuration as training
+    model = SemiSupervisedAE(latent_dim=256, num_classes=3)
+
+    # Load checkpoint
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    # Load metadata if available
+    metadata = None
+    if metadata_path.exists():
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+
+    return model, metadata
+
+def compute_slice_metrics(original_slice, reconstructed_slice):
+    """
+    Compute quality metrics for a single slice.
+
+    Args:
+        original_slice: Original image slice
+        reconstructed_slice: Reconstructed image slice
+
+    Returns:
+        dict: Dictionary containing MSE and SSIM metrics
+    """
+    mse = np.mean((original_slice - reconstructed_slice) ** 2)
+    ssim_score = ssim(original_slice, reconstructed_slice, data_range=1.0)
+
+    return {
+        'MSE': mse,
+        'SSIM': ssim_score
+    }
+
+# Cell 35: Reconstruction Visualization Functions
+def extract_orthogonal_slices(volume):
+    """
+    Extract axial, sagittal, and coronal slices from the middle of the volume.
+
+    Args:
+        volume: 3D volume array
+
+    Returns:
+        tuple: (axial_slice, sagittal_slice, coronal_slice)
+    """
+    d, h, w = volume.shape
+    axial = volume[d//2, :, :]      # Top-down view
+    sagittal = volume[:, h//2, :]    # Side view
+    coronal = volume[:, :, w//2]     # Front view
+
+    return axial, sagittal, coronal
+
+def visualize_reconstruction_comparison(original, reconstructed, metrics, title="Sample Reconstruction Comparison"):
+    """
+    Create side-by-side visualization of original and reconstructed slices.
+
+    Args:
+        original: Original volume
+        reconstructed: Reconstructed volume
+        metrics: Dictionary containing evaluation metrics
+        title: Plot title
+    """
+    # Extract slices
+    orig_axial, orig_sagittal, orig_coronal = extract_orthogonal_slices(original)
+    recon_axial, recon_sagittal, recon_coronal = extract_orthogonal_slices(reconstructed)
+
+    # Create figure
+    fig = plt.figure(figsize=(15, 8))
+    plt.suptitle(title, fontsize=16, y=1.05)
+
+    # Plot original slices
+    views = ['Axial', 'Sagittal', 'Coronal']
+    orig_slices = [orig_axial, orig_sagittal, orig_coronal]
+    recon_slices = [recon_axial, recon_sagittal, recon_coronal]
+
+    for idx, (view, orig_slice, recon_slice) in enumerate(zip(views, orig_slices, recon_slices)):
+        # Original
+        plt.subplot(2, 3, idx + 1)
+        plt.imshow(orig_slice, cmap='gray')
+        plt.title(f'Original {view}')
+        plt.axis('off')
+
+        # Reconstructed
+        plt.subplot(2, 3, idx + 4)
+        plt.imshow(recon_slice, cmap='gray')
+        plt.title(f'Reconstructed {view}\nMSE: {metrics[view]["MSE"]:.4f}\nSSIM: {metrics[view]["SSIM"]:.4f}')
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+# Cell 36: Evaluation Pipeline
+def evaluate_ssae_reconstruction(model, val_loader, samples_per_group=2):
+    """
+    Evaluate semi-supervised model reconstruction on validation set.
+
+    Args:
+        model: Trained semi-supervised model
+        val_loader: Validation data loader
+        samples_per_group: Number of samples to visualize per patient group
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    # Initialize storage for group-wise metrics
+    group_metrics = {
+        'Control': {'mse': [], 'samples': 0},
+        'PD': {'mse': [], 'samples': 0},
+        'SWEDD': {'mse': [], 'samples': 0}
+    }
+
+    # Track visualized samples per group
+    visualized_samples = {
+        'Control': 0,
+        'PD': 0,
+        'SWEDD': 0
+    }
+
+    print("Evaluating reconstruction quality...")
+
+    with torch.no_grad():
+        for batch in tqdm(val_loader):
+            # Check if we have enough samples from each group
+            if all(count >= samples_per_group for count in visualized_samples.values()):
+                break
+
+            # Move data to GPU
+            volumes = batch['volume'].to(device)
+            labels = batch['label']  # Original string labels
+
+            # Get reconstructions
+            reconstructions, classifications, _ = model(volumes)
+
+            # Process each sample in the batch
+            for idx in range(volumes.shape[0]):
+                current_group = labels[idx]
+
+                # Skip if we already have enough samples from this group
+                if visualized_samples[current_group] >= samples_per_group:
+                    continue
+
+                # Get original and reconstructed volumes
+                orig_vol = volumes[idx, 0].cpu().numpy()
+                recon_vol = reconstructions[idx, 0].cpu().numpy()
+
+                # Calculate metrics for each view
+                metrics = {}
+                for view, (orig_slice, recon_slice) in zip(
+                    ['Axial', 'Sagittal', 'Coronal'],
+                    zip(*[extract_orthogonal_slices(vol) for vol in [orig_vol, recon_vol]])
+                ):
+                    metrics[view] = compute_slice_metrics(orig_slice, recon_slice)
+
+                # Visualize comparison
+                visualize_reconstruction_comparison(
+                    orig_vol,
+                    recon_vol,
+                    metrics,
+                    f"Patient Group: {current_group} - Sample {visualized_samples[current_group] + 1}"
+                )
+
+                # Update group metrics
+                mse = np.mean((volumes[idx, 0].cpu().numpy() -
+                             reconstructions[idx, 0].cpu().numpy()) ** 2)
+                group_metrics[current_group]['mse'].append(mse)
+                group_metrics[current_group]['samples'] += 1
+                visualized_samples[current_group] += 1
+
+            # Clean up GPU memory
+            del volumes, reconstructions
+            torch.cuda.empty_cache()
+
+    # Print group-wise metrics
+    print("\nReconstruction Metrics by Patient Group:")
+    for group in group_metrics:
+        if group_metrics[group]['samples'] > 0:
+            avg_mse = np.mean(group_metrics[group]['mse'])
+            print(f"\n{group}:")
+            print(f"Number of samples: {group_metrics[group]['samples']}")
+            print(f"Average MSE: {avg_mse:.6f}")
+            print(f"RMSE: {np.sqrt(avg_mse):.6f}")
+
+    return group_metrics
+
+# Cell 37: Run Evaluation
+if __name__ == "__main__":
+    try:
+        # Load trained model
+        print("Loading trained semi-supervised model...")
+        model, metadata = load_trained_ssae('checkpoints')
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        # Run evaluation with samples per group
+        print("\nStarting reconstruction evaluation...")
+        group_metrics = evaluate_ssae_reconstruction(model, val_loader, samples_per_group=2)
+
+        # Visualize group-wise metrics
+        groups = list(group_metrics.keys())
+        mse_values = [np.mean(group_metrics[g]['mse']) for g in groups]
+
+        plt.figure(figsize=(10, 6))
+        plt.bar(groups, mse_values)
+        plt.title('Average MSE by Patient Group')
+        plt.ylabel('Mean Squared Error')
+        plt.grid(True, alpha=0.3)
+        plt.show()
+
+        # Clean up
+        torch.cuda.empty_cache()
+        print("\nEvaluation completed successfully!")
+
+    except Exception as e:
+        print(f"Error during evaluation: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
