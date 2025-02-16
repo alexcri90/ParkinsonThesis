@@ -3891,11 +3891,23 @@ if __name__ == "__main__":
 """
 
 # Cell 38: Semi-Supervised VAE Model Architecture
+import os
+import json
+import time
+from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
 import torch.cuda.amp as amp
+from tqdm.notebook import tqdm
+import numpy as np
+from sklearn.metrics import confusion_matrix, classification_report
+
+# GPU Optimization settings
+torch.backends.cudnn.benchmark = True
+torch.cuda.empty_cache()
+torch.backends.cudnn.enabled = True
 
 class SSVAE(nn.Module):
     """
@@ -3948,6 +3960,9 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         return self.block(x)
+
+torch.backends.cudnn.benchmark = True  # Optimize CUDA operations
+torch.cuda.empty_cache()  # Clear any residual GPU memory
 
 class SSVAEEncoder(nn.Module):
     """Encoder network with probabilistic latent space."""
@@ -4063,7 +4078,7 @@ class SSVAEConfig:
         self.class_weight = 0.5
 
         # Training parameters
-        self.batch_size = 8  # Optimized for 12GB VRAM
+        self.batch_size = 32  # Optimized for 12GB VRAM
         self.epochs = 100
         self.accumulation_steps = 4
 
@@ -4073,8 +4088,18 @@ class SSVAEConfig:
 
         # Optimization
         self.use_amp = True
-        self.num_workers = 4
+        self.num_workers = 12
         self.pin_memory = True
+        self.enable_cudnn_benchmark = True
+        self.enable_cudnn_fastest = True
+
+        # Memory optimization
+        self.prefetch_factor = 4
+        self.persistent_workers = True
+
+        # Cache settings
+        self.cache_data = True  # New setting
+        self.cache_size = 1000  # Number of samples to cache in RAM
 
         # Checkpoint configuration
         self.checkpoint_dir = 'checkpoints'
@@ -4148,7 +4173,7 @@ class SSVAECheckpointHandler:
 
 # Cell 41: Training Loop
 def train_ssvae(model, train_loader, val_loader, config=None):
-    """Training loop with memory optimization for NVIDIA 4070Ti."""
+    """Training loop optimized for NVIDIA RTX 4070 Ti."""
     if config is None:
         config = SSVAEConfig()
 
@@ -4161,12 +4186,18 @@ def train_ssvae(model, train_loader, val_loader, config=None):
         config.kl_weight,
         config.class_weight
     )
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=5, verbose=True
     )
+
+    # Initialize mixed precision training
     scaler = amp.GradScaler(enabled=config.use_amp)
-    checkpoint_handler = SSVAECheckpointHandler(config.checkpoint_dir, config.model_name)
+
+    # Initialize memory tracker
+    torch.cuda.reset_peak_memory_stats()
+
+    print(f"\nInitial GPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
     # Training tracking
     best_val_loss = float('inf')
@@ -4179,79 +4210,63 @@ def train_ssvae(model, train_loader, val_loader, config=None):
         'train_acc': [], 'val_acc': []
     }
 
-    # Load checkpoint if available
-    start_epoch = 0
-    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
-    if checkpoint_data:
-        start_epoch, metrics = checkpoint_data
-        print(f"Resuming training from epoch {start_epoch + 1}")
-
     try:
-        for epoch in range(start_epoch, config.epochs):
-            # Training phase
+        for epoch in range(config.epochs):
             model.train()
             train_loss = train_recon = train_kl = train_class = 0
             correct_preds = total_preds = 0
 
-            train_pbar = tqdm(train_loader,
-                            desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
+            # Training phase with progress bar
+            train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
+            optimizer.zero_grad(set_to_none=True)  # Memory optimization
 
             for i, batch in enumerate(train_pbar):
-                try:
-                    volumes = batch['volume'].to(device, non_blocking=True)
-                    labels = process_labels(batch['label']).to(device)
+                volumes = batch['volume'].to(device, non_blocking=True)
+                labels = process_labels(batch['label']).to(device)
 
-                    # Forward pass with mixed precision
-                    with amp.autocast(enabled=config.use_amp):
-                        recon, class_pred, mu, log_var = model(volumes)
-                        loss, recon_l, kl_l, class_l = criterion(
-                            recon, volumes, class_pred, labels, mu, log_var
-                        )
-                        loss = loss / config.accumulation_steps
+                # Mixed precision forward pass
+                with amp.autocast(enabled=config.use_amp):
+                    recon, class_pred, mu, log_var = model(volumes)
+                    loss, recon_l, kl_l, class_l = criterion(
+                        recon, volumes, class_pred, labels, mu, log_var
+                    )
+                    loss = loss / config.accumulation_steps
 
-                    # Backward pass
-                    scaler.scale(loss).backward()
+                # Mixed precision backward pass
+                scaler.scale(loss).backward()
 
-                    # Gradient accumulation
-                    if (i + 1) % config.accumulation_steps == 0:
-                        scaler.step(optimizer)
-                        scaler.update()
-                        optimizer.zero_grad()
+                if (i + 1) % config.accumulation_steps == 0:
+                    scaler.step(optimizer)
+                    scaler.update()
+                    optimizer.zero_grad(set_to_none=True)
 
-                    # Track metrics
-                    train_loss += loss.item() * config.accumulation_steps
-                    train_recon += recon_l.item()
-                    train_kl += kl_l.item()
-                    train_class += class_l.item()
+                # Update metrics
+                train_loss += loss.item() * config.accumulation_steps
+                train_recon += recon_l.item()
+                train_kl += kl_l.item()
+                train_class += class_l.item()
 
-                    # Track accuracy
-                    pred = class_pred.argmax(dim=1)
-                    correct_preds += (pred == labels).sum().item()
-                    total_preds += labels.size(0)
+                pred = class_pred.argmax(dim=1)
+                correct_preds += (pred == labels).sum().item()
+                total_preds += labels.size(0)
 
-                    # Update progress bar
-                    train_pbar.set_postfix({
-                        'loss': loss.item() * config.accumulation_steps,
-                        'recon': recon_l.item(),
-                        'kl': kl_l.item(),
-                        'class': class_l.item(),
-                        'acc': correct_preds/total_preds
-                    })
+                # Update progress bar
+                train_pbar.set_postfix({
+                    'loss': loss.item() * config.accumulation_steps,
+                    'acc': correct_preds/total_preds,
+                    'gpu_mem': f"{torch.cuda.memory_allocated() / 1e9:.2f}GB"
+                })
 
-                    # Clean up
-                    del volumes, labels, recon, class_pred, mu, log_var
-                    torch.cuda.empty_cache()
+                # Clean up
+                del volumes, labels, recon, class_pred, mu, log_var, loss
+                torch.cuda.empty_cache()
 
-                except RuntimeError as e:
-                    if "out of memory" in str(e):
-                        print(f"\nOOM in batch {i}. Cleaning up...")
-                        if 'volumes' in locals():
-                            del volumes
-                        if 'recon' in locals():
-                            del recon
-                        torch.cuda.empty_cache()
-                        continue
-                    raise e
+            # Calculate average training metrics
+            avg_train_loss = train_loss / len(train_loader)
+            avg_train_recon = train_recon / len(train_loader)
+            avg_train_kl = train_kl / len(train_loader)
+            avg_train_class = train_class / len(train_loader)
+            train_acc = correct_preds / total_preds
 
             # Validation phase
             model.eval()
@@ -4260,59 +4275,41 @@ def train_ssvae(model, train_loader, val_loader, config=None):
             all_preds = []
             all_labels = []
 
-            val_pbar = tqdm(val_loader,
-                          desc=f'Epoch {epoch+1}/{config.epochs} [Val]')
+            val_pbar = tqdm(val_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Val]')
 
             with torch.no_grad():
                 for batch in val_pbar:
-                    try:
-                        volumes = batch['volume'].to(device)
-                        labels = process_labels(batch['label']).to(device)
+                    volumes = batch['volume'].to(device, non_blocking=True)
+                    labels = process_labels(batch['label']).to(device)
 
+                    with amp.autocast(enabled=config.use_amp):
                         recon, class_pred, mu, log_var = model(volumes)
                         loss, recon_l, kl_l, class_l = criterion(
                             recon, volumes, class_pred, labels, mu, log_var
                         )
 
-                        val_loss += loss.item()
-                        val_recon += recon_l.item()
-                        val_kl += kl_l.item()
-                        val_class += class_l.item()
+                    val_loss += loss.item()
+                    val_recon += recon_l.item()
+                    val_kl += kl_l.item()
+                    val_class += class_l.item()
 
-                        # Track predictions for metrics
-                        pred = class_pred.argmax(dim=1)
-                        val_correct += (pred == labels).sum().item()
-                        val_total += labels.size(0)
+                    pred = class_pred.argmax(dim=1)
+                    val_correct += (pred == labels).sum().item()
+                    val_total += labels.size(0)
 
-                        all_preds.extend(pred.cpu().numpy())
-                        all_labels.extend(labels.cpu().numpy())
+                    all_preds.extend(pred.cpu().numpy())
+                    all_labels.extend(labels.cpu().numpy())
 
-                        val_pbar.set_postfix({
-                            'loss': loss.item(),
-                            'acc': val_correct/val_total
-                        })
+                    val_pbar.set_postfix({
+                        'loss': loss.item(),
+                        'acc': val_correct/val_total,
+                        'gpu_mem': f"{torch.cuda.memory_allocated() / 1e9:.2f}GB"
+                    })
 
-                        del volumes, labels, recon, class_pred, mu, log_var
-                        torch.cuda.empty_cache()
+                    del volumes, labels, recon, class_pred, mu, log_var, loss
+                    torch.cuda.empty_cache()
 
-                    except RuntimeError as e:
-                        if "out of memory" in str(e):
-                            print("\nOOM during validation. Cleaning up...")
-                            if 'volumes' in locals():
-                                del volumes
-                            if 'recon' in locals():
-                                del recon
-                            torch.cuda.empty_cache()
-                            continue
-                        raise e
-
-            # Calculate epoch metrics
-            avg_train_loss = train_loss / len(train_loader)
-            avg_train_recon = train_recon / len(train_loader)
-            avg_train_kl = train_kl / len(train_loader)
-            avg_train_class = train_class / len(train_loader)
-            train_acc = correct_preds / total_preds
-
+            # Calculate average validation metrics
             avg_val_loss = val_loss / len(val_loader)
             avg_val_recon = val_recon / len(val_loader)
             avg_val_kl = val_kl / len(val_loader)
@@ -4375,73 +4372,18 @@ def train_ssvae(model, train_loader, val_loader, config=None):
                     break
 
             # Print memory stats
-            print_gpu_memory_stats()
+            print(f"\nGPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
-    except KeyboardInterrupt:
-        print("\nTraining interrupted by user!")
+    except Exception as e:
+        print(f"Error during training: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
     finally:
-        # Plot training history
-        plot_training_history(metrics)
+        print(f"\nPeak GPU Memory: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
+        torch.cuda.empty_cache()
 
     return metrics
-
-def plot_training_history(metrics):
-    """Plot training and validation metrics history."""
-    plt.figure(figsize=(15, 12))
-
-    # Plot total loss
-    plt.subplot(3, 2, 1)
-    plt.plot(metrics['train_losses'], label='Train Loss')
-    plt.plot(metrics['val_losses'], label='Val Loss')
-    plt.title('Total Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot reconstruction loss
-    plt.subplot(3, 2, 2)
-    plt.plot(metrics['train_recon'], label='Train Recon')
-    plt.plot(metrics['val_recon'], label='Val Recon')
-    plt.title('Reconstruction Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot KL divergence
-    plt.subplot(3, 2, 3)
-    plt.plot(metrics['train_kl'], label='Train KL')
-    plt.plot(metrics['val_kl'], label='Val KL')
-    plt.title('KL Divergence')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot classification loss
-    plt.subplot(3, 2, 4)
-    plt.plot(metrics['train_class'], label='Train Class')
-    plt.plot(metrics['val_class'], label='Val Class')
-    plt.title('Classification Loss')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.grid(True)
-
-    # Plot accuracy
-    plt.subplot(3, 2, 5)
-    plt.plot(metrics['train_acc'], label='Train Acc')
-    plt.plot(metrics['val_acc'], label='Val Acc')
-    plt.title('Classification Accuracy')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.show()
 
 # Cell 42: Model Evaluation
 def evaluate_ssvae(model, val_loader, config=None):
@@ -4624,10 +4566,27 @@ def visualize_latent_space(latent_vectors, labels, label_names):
     plt.show()
 
 # Cell 43: Smart Training Cell
-from tqdm.notebook import tqdm  # Ensure we use the notebook version of tqdm
+from tqdm.notebook import tqdm
 import torch
 import os
 from pathlib import Path
+
+def process_labels(labels):
+    """Convert string labels to tensor indices."""
+    label_map = {'Control': 0, 'PD': 1, 'SWEDD': 2}
+    return torch.tensor([label_map[label] for label in labels])
+
+def create_class_weights(dataloader):
+    """Calculate class weights for balanced training."""
+    label_counts = torch.zeros(3)
+    for batch in dataloader:
+        labels = process_labels(batch['label'])
+        for label in labels:
+            label_counts[label] += 1
+
+    total = label_counts.sum()
+    class_weights = total / (3 * label_counts)
+    return class_weights
 
 def initialize_training():
     """Initialize or resume training based on checkpoint existence."""
@@ -4646,50 +4605,127 @@ def initialize_training():
 
     return model, config
 
-def process_labels(labels):
-    """Convert string labels to tensor indices."""
-    label_map = {'Control': 0, 'PD': 1, 'SWEDD': 2}
-    return torch.tensor([label_map[label] for label in labels])
+# Cache class weights to avoid recalculation
+class_weights_cache = {}
 
-def create_class_weights(dataloader):
-    """Calculate class weights for balanced training."""
+def get_class_weights(dataloader):
+    """Get class weights, using cached values if available."""
+    cache_key = id(dataloader)
+    if cache_key in class_weights_cache:
+        print("Using cached class weights...")
+        return class_weights_cache[cache_key]
+
     print("Calculating class weights...")
     label_counts = torch.zeros(3)
-    for batch in tqdm(dataloader, desc="Processing batches"):
+
+    # Keep the progress bar but process in larger chunks
+    for batch in tqdm(dataloader, desc="Processing batches for class weights"):
+        # Process entire batch at once instead of individual labels
         labels = process_labels(batch['label'])
-        for label in labels:
-            label_counts[label] += 1
+        unique_labels, counts = torch.unique(labels, return_counts=True)
+        for label, count in zip(unique_labels, counts):
+            label_counts[label] += count
 
     total = label_counts.sum()
-    class_weights = total / (3 * label_counts)
-    return class_weights
+    weights = total / (3 * label_counts)
+
+    # Cache the results
+    class_weights_cache[cache_key] = weights
+    return weights
 
 print("Initializing training process...")
 
-# Initialize model and configuration
-model, config = initialize_training()
+try:
+    # Initialize model and configuration
+    model, config = initialize_training()
 
-# Calculate class weights
-print("\nCalculating class weights for balanced training...")
-class_weights = create_class_weights(train_loader)
-print(f"\nClass weights:")
-print(f"Control: {class_weights[0]:.2f}")
-print(f"PD: {class_weights[1]:.2f}")
-print(f"SWEDD: {class_weights[2]:.2f}")
+    # Calculate class weights with progress visibility
+    print("\nPreparing class weights...")
+    class_weights = get_class_weights(train_loader)
 
-# Move model to GPU and update loss function with class weights
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = model.to(device)
-class_weights = class_weights.to(device)
+    print("\nClass distribution:")
+    class_names = ['Control', 'PD', 'SWEDD']
+    for i, (name, weight) in enumerate(zip(class_names, class_weights)):
+        print(f"{name}: {weight:.2f}")
 
-print("\nStarting training process...")
-# Start training
-metrics = train_ssvae(model, train_loader, val_loader, config)
+    # Move model to GPU and update loss function with class weights
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    class_weights = class_weights.to(device)
 
-print("\nTraining completed. Starting evaluation...")
-# Run evaluation
-evaluation_results = evaluate_ssvae(model, val_loader, config)
-print("\nEvaluation completed. Results saved in 'evaluation_results'")
+    print("\nStarting training process...")
+    # Start training
+    metrics = train_ssvae(model, train_loader, val_loader, config)
+
+    print("\nTraining completed. Starting evaluation...")
+    # Run evaluation
+    evaluation_results = evaluate_ssvae(model, val_loader, config)
+    print("\nEvaluation completed. Results saved in 'evaluation_results'")
+
+except KeyboardInterrupt:
+    print("\nTraining interrupted by user. Progress has been saved to checkpoint.")
+    print("Run this cell again to resume training from the last checkpoint.")
+except Exception as e:
+    print(f"\nError during execution: {str(e)}")
+    import traceback
+    traceback.print_exc()
+
+# Cell [NEW]: DataLoader Optimization
+class CachedDataset(Dataset):
+    def __init__(self, original_dataset, cache_size=1000):
+        self.original_dataset = original_dataset
+        self.cache_size = cache_size
+        self.cache = {}
+
+    def __len__(self):
+        return len(self.original_dataset)
+
+    def __getitem__(self, idx):
+        if idx in self.cache:
+            return self.cache[idx]
+
+        item = self.original_dataset[idx]
+        if len(self.cache) < self.cache_size:
+            # Pre-process and move to pinned memory
+            if isinstance(item['volume'], torch.Tensor):
+                item['volume'] = item['volume'].pin_memory()
+            self.cache[idx] = item
+
+        return item
+
+def create_optimized_loaders(train_dataset, val_dataset, config):
+    # Enable CUDA optimizations
+    torch.backends.cudnn.benchmark = config.enable_cudnn_benchmark
+    torch.backends.cudnn.fastest = config.enable_cudnn_fastest
+
+    # Create cached datasets
+    if config.cache_data:
+        train_dataset = CachedDataset(train_dataset, config.cache_size)
+        val_dataset = CachedDataset(val_dataset, config.cache_size)
+
+    # Create data loaders with optimized settings
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=config.batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=config.pin_memory,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=config.persistent_workers,
+        drop_last=True  # Speeds up training by avoiding small last batch
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=config.pin_memory,
+        prefetch_factor=config.prefetch_factor,
+        persistent_workers=config.persistent_workers
+    )
+
+    return train_loader, val_loader
 
 # Cell 44: Synthetic Data Generation
 def generate_synthetic_samples(model, condition='PD', num_samples=5):
