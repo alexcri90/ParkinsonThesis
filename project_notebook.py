@@ -5069,3 +5069,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error during regional analysis: {str(e)}")
         traceback.print_exc()
+
