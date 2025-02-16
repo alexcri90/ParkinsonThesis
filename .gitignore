@@ -16,3 +16,4 @@ model_checkpoints/semisupervised_vae_latest.pth
 checkpoints/autoencoder_v1_checkpoint.pth
 checkpoints/autoencoder_v1_metadata.json
 checkpoints/autoencoder_v1_training_history.png
+cache/processed_data.h5
