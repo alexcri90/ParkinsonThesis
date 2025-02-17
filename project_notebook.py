@@ -582,7 +582,7 @@ class DaTScanDataset(Dataset):
             traceback.print_exc()
             return None
 
-def create_dataloaders(df, batch_size=2, train_split=0.8):
+def create_dataloaders(df, batch_size=4, train_split=0.8):
     """Create train and validation dataloaders with stratified split"""
     # Stratified split to maintain group distributions
     train_df, val_df = train_test_split(
@@ -2691,6 +2691,8 @@ def create_vae_scheduler(optimizer):
         verbose=True
     )
 
+"""### Training"""
+
 # TRAINING
 
 if __name__ == "__main__":
@@ -3594,6 +3596,8 @@ def visualize_reconstructions(originals, reconstructions, label_names, true_labe
     plt.tight_layout()
     plt.show()
 
+"""### Training"""
+
 # Cell 33: Smart Training Cell
 def initialize_training():
     """Initialize or resume training based on checkpoint existence."""
@@ -3891,23 +3895,10 @@ if __name__ == "__main__":
 """
 
 # Cell 38: Semi-Supervised VAE Model Architecture
-import os
-import json
-import time
-from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
-import torch.cuda.amp as amp
-from tqdm.notebook import tqdm
-import numpy as np
-from sklearn.metrics import confusion_matrix, classification_report
-
-# GPU Optimization settings
-torch.backends.cudnn.benchmark = True
-torch.cuda.empty_cache()
-torch.backends.cudnn.enabled = True
 
 class SSVAE(nn.Module):
     """
@@ -3960,9 +3951,6 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         return self.block(x)
-
-torch.backends.cudnn.benchmark = True  # Optimize CUDA operations
-torch.cuda.empty_cache()  # Clear any residual GPU memory
 
 class SSVAEEncoder(nn.Module):
     """Encoder network with probabilistic latent space."""
@@ -4064,6 +4052,11 @@ class SSVAEDecoder(nn.Module):
         return x
 
 # Cell 39: Training Configuration and Loss Functions
+import os
+import json
+import time
+from pathlib import Path
+
 class SSVAEConfig:
     """Configuration for SSVAE training."""
     def __init__(self):
@@ -4078,7 +4071,7 @@ class SSVAEConfig:
         self.class_weight = 0.5
 
         # Training parameters
-        self.batch_size = 32  # Optimized for 12GB VRAM
+        self.batch_size = 8
         self.epochs = 100
         self.accumulation_steps = 4
 
@@ -4088,18 +4081,8 @@ class SSVAEConfig:
 
         # Optimization
         self.use_amp = True
-        self.num_workers = 12
+        self.num_workers = 4
         self.pin_memory = True
-        self.enable_cudnn_benchmark = True
-        self.enable_cudnn_fastest = True
-
-        # Memory optimization
-        self.prefetch_factor = 4
-        self.persistent_workers = True
-
-        # Cache settings
-        self.cache_data = True  # New setting
-        self.cache_size = 1000  # Number of samples to cache in RAM
 
         # Checkpoint configuration
         self.checkpoint_dir = 'checkpoints'
@@ -4132,7 +4115,6 @@ class SSVAELoss:
 
         return total_loss, recon_loss, kl_loss, class_loss
 
-# Cell 40: Checkpoint Handler
 class SSVAECheckpointHandler:
     """Handles saving and loading of model checkpoints."""
     def __init__(self, checkpoint_dir, model_name):
@@ -4145,7 +4127,7 @@ class SSVAECheckpointHandler:
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict() if optimizer else None,
             'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
             'metrics': metrics
         }
@@ -4159,19 +4141,29 @@ class SSVAECheckpointHandler:
         with open(self.metadata_path, 'w') as f:
             json.dump(metadata, f, indent=4)
 
-    def load(self, model, optimizer, scheduler):
+    def load(self, model, optimizer=None, scheduler=None):
         if not self.checkpoint_path.exists():
             return None
 
         checkpoint = torch.load(self.checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if scheduler and checkpoint['scheduler_state_dict']:
+
+        if optimizer and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        if scheduler and 'scheduler_state_dict' in checkpoint:
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
         return checkpoint['epoch'], checkpoint['metrics']
 
-# Cell 41: Training Loop
+# Cell 40: Training Loop
+import torch
+import torch.cuda.amp as amp
+from tqdm.notebook import tqdm
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 def train_ssvae(model, train_loader, val_loader, config=None):
     """Training loop optimized for NVIDIA RTX 4070 Ti."""
     if config is None:
@@ -4190,14 +4182,8 @@ def train_ssvae(model, train_loader, val_loader, config=None):
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=5, verbose=True
     )
-
-    # Initialize mixed precision training
     scaler = amp.GradScaler(enabled=config.use_amp)
-
-    # Initialize memory tracker
-    torch.cuda.reset_peak_memory_stats()
-
-    print(f"\nInitial GPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
+    checkpoint_handler = SSVAECheckpointHandler(config.checkpoint_dir, config.model_name)
 
     # Training tracking
     best_val_loss = float('inf')
@@ -4210,15 +4196,21 @@ def train_ssvae(model, train_loader, val_loader, config=None):
         'train_acc': [], 'val_acc': []
     }
 
+    # Load checkpoint if available
+    start_epoch = 0
+    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
+    if checkpoint_data:
+        start_epoch, metrics = checkpoint_data
+        print(f"Resuming training from epoch {start_epoch + 1}")
+
     try:
-        for epoch in range(config.epochs):
+        for epoch in range(start_epoch, config.epochs):
+            # Training phase
             model.train()
             train_loss = train_recon = train_kl = train_class = 0
             correct_preds = total_preds = 0
 
-            # Training phase with progress bar
             train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
-            optimizer.zero_grad(set_to_none=True)  # Memory optimization
 
             for i, batch in enumerate(train_pbar):
                 volumes = batch['volume'].to(device, non_blocking=True)
@@ -4232,15 +4224,16 @@ def train_ssvae(model, train_loader, val_loader, config=None):
                     )
                     loss = loss / config.accumulation_steps
 
-                # Mixed precision backward pass
+                # Backward pass
                 scaler.scale(loss).backward()
 
+                # Gradient accumulation
                 if (i + 1) % config.accumulation_steps == 0:
                     scaler.step(optimizer)
                     scaler.update()
-                    optimizer.zero_grad(set_to_none=True)
+                    optimizer.zero_grad()
 
-                # Update metrics
+                # Track metrics
                 train_loss += loss.item() * config.accumulation_steps
                 train_recon += recon_l.item()
                 train_kl += kl_l.item()
@@ -4250,23 +4243,10 @@ def train_ssvae(model, train_loader, val_loader, config=None):
                 correct_preds += (pred == labels).sum().item()
                 total_preds += labels.size(0)
 
-                # Update progress bar
                 train_pbar.set_postfix({
                     'loss': loss.item() * config.accumulation_steps,
-                    'acc': correct_preds/total_preds,
-                    'gpu_mem': f"{torch.cuda.memory_allocated() / 1e9:.2f}GB"
+                    'acc': correct_preds/total_preds
                 })
-
-                # Clean up
-                del volumes, labels, recon, class_pred, mu, log_var, loss
-                torch.cuda.empty_cache()
-
-            # Calculate average training metrics
-            avg_train_loss = train_loss / len(train_loader)
-            avg_train_recon = train_recon / len(train_loader)
-            avg_train_kl = train_kl / len(train_loader)
-            avg_train_class = train_class / len(train_loader)
-            train_acc = correct_preds / total_preds
 
             # Validation phase
             model.eval()
@@ -4279,14 +4259,13 @@ def train_ssvae(model, train_loader, val_loader, config=None):
 
             with torch.no_grad():
                 for batch in val_pbar:
-                    volumes = batch['volume'].to(device, non_blocking=True)
+                    volumes = batch['volume'].to(device)
                     labels = process_labels(batch['label']).to(device)
 
-                    with amp.autocast(enabled=config.use_amp):
-                        recon, class_pred, mu, log_var = model(volumes)
-                        loss, recon_l, kl_l, class_l = criterion(
-                            recon, volumes, class_pred, labels, mu, log_var
-                        )
+                    recon, class_pred, mu, log_var = model(volumes)
+                    loss, recon_l, kl_l, class_l = criterion(
+                        recon, volumes, class_pred, labels, mu, log_var
+                    )
 
                     val_loss += loss.item()
                     val_recon += recon_l.item()
@@ -4302,14 +4281,16 @@ def train_ssvae(model, train_loader, val_loader, config=None):
 
                     val_pbar.set_postfix({
                         'loss': loss.item(),
-                        'acc': val_correct/val_total,
-                        'gpu_mem': f"{torch.cuda.memory_allocated() / 1e9:.2f}GB"
+                        'acc': val_correct/val_total
                     })
 
-                    del volumes, labels, recon, class_pred, mu, log_var, loss
-                    torch.cuda.empty_cache()
+            # Calculate average metrics
+            avg_train_loss = train_loss / len(train_loader)
+            avg_train_recon = train_recon / len(train_loader)
+            avg_train_kl = train_kl / len(train_loader)
+            avg_train_class = train_class / len(train_loader)
+            train_acc = correct_preds / total_preds
 
-            # Calculate average validation metrics
             avg_val_loss = val_loss / len(val_loader)
             avg_val_recon = val_recon / len(val_loader)
             avg_val_kl = val_kl / len(val_loader)
@@ -4337,14 +4318,14 @@ def train_ssvae(model, train_loader, val_loader, config=None):
             # Print epoch summary
             print(f"\nEpoch {epoch+1}/{config.epochs}")
             print("Training Metrics:")
-            print(f"Total Loss: {avg_train_loss:.6f}")
+            print(f"Loss: {avg_train_loss:.6f}")
             print(f"Recon Loss: {avg_train_recon:.6f}")
             print(f"KL Loss: {avg_train_kl:.6f}")
             print(f"Class Loss: {avg_train_class:.6f}")
             print(f"Accuracy: {train_acc:.2%}")
 
             print("\nValidation Metrics:")
-            print(f"Total Loss: {avg_val_loss:.6f}")
+            print(f"Loss: {avg_val_loss:.6f}")
             print(f"Recon Loss: {avg_val_recon:.6f}")
             print(f"KL Loss: {avg_val_kl:.6f}")
             print(f"Class Loss: {avg_val_class:.6f}")
@@ -4353,18 +4334,15 @@ def train_ssvae(model, train_loader, val_loader, config=None):
             # Print classification report for validation set
             label_names = ['Control', 'PD', 'SWEDD']
             print("\nClassification Report:")
-            print(classification_report(all_labels, all_preds,
-                                     target_names=label_names))
+            print(classification_report(all_labels, all_preds, target_names=label_names))
 
             # Early stopping check
             if avg_val_loss < best_val_loss - config.min_delta:
                 best_val_loss = avg_val_loss
                 patience_counter = 0
                 # Save best model
-                torch.save(
-                    model.state_dict(),
-                    os.path.join(config.checkpoint_dir, f'{config.model_name}_best.pth')
-                )
+                torch.save(model.state_dict(),
+                         os.path.join(config.checkpoint_dir, f'{config.model_name}_best.pth'))
             else:
                 patience_counter += 1
                 if patience_counter >= config.patience:
@@ -4374,18 +4352,64 @@ def train_ssvae(model, train_loader, val_loader, config=None):
             # Print memory stats
             print(f"\nGPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 
-    except Exception as e:
-        print(f"Error during training: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    except KeyboardInterrupt:
+        print("\nTraining interrupted by user!")
 
     finally:
-        print(f"\nPeak GPU Memory: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
-        torch.cuda.empty_cache()
+        # Plot training history
+        plot_training_history(metrics)
 
     return metrics
 
-# Cell 42: Model Evaluation
+def plot_training_history(metrics):
+    """Plot training and validation metrics history."""
+    plt.figure(figsize=(15, 10))
+
+    # Plot losses
+    plt.subplot(2, 2, 1)
+    plt.plot(metrics['train_losses'], label='Train Loss')
+    plt.plot(metrics['val_losses'], label='Val Loss')
+    plt.title('Total Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plot reconstruction loss
+    plt.subplot(2, 2, 2)
+    plt.plot(metrics['train_recon'], label='Train Recon')
+    plt.plot(metrics['val_recon'], label='Val Recon')
+    plt.title('Reconstruction Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plot KL divergence
+    plt.subplot(2, 2, 3)
+    plt.plot(metrics['train_kl'], label='Train KL')
+    plt.plot(metrics['val_kl'], label='Val KL')
+    plt.title('KL Divergence')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plot classification accuracy
+    plt.subplot(2, 2, 4)
+    plt.plot(metrics['train_acc'], label='Train Acc')
+    plt.plot(metrics['val_acc'], label='Val Acc')
+    plt.title('Classification Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def process_labels(labels):
+    """Convert string labels to tensor indices."""
+    label_map = {'Control': 0, 'PD': 1, 'SWEDD': 2}
+    return torch.tensor([label_map[label] for label in labels])
+
+# Cell 41: Model Evaluation
 def evaluate_ssvae(model, val_loader, config=None):
     """Comprehensive model evaluation including reconstruction and classification metrics."""
     if config is None:
@@ -4530,6 +4554,9 @@ def visualize_reconstructions(originals, reconstructions, label_names, true_labe
 
 def visualize_latent_space(latent_vectors, labels, label_names):
     """Visualize latent space using dimensionality reduction."""
+    from sklearn.manifold import TSNE
+    from sklearn.decomposition import PCA
+
     # Reduce dimensionality using t-SNE
     tsne = TSNE(n_components=2, random_state=42)
     reduced_vecs = tsne.fit_transform(latent_vectors)
@@ -4539,7 +4566,7 @@ def visualize_latent_space(latent_vectors, labels, label_names):
     for i, label in enumerate(np.unique(labels)):
         mask = labels == label
         plt.scatter(reduced_vecs[mask, 0], reduced_vecs[mask, 1],
-                   label=label_names[label], alpha=0.6)
+                   label=label_names[i], alpha=0.6)
 
     plt.title('t-SNE Visualization of Latent Space')
     plt.xlabel('t-SNE Dimension 1')
@@ -4556,7 +4583,7 @@ def visualize_latent_space(latent_vectors, labels, label_names):
     for i, label in enumerate(np.unique(labels)):
         mask = labels == label
         plt.scatter(pca_vecs[mask, 0], pca_vecs[mask, 1],
-                   label=label_names[label], alpha=0.6)
+                   label=label_names[i], alpha=0.6)
 
     plt.title('PCA Visualization of Latent Space')
     plt.xlabel(f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)')
@@ -4565,29 +4592,9 @@ def visualize_latent_space(latent_vectors, labels, label_names):
     plt.grid(True)
     plt.show()
 
-# Cell 43: Smart Training Cell
-from tqdm.notebook import tqdm
-import torch
-import os
-from pathlib import Path
+"""### Training"""
 
-def process_labels(labels):
-    """Convert string labels to tensor indices."""
-    label_map = {'Control': 0, 'PD': 1, 'SWEDD': 2}
-    return torch.tensor([label_map[label] for label in labels])
-
-def create_class_weights(dataloader):
-    """Calculate class weights for balanced training."""
-    label_counts = torch.zeros(3)
-    for batch in dataloader:
-        labels = process_labels(batch['label'])
-        for label in labels:
-            label_counts[label] += 1
-
-    total = label_counts.sum()
-    class_weights = total / (3 * label_counts)
-    return class_weights
-
+# Cell 42: Smart Training Cell
 def initialize_training():
     """Initialize or resume training based on checkpoint existence."""
     config = SSVAEConfig()
@@ -4599,39 +4606,11 @@ def initialize_training():
     # Check for existing checkpoint
     checkpoint_path = Path(config.checkpoint_dir) / f"{config.model_name}_checkpoint.pth"
     if checkpoint_path.exists():
-        print("\nFound existing checkpoint. Starting from checkpoint...")
+        print("\nFound existing checkpoint. Resuming training...")
     else:
         print("\nNo checkpoint found. Starting new training...")
 
     return model, config
-
-# Cache class weights to avoid recalculation
-class_weights_cache = {}
-
-def get_class_weights(dataloader):
-    """Get class weights, using cached values if available."""
-    cache_key = id(dataloader)
-    if cache_key in class_weights_cache:
-        print("Using cached class weights...")
-        return class_weights_cache[cache_key]
-
-    print("Calculating class weights...")
-    label_counts = torch.zeros(3)
-
-    # Keep the progress bar but process in larger chunks
-    for batch in tqdm(dataloader, desc="Processing batches for class weights"):
-        # Process entire batch at once instead of individual labels
-        labels = process_labels(batch['label'])
-        unique_labels, counts = torch.unique(labels, return_counts=True)
-        for label, count in zip(unique_labels, counts):
-            label_counts[label] += count
-
-    total = label_counts.sum()
-    weights = total / (3 * label_counts)
-
-    # Cache the results
-    class_weights_cache[cache_key] = weights
-    return weights
 
 print("Initializing training process...")
 
@@ -4639,19 +4618,9 @@ try:
     # Initialize model and configuration
     model, config = initialize_training()
 
-    # Calculate class weights with progress visibility
-    print("\nPreparing class weights...")
-    class_weights = get_class_weights(train_loader)
-
-    print("\nClass distribution:")
-    class_names = ['Control', 'PD', 'SWEDD']
-    for i, (name, weight) in enumerate(zip(class_names, class_weights)):
-        print(f"{name}: {weight:.2f}")
-
     # Move model to GPU and update loss function with class weights
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
-    class_weights = class_weights.to(device)
 
     print("\nStarting training process...")
     # Start training
@@ -4670,64 +4639,23 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
-# Cell [NEW]: DataLoader Optimization
-class CachedDataset(Dataset):
-    def __init__(self, original_dataset, cache_size=1000):
-        self.original_dataset = original_dataset
-        self.cache_size = cache_size
-        self.cache = {}
+# Cell 43: Synthetic Data Generation
+def load_trained_model(checkpoint_dir, model_name):
+    """Load a trained model from a checkpoint."""
+    config = SSVAEConfig()
+    model = SSVAE(latent_dim=config.latent_dim, num_classes=config.num_classes)
 
-    def __len__(self):
-        return len(self.original_dataset)
+    checkpoint_handler = SSVAECheckpointHandler(checkpoint_dir, model_name)
+    checkpoint_data = checkpoint_handler.load(model)
 
-    def __getitem__(self, idx):
-        if idx in self.cache:
-            return self.cache[idx]
+    if checkpoint_data is None:
+        raise FileNotFoundError(f"No checkpoint found for {model_name} in {checkpoint_dir}")
 
-        item = self.original_dataset[idx]
-        if len(self.cache) < self.cache_size:
-            # Pre-process and move to pinned memory
-            if isinstance(item['volume'], torch.Tensor):
-                item['volume'] = item['volume'].pin_memory()
-            self.cache[idx] = item
+    print(f"Loaded model from epoch {checkpoint_data[0]}")
 
-        return item
+    return model, checkpoint_data[1]  # Return model and metrics
 
-def create_optimized_loaders(train_dataset, val_dataset, config):
-    # Enable CUDA optimizations
-    torch.backends.cudnn.benchmark = config.enable_cudnn_benchmark
-    torch.backends.cudnn.fastest = config.enable_cudnn_fastest
 
-    # Create cached datasets
-    if config.cache_data:
-        train_dataset = CachedDataset(train_dataset, config.cache_size)
-        val_dataset = CachedDataset(val_dataset, config.cache_size)
-
-    # Create data loaders with optimized settings
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config.batch_size,
-        shuffle=True,
-        num_workers=config.num_workers,
-        pin_memory=config.pin_memory,
-        prefetch_factor=config.prefetch_factor,
-        persistent_workers=config.persistent_workers,
-        drop_last=True  # Speeds up training by avoiding small last batch
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config.batch_size,
-        shuffle=False,
-        num_workers=config.num_workers,
-        pin_memory=config.pin_memory,
-        prefetch_factor=config.prefetch_factor,
-        persistent_workers=config.persistent_workers
-    )
-
-    return train_loader, val_loader
-
-# Cell 44: Synthetic Data Generation
 def generate_synthetic_samples(model, condition='PD', num_samples=5):
     """Generate synthetic brain scans by sampling from the latent space."""
     device = next(model.parameters()).device
@@ -4824,285 +4752,427 @@ if __name__ == "__main__":
     print("\nGenerating synthetic SWEDD samples...")
     synthetic_swedd = generate_synthetic_samples(model, condition='SWEDD')
 
-# Cell 45: Semi-Supervised Model Reconstruction and Evaluation
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path
-import json
-from tqdm.notebook import tqdm
+# Cell 44: Reconstruction Quality Analysis
 from skimage.metrics import structural_similarity as ssim
-from scipy.stats import entropy
 
-def load_trained_ssvae(checkpoint_dir='checkpoints', model_name='ssvae'):
-    """
-    Load trained Semi-Supervised VAE model and associated metadata.
-    """
-    checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
-    metadata_path = Path(checkpoint_dir) / f"{model_name}_metadata.json"
+def load_trained_model(checkpoint_dir, model_name):
+    """Load a trained model from a checkpoint."""
+    config = SSVAEConfig()
+    model = SSVAE(latent_dim=config.latent_dim, num_classes=config.num_classes)
 
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
+    checkpoint_handler = SSVAECheckpointHandler(checkpoint_dir, model_name)
+    checkpoint_data = checkpoint_handler.load(model, None, None)
 
-    # Initialize model
-    model = SSVAE()
-    checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
+    if checkpoint_data is None:
+        raise FileNotFoundError(f"No checkpoint found for {model_name} in {checkpoint_dir}")
+
+    print(f"Loaded model from epoch {checkpoint_data[0]}")
+
+    return model, checkpoint_data[1]  # Return model and metrics
+
+def analyze_reconstruction_quality(model, val_loader, num_samples=5):
+    """Analyze reconstruction quality for a subset of validation samples."""
+    device = next(model.parameters()).device
     model.eval()
 
-    # Load training history
-    with open(metadata_path, 'r') as f:
-        metadata = json.load(f)
-
-    return model, metadata
-
-def generate_reconstructions_with_uncertainty(model, val_loader, num_samples=5, mc_samples=10):
-    """
-    Generate reconstructions with uncertainty estimates using Monte Carlo sampling.
-    """
-    device = next(model.parameters()).device
-    reconstructions = []
-    uncertainties = []
     originals = []
+    reconstructions = []
     labels = []
 
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Generating reconstructions"):
+        for batch in val_loader:
+            if len(originals) >= num_samples:
+                break
+
             volumes = batch['volume'].to(device)
             batch_labels = batch['label']
 
-            # Generate multiple reconstructions for each input
-            batch_reconstructions = []
-            for _ in range(mc_samples):
-                recon, _, mu, log_var = model(volumes)
-                batch_reconstructions.append(recon.cpu().numpy())
+            recon, _, _, _ = model(volumes)
 
-            # Calculate mean and variance of reconstructions
-            batch_reconstructions = np.stack(batch_reconstructions)
-            mean_recon = np.mean(batch_reconstructions, axis=0)
-            uncertainty = np.std(batch_reconstructions, axis=0)
-
-            # Store results
-            reconstructions.extend(mean_recon)
-            uncertainties.extend(uncertainty)
             originals.extend(volumes.cpu().numpy())
+            reconstructions.extend(recon.cpu().numpy())
             labels.extend(batch_labels)
 
-            if len(reconstructions) >= num_samples:
-                break
+    # Compute metrics and visualize
+    for i in range(num_samples):
+        orig = originals[i][0]
+        recon = reconstructions[i][0]
 
-    return (np.array(originals[:num_samples]),
-            np.array(reconstructions[:num_samples]),
-            np.array(uncertainties[:num_samples]),
-            labels[:num_samples])
+        # Compute metrics
+        mse = np.mean((orig - recon) ** 2)
+        ssim_score = ssim(orig, recon, data_range=orig.max() - orig.min())
 
-def compute_evaluation_metrics(original, reconstruction, uncertainty):
-    """
-    Compute various evaluation metrics for reconstruction quality.
-    """
-    metrics = {}
+        # Visualize
+        plt.figure(figsize=(15, 5))
 
-    # MSE
-    mse = np.mean((original - reconstruction) ** 2)
-    metrics['MSE'] = mse
+        # Original
+        plt.subplot(231)
+        plt.imshow(orig[orig.shape[0]//2], cmap='gray')
+        plt.title('Original - Axial')
+        plt.axis('off')
 
-    # SSIM (compute for middle slices)
-    axial_ssim = ssim(original[original.shape[0]//2],
-                      reconstruction[reconstruction.shape[0]//2])
-    sagittal_ssim = ssim(original[:, original.shape[1]//2],
-                         reconstruction[:, reconstruction.shape[1]//2])
-    coronal_ssim = ssim(original[:, :, original.shape[2]//2],
-                        reconstruction[:, :, reconstruction.shape[2]//2])
-    metrics['SSIM'] = {
-        'axial': axial_ssim,
-        'sagittal': sagittal_ssim,
-        'coronal': coronal_ssim
-    }
+        plt.subplot(232)
+        plt.imshow(orig[:, orig.shape[1]//2], cmap='gray')
+        plt.title('Original - Sagittal')
+        plt.axis('off')
 
-    # Uncertainty statistics
-    metrics['Uncertainty'] = {
-        'mean': np.mean(uncertainty),
-        'std': np.std(uncertainty),
-        'max': np.max(uncertainty)
-    }
+        plt.subplot(233)
+        plt.imshow(orig[:, :, orig.shape[2]//2], cmap='gray')
+        plt.title('Original - Coronal')
+        plt.axis('off')
 
-    return metrics
+        # Reconstruction
+        plt.subplot(234)
+        plt.imshow(recon[recon.shape[0]//2], cmap='gray')
+        plt.title('Reconstructed - Axial')
+        plt.axis('off')
 
-def visualize_reconstructions_with_uncertainty(originals, reconstructions, uncertainties, labels):
-    """
-    Visualize original, reconstructed, and uncertainty maps for each sample.
-    """
-    num_samples = len(originals)
-    plt.figure(figsize=(20, 5*num_samples))
+        plt.subplot(235)
+        plt.imshow(recon[:, recon.shape[1]//2], cmap='gray')
+        plt.title('Reconstructed - Sagittal')
+        plt.axis('off')
 
-    for idx in range(num_samples):
-        orig = originals[idx, 0]
-        recon = reconstructions[idx, 0]
-        uncert = uncertainties[idx, 0]
+        plt.subplot(236)
+        plt.imshow(recon[:, :, recon.shape[2]//2], cmap='gray')
+        plt.title('Reconstructed - Coronal')
+        plt.axis('off')
+
+        plt.suptitle(f"Sample {i+1} ({labels[i]}) - MSE: {mse:.4f}, SSIM: {ssim_score:.4f}")
+        plt.tight_layout()
+        plt.show()
+
+# Run reconstruction quality analysis
+if __name__ == "__main__":
+    model, _ = load_trained_model('checkpoints', 'ssvae')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    print("\nAnalyzing reconstruction quality...")
+    analyze_reconstruction_quality(model, val_loader)
+
+# Cell 45: Latent Space Interpolation
+def interpolate_latent_space(model, val_loader, start_condition='Control', end_condition='PD', num_steps=10):
+    """Interpolate between two conditions in the latent space."""
+    device = next(model.parameters()).device
+    model.eval()
+
+    # Get average latent vectors for start and end conditions
+    condition_vectors = {start_condition: [], end_condition: []}
+
+    with torch.no_grad():
+        for batch in val_loader:
+            volumes = batch['volume'].to(device)
+            labels = batch['label']
+
+            _, _, mu, _ = model(volumes)
+
+            for label, vector in zip(labels, mu):
+                if label in condition_vectors:
+                    condition_vectors[label].append(vector.cpu().numpy())
+
+    start_vector = np.mean(condition_vectors[start_condition], axis=0)
+    end_vector = np.mean(condition_vectors[end_condition], axis=0)
+
+    # Interpolate
+    alphas = np.linspace(0, 1, num_steps)
+    interpolated_vectors = [
+        (1 - alpha) * start_vector + alpha * end_vector
+        for alpha in alphas
+    ]
+
+    # Generate images from interpolated vectors
+    interpolated_images = []
+    with torch.no_grad():
+        for vec in interpolated_vectors:
+            latent = torch.tensor(vec, dtype=torch.float32).unsqueeze(0).to(device)
+            dummy_skip_connections = [
+                torch.zeros(1, 32, 64, 64, 64, device=device),
+                torch.zeros(1, 64, 32, 32, 32, device=device),
+                torch.zeros(1, 128, 16, 16, 16, device=device),
+                torch.zeros(1, 256, 8, 8, 8, device=device)
+            ]
+            image = model.decoder(latent, dummy_skip_connections)
+            interpolated_images.append(image.cpu().numpy())
+
+    # Visualize interpolation
+    plt.figure(figsize=(20, 4 * num_steps))
+    for i, image in enumerate(interpolated_images):
+        brain = image[0, 0]
 
         # Get middle slices
-        slices_orig = [
-            orig[orig.shape[0]//2, :, :],
-            orig[:, orig.shape[1]//2, :],
-            orig[:, :, orig.shape[2]//2]
-        ]
-        slices_recon = [
-            recon[recon.shape[0]//2, :, :],
-            recon[:, recon.shape[1]//2, :],
-            recon[:, :, recon.shape[2]//2]
-        ]
-        slices_uncert = [
-            uncert[uncert.shape[0]//2, :, :],
-            uncert[:, uncert.shape[1]//2, :],
-            uncert[:, :, uncert.shape[2]//2]
-        ]
+        axial = brain[brain.shape[0]//2, :, :]
+        sagittal = brain[:, brain.shape[1]//2, :]
+        coronal = brain[:, :, brain.shape[2]//2]
 
-        views = ['Axial', 'Sagittal', 'Coronal']
+        # Plot
+        plt.subplot(num_steps, 3, i*3 + 1)
+        plt.imshow(axial, cmap='gray')
+        plt.title(f'Step {i} - Axial' if i == 0 else '')
+        plt.axis('off')
 
-        for i, (view, orig_slice, recon_slice, uncert_slice) in enumerate(zip(
-            views, slices_orig, slices_recon, slices_uncert)):
+        plt.subplot(num_steps, 3, i*3 + 2)
+        plt.imshow(sagittal, cmap='gray')
+        plt.title(f'Step {i} - Sagittal' if i == 0 else '')
+        plt.axis('off')
 
-            # Original
-            plt.subplot(num_samples, 9, idx*9 + i*3 + 1)
-            plt.imshow(orig_slice, cmap='gray')
-            if idx == 0:
-                plt.title(f'Original {view}')
-            if i == 0:
-                plt.ylabel(f'Sample {idx+1}\n({labels[idx]})')
-            plt.axis('off')
+        plt.subplot(num_steps, 3, i*3 + 3)
+        plt.imshow(coronal, cmap='gray')
+        plt.title(f'Step {i} - Coronal' if i == 0 else '')
+        plt.axis('off')
 
-            # Reconstruction
-            plt.subplot(num_samples, 9, idx*9 + i*3 + 2)
-            plt.imshow(recon_slice, cmap='gray')
-            if idx == 0:
-                plt.title(f'Reconstructed {view}')
-            plt.axis('off')
+    plt.suptitle(f'Interpolation from {start_condition} to {end_condition}')
+    plt.tight_layout()
+    plt.show()
 
-            # Uncertainty
-            plt.subplot(num_samples, 9, idx*9 + i*3 + 3)
-            plt.imshow(uncert_slice, cmap='viridis')
-            if idx == 0:
-                plt.title(f'Uncertainty {view}')
-            plt.colorbar()
-            plt.axis('off')
+# Run latent space interpolation
+if __name__ == "__main__":
+    model, _ = load_trained_model('checkpoints', 'ssvae')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
 
-        # Compute and display metrics
-        metrics = compute_evaluation_metrics(orig, recon, uncert)
-        print(f"\nMetrics for Sample {idx+1} ({labels[idx]}):")
-        print(f"MSE: {metrics['MSE']:.6f}")
-        print(f"SSIM (Axial): {metrics['SSIM']['axial']:.6f}")
-        print(f"SSIM (Sagittal): {metrics['SSIM']['sagittal']:.6f}")
-        print(f"SSIM (Coronal): {metrics['SSIM']['coronal']:.6f}")
-        print(f"Mean Uncertainty: {metrics['Uncertainty']['mean']:.6f}")
+    print("\nPerforming latent space interpolation...")
+    interpolate_latent_space(model, val_loader)
+
+# Cell 46: Uncertainty Estimation
+def estimate_uncertainty(model, val_loader, num_samples=5, num_mc_samples=50):
+    """Estimate model uncertainty using Monte Carlo dropout."""
+    device = next(model.parameters()).device
+    model.train()  # Set to train mode to enable dropout
+
+    originals = []
+    mean_reconstructions = []
+    uncertainties = []
+    labels = []
+
+    with torch.no_grad():
+        for batch in val_loader:
+            if len(originals) >= num_samples:
+                break
+
+            volumes = batch['volume'].to(device)
+            batch_labels = batch['label']
+
+            # Perform multiple forward passes
+            reconstructions = []
+            for _ in range(num_mc_samples):
+                recon, _, _, _ = model(volumes)
+                reconstructions.append(recon.cpu().numpy())
+
+            reconstructions = np.stack(reconstructions)
+            mean_recon = np.mean(reconstructions, axis=0)
+            uncertainty = np.std(reconstructions, axis=0)
+
+            originals.extend(volumes.cpu().numpy())
+            mean_reconstructions.extend(mean_recon)
+            uncertainties.extend(uncertainty)
+            labels.extend(batch_labels)
+
+    # Visualize results
+    for i in range(num_samples):
+        orig = originals[i][0]
+        recon = mean_reconstructions[i][0]
+        uncert = uncertainties[i][0]
+
+        plt.figure(figsize=(15, 5))
+
+        # Original
+        plt.subplot(331)
+        plt.imshow(orig[orig.shape[0]//2], cmap='gray')
+        plt.title('Original - Axial')
+        plt.axis('off')
+
+        plt.subplot(332)
+        plt.imshow(orig[:, orig.shape[1]//2], cmap='gray')
+        plt.title('Original - Sagittal')
+        plt.axis('off')
+
+        plt.subplot(333)
+        plt.imshow(orig[:, :, orig.shape[2]//2], cmap='gray')
+        plt.title('Original - Coronal')
+        plt.axis('off')
+
+        # Reconstruction
+        plt.subplot(334)
+        plt.imshow(recon[recon.shape[0]//2], cmap='gray')
+        plt.title('Reconstructed - Axial')
+        plt.axis('off')
+
+        plt.subplot(335)
+        plt.imshow(recon[:, recon.shape[1]//2], cmap='gray')
+        plt.title('Reconstructed - Sagittal')
+        plt.axis('off')
+
+        plt.subplot(336)
+        plt.imshow(recon[:, :, recon.shape[2]//2], cmap='gray')
+        plt.title('Reconstructed - Coronal')
+        plt.axis('off')
+
+        # Uncertainty
+        plt.subplot(337)
+        plt.imshow(uncert[uncert.shape[0]//2], cmap='viridis')
+        plt.title('Uncertainty - Axial')
+        plt.colorbar()
+        plt.axis('off')
+
+        plt.subplot(338)
+        plt.imshow(uncert[:, uncert.shape[1]//2], cmap='viridis')
+        plt.title('Uncertainty - Sagittal')
+        plt.colorbar()
+        plt.axis('off')
+
+        plt.subplot(339)
+        plt.imshow(uncert[:, :, uncert.shape[2]//2], cmap='viridis')
+        plt.title('Uncertainty - Coronal')
+        plt.colorbar()
+        plt.axis('off')
+
+        plt.suptitle(f"Sample {i+1} ({labels[i]})")
+        plt.tight_layout()
+        plt.show()
+
+# Run uncertainty estimation
+if __name__ == "__main__":
+    model, _ = load_trained_model('checkpoints', 'ssvae')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    print("\nEstimating model uncertainty...")
+    estimate_uncertainty(model, val_loader)
+
+# Cell 47: Feature Importance Analysis
+from sklearn.inspection import permutation_importance
+from sklearn.svm import SVC
+
+def analyze_feature_importance(model, val_loader):
+    """Analyze the importance of latent space features for classification."""
+    device = next(model.parameters()).device
+    model.eval()
+
+    latent_vectors = []
+    labels = []
+
+    # Extract latent vectors and labels
+    with torch.no_grad():
+        for batch in val_loader:
+            volumes = batch['volume'].to(device)
+            batch_labels = batch['label']
+
+            _, _, mu, _ = model(volumes)
+            latent_vectors.extend(mu.cpu().numpy())
+            labels.extend(batch_labels)
+
+    latent_vectors = np.array(latent_vectors)
+    labels = np.array(labels)
+
+    # Train a simple classifier on the latent space
+    clf = SVC(kernel='rbf')
+    clf.fit(latent_vectors, labels)
+
+    # Perform permutation importance
+    result = permutation_importance(clf, latent_vectors, labels, n_repeats=10, random_state=42)
+
+    # Sort features by importance
+    feature_importance = result.importances_mean
+    sorted_idx = feature_importance.argsort()
+
+    # Plot feature importance
+    plt.figure(figsize=(10, 6))
+    plt.barh(range(20), feature_importance[sorted_idx][-20:])
+    plt.yticks(range(20), sorted_idx[-20:])
+    plt.xlabel("Permutation Importance")
+    plt.ylabel("Latent Dimension")
+    plt.title("Top 20 Most Important Latent Dimensions")
+    plt.tight_layout()
+    plt.show()
+
+    # Print top 10 important features
+    print("\nTop 10 Most Important Latent Dimensions:")
+    for idx in sorted_idx[-10:]:
+        print(f"Dimension {idx}: {feature_importance[idx]:.4f}")
+
+    return feature_importance
+
+# Run feature importance analysis
+if __name__ == "__main__":
+    model, _ = load_trained_model('checkpoints', 'ssvae')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+
+    print("\nAnalyzing feature importance...")
+    feature_importance = analyze_feature_importance(model, val_loader)
+
+# Cell 48: Latent Space Clustering
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+
+def analyze_latent_clustering(model, val_loader, n_clusters=3):
+    """Analyze clustering in the latent space."""
+    device = next(model.parameters()).device
+    model.eval()
+
+    latent_vectors = []
+    labels = []
+
+    # Extract latent vectors and labels
+    with torch.no_grad():
+        for batch in val_loader:
+            volumes = batch['volume'].to(device)
+            batch_labels = batch['label']
+
+            _, _, mu, _ = model(volumes)
+            latent_vectors.extend(mu.cpu().numpy())
+            labels.extend(batch_labels)
+
+    latent_vectors = np.array(latent_vectors)
+    labels = np.array(labels)
+
+    # Perform K-means clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    cluster_labels = kmeans.fit_predict(latent_vectors)
+
+    # Calculate silhouette score
+    silhouette_avg = silhouette_score(latent_vectors, cluster_labels)
+    print(f"Silhouette Score: {silhouette_avg:.4f}")
+
+    # Visualize clustering results
+    tsne = TSNE(n_components=2, random_state=42)
+    latent_2d = tsne.fit_transform(latent_vectors)
+
+    plt.figure(figsize=(12, 5))
+
+    # Plot true labels
+    plt.subplot(121)
+    scatter = plt.scatter(latent_2d[:, 0], latent_2d[:, 1], c=labels.astype('category').cat.codes, cmap='viridis')
+    plt.colorbar(scatter)
+    plt.title("True Labels")
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
+
+    # Plot cluster assignments
+    plt.subplot(122)
+    scatter = plt.scatter(latent_2d[:, 0], latent_2d[:, 1], c=cluster_labels, cmap='viridis')
+    plt.colorbar(scatter)
+    plt.title("K-means Clusters")
+    plt.xlabel("t-SNE 1")
+    plt.ylabel("t-SNE 2")
 
     plt.tight_layout()
     plt.show()
 
-# Run the evaluation
+    # Calculate cluster purity
+    purity = calculate_cluster_purity(labels, cluster_labels)
+    print(f"Cluster Purity: {purity:.4f}")
+
+def calculate_cluster_purity(true_labels, cluster_labels):
+    """Calculate the purity of clusters."""
+    contingency_matrix = pd.crosstab(true_labels, cluster_labels)
+    return np.sum(np.max(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
+
+# Run latent space clustering analysis
 if __name__ == "__main__":
-    try:
-        print("Loading trained Semi-Supervised VAE model...")
-        model, metadata = load_trained_ssvae()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
+    model, _ = load_trained_model('checkpoints', 'ssvae')
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
 
-        print("\nGenerating reconstructions with uncertainty estimates...")
-        originals, reconstructions, uncertainties, labels = generate_reconstructions_with_uncertainty(
-            model, val_loader, num_samples=5
-        )
-
-        print("\nVisualizing reconstructions and uncertainty maps...")
-        visualize_reconstructions_with_uncertainty(
-            originals, reconstructions, uncertainties, labels
-        )
-
-    except Exception as e:
-        print(f"Error during evaluation: {str(e)}")
-        import traceback
-        traceback.print_exc()
-
-# Cell 46: Region-based Uncertainty Analysis
-def analyze_regional_uncertainty(originals, reconstructions, uncertainties, labels):
-    """
-    Analyze uncertainty patterns in different brain regions.
-    """
-    # Define regions of interest (approximate coordinates for DaTSCAN)
-    regions = {
-        'Left Striatum': (slice(54, 74), slice(54, 74), slice(44, 64)),
-        'Right Striatum': (slice(54, 74), slice(54, 74), slice(64, 84)),
-        'Background': (slice(0, 20), slice(0, 20), slice(0, 20))
-    }
-
-    region_metrics = {region: [] for region in regions}
-
-    for idx in range(len(originals)):
-        orig = originals[idx, 0]
-        recon = reconstructions[idx, 0]
-        uncert = uncertainties[idx, 0]
-
-        for region_name, coords in regions.items():
-            # Extract regional data
-            orig_region = orig[coords]
-            recon_region = recon[coords]
-            uncert_region = uncert[coords]
-
-            # Compute metrics
-            metrics = {
-                'mse': np.mean((orig_region - recon_region) ** 2),
-                'mean_uncertainty': np.mean(uncert_region),
-                'max_uncertainty': np.max(uncert_region),
-                'uncertainty_std': np.std(uncert_region)
-            }
-            region_metrics[region_name].append(metrics)
-
-    # Plot regional analysis
-    plt.figure(figsize=(15, 5))
-
-    # MSE by region
-    plt.subplot(131)
-    boxplot_data = [[metrics['mse'] for metrics in region_metrics[region]]
-                    for region in regions]
-    plt.boxplot(boxplot_data, labels=regions.keys())
-    plt.title('MSE by Region')
-    plt.xticks(rotation=45)
-    plt.ylabel('MSE')
-
-    # Mean uncertainty by region
-    plt.subplot(132)
-    boxplot_data = [[metrics['mean_uncertainty'] for metrics in region_metrics[region]]
-                    for region in regions]
-    plt.boxplot(boxplot_data, labels=regions.keys())
-    plt.title('Mean Uncertainty by Region')
-    plt.xticks(rotation=45)
-    plt.ylabel('Mean Uncertainty')
-
-    # Max uncertainty by region
-    plt.subplot(133)
-    boxplot_data = [[metrics['max_uncertainty'] for metrics in region_metrics[region]]
-                    for region in regions]
-    plt.boxplot(boxplot_data, labels=regions.keys())
-    plt.title('Max Uncertainty by Region')
-    plt.xticks(rotation=45)
-    plt.ylabel('Max Uncertainty')
-
-    plt.tight_layout()
-    plt.show()
-
-    # Print summary statistics
-    print("\nRegional Analysis Summary:")
-    for region in regions:
-        metrics = region_metrics[region]
-        print(f"\n{region}:")
-        print(f"Mean MSE: {np.mean([m['mse'] for m in metrics]):.6f}")
-        print(f"Mean Uncertainty: {np.mean([m['mean_uncertainty'] for m in metrics]):.6f}")
-        print(f"Max Uncertainty: {np.mean([m['max_uncertainty'] for m in metrics]):.6f}")
-
-# Run the regional analysis
-if __name__ == "__main__":
-    try:
-        print("\nPerforming region-based uncertainty analysis...")
-        analyze_regional_uncertainty(originals, reconstructions, uncertainties, labels)
-    except Exception as e:
-        print(f"Error during regional analysis: {str(e)}")
-        traceback.print_exc()
-
+    print("\nAnalyzing latent space clustering...")
+    analyze_latent_clustering(model, val_loader)
