@@ -1,0 +1,16 @@
+version: '3'
+services:
+  pytorch-gpu:
+    image: nvcr.io/nvidia/pytorch:23.12-py3
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ..:/workspace
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
