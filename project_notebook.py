@@ -1143,121 +1143,121 @@ if avg_variances is not None:
 
 """# Model Phase"""
 
-# Memory and Batch Size Optimization test control
+# # Memory and Batch Size Optimization test control
 
-def test_batch_memory_limits(data_loader, start_size=8, max_size=48, step=8):
-    """
-    Tests different batch sizes to find the optimal one that maximizes GPU utilization
-    while avoiding out-of-memory errors.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    memory_stats = {}
-    optimal_batch_size = start_size
+# def test_batch_memory_limits(data_loader, start_size=8, max_size=48, step=8):
+#     """
+#     Tests different batch sizes to find the optimal one that maximizes GPU utilization
+#     while avoiding out-of-memory errors.
+#     """
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     memory_stats = {}
+#     optimal_batch_size = start_size
 
-    print("Starting batch size optimization test...")
-    print(f"Testing batch sizes from {start_size} to {max_size} in steps of {step}")
-    print("\nYour GPU: NVIDIA RTX 4070 Ti (12GB)")
-    print("Current test will estimate memory headroom for both training and inference\n")
+#     print("Starting batch size optimization test...")
+#     print(f"Testing batch sizes from {start_size} to {max_size} in steps of {step}")
+#     print("\nYour GPU: NVIDIA RTX 4070 Ti (12GB)")
+#     print("Current test will estimate memory headroom for both training and inference\n")
 
-    # Get a single batch from the data loader to understand the data shape
-    sample_batch = next(iter(data_loader))
-    sample_volume = sample_batch['volume']
-    volume_shape = sample_volume.shape[1:]
-    print(f"Volume shape (excluding batch dimension): {volume_shape}")
+#     # Get a single batch from the data loader to understand the data shape
+#     sample_batch = next(iter(data_loader))
+#     sample_volume = sample_batch['volume']
+#     volume_shape = sample_volume.shape[1:]
+#     print(f"Volume shape (excluding batch dimension): {volume_shape}")
 
-    for batch_size in range(start_size, max_size + step, step):
-        try:
-            print(f"\nTesting batch size: {batch_size}")
+#     for batch_size in range(start_size, max_size + step, step):
+#         try:
+#             print(f"\nTesting batch size: {batch_size}")
 
-            # Create a dummy batch with gradient tracking
-            dummy_data = torch.randn(batch_size, *volume_shape, device=device, requires_grad=True)
+#             # Create a dummy batch with gradient tracking
+#             dummy_data = torch.randn(batch_size, *volume_shape, device=device, requires_grad=True)
 
-            # Simulate model operations (more intensive to better represent real usage)
-            conv_weight1 = torch.randn(32, 1, 3, 3, 3, device=device, requires_grad=True)
-            conv_weight2 = torch.randn(64, 32, 3, 3, 3, device=device, requires_grad=True)
+#             # Simulate model operations (more intensive to better represent real usage)
+#             conv_weight1 = torch.randn(32, 1, 3, 3, 3, device=device, requires_grad=True)
+#             conv_weight2 = torch.randn(64, 32, 3, 3, 3, device=device, requires_grad=True)
 
-            # Forward operations (more complex to better simulate real model)
-            conv1 = torch.nn.functional.conv3d(dummy_data, conv_weight1, padding=1)
-            act1 = torch.nn.functional.relu(conv1)
-            pool1 = torch.nn.functional.max_pool3d(act1, kernel_size=2)
+#             # Forward operations (more complex to better simulate real model)
+#             conv1 = torch.nn.functional.conv3d(dummy_data, conv_weight1, padding=1)
+#             act1 = torch.nn.functional.relu(conv1)
+#             pool1 = torch.nn.functional.max_pool3d(act1, kernel_size=2)
 
-            conv2 = torch.nn.functional.conv3d(pool1, conv_weight2, padding=1)
-            act2 = torch.nn.functional.relu(conv2)
-            pool2 = torch.nn.functional.max_pool3d(act2, kernel_size=2)
+#             conv2 = torch.nn.functional.conv3d(pool1, conv_weight2, padding=1)
+#             act2 = torch.nn.functional.relu(conv2)
+#             pool2 = torch.nn.functional.max_pool3d(act2, kernel_size=2)
 
-            loss = pool2.mean()
-            loss.backward()
+#             loss = pool2.mean()
+#             loss.backward()
 
-            # Get memory statistics
-            allocated = torch.cuda.memory_allocated() / (1024 ** 2)  # MB
-            reserved = torch.cuda.memory_reserved() / (1024 ** 2)    # MB
-            max_memory = 12 * 1024  # 12GB for RTX 4070 Ti
-            memory_usage_percent = (reserved / max_memory) * 100
+#             # Get memory statistics
+#             allocated = torch.cuda.memory_allocated() / (1024 ** 2)  # MB
+#             reserved = torch.cuda.memory_reserved() / (1024 ** 2)    # MB
+#             max_memory = 12 * 1024  # 12GB for RTX 4070 Ti
+#             memory_usage_percent = (reserved / max_memory) * 100
 
-            memory_stats[batch_size] = {
-                'allocated': allocated,
-                'reserved': reserved,
-                'usage_percent': memory_usage_percent
-            }
+#             memory_stats[batch_size] = {
+#                 'allocated': allocated,
+#                 'reserved': reserved,
+#                 'usage_percent': memory_usage_percent
+#             }
 
-            print(f"GPU Memory Allocated: {allocated:.2f} MB")
-            print(f"GPU Memory Reserved: {reserved:.2f} MB")
-            print(f"Total GPU Memory Usage: {memory_usage_percent:.1f}%")
+#             print(f"GPU Memory Allocated: {allocated:.2f} MB")
+#             print(f"GPU Memory Reserved: {reserved:.2f} MB")
+#             print(f"Total GPU Memory Usage: {memory_usage_percent:.1f}%")
 
-            # Estimate training headroom
-            headroom = max_memory - reserved
-            print(f"Estimated memory headroom: {headroom:.2f} MB")
+#             # Estimate training headroom
+#             headroom = max_memory - reserved
+#             print(f"Estimated memory headroom: {headroom:.2f} MB")
 
-            # Update optimal batch size
-            optimal_batch_size = batch_size
+#             # Update optimal batch size
+#             optimal_batch_size = batch_size
 
-            # Clean up
-            del dummy_data, conv_weight1, conv_weight2, conv1, conv2, act1, act2, pool1, pool2, loss
-            torch.cuda.empty_cache()
+#             # Clean up
+#             del dummy_data, conv_weight1, conv_weight2, conv1, conv2, act1, act2, pool1, pool2, loss
+#             torch.cuda.empty_cache()
 
-            # If we're using more than 70% of GPU memory, stop testing
-            if memory_usage_percent > 70:
-                print("\nReaching high memory usage, stopping tests for safety")
-                break
+#             # If we're using more than 70% of GPU memory, stop testing
+#             if memory_usage_percent > 70:
+#                 print("\nReaching high memory usage, stopping tests for safety")
+#                 break
 
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"\nOut of memory at batch size {batch_size}")
-                print(f"Last successful batch size was {optimal_batch_size}")
-                break
-            else:
-                print(f"Unexpected error: {str(e)}")
-                break
+#         except RuntimeError as e:
+#             if "out of memory" in str(e):
+#                 print(f"\nOut of memory at batch size {batch_size}")
+#                 print(f"Last successful batch size was {optimal_batch_size}")
+#                 break
+#             else:
+#                 print(f"Unexpected error: {str(e)}")
+#                 break
 
-    # Calculate recommended values based on memory usage pattern
-    recommended_batch_size = int(optimal_batch_size * 0.8)  # 80% of max for safety
-    recommended_accum_steps = 2 if recommended_batch_size >= 16 else 4
+#     # Calculate recommended values based on memory usage pattern
+#     recommended_batch_size = int(optimal_batch_size * 0.8)  # 80% of max for safety
+#     recommended_accum_steps = 2 if recommended_batch_size >= 16 else 4
 
-    print("\nBatch Size Optimization Results:")
-    print(f"Maximum tested batch size: {optimal_batch_size}")
-    print(f"Recommended batch size for training: {recommended_batch_size}")
-    print(f"Recommended accumulation steps: {recommended_accum_steps}")
-    print("\nRecommended training configuration:")
-    print(f"config = TrainingConfig(")
-    print(f"    batch_size={recommended_batch_size},")
-    print(f"    accumulation_steps={recommended_accum_steps},")
-    print(f"    use_mixed_precision=True,")
-    print(f"    num_workers=4,")
-    print(f"    pin_memory=True")
-    print(f")")
+#     print("\nBatch Size Optimization Results:")
+#     print(f"Maximum tested batch size: {optimal_batch_size}")
+#     print(f"Recommended batch size for training: {recommended_batch_size}")
+#     print(f"Recommended accumulation steps: {recommended_accum_steps}")
+#     print("\nRecommended training configuration:")
+#     print(f"config = TrainingConfig(")
+#     print(f"    batch_size={recommended_batch_size},")
+#     print(f"    accumulation_steps={recommended_accum_steps},")
+#     print(f"    use_mixed_precision=True,")
+#     print(f"    num_workers=4,")
+#     print(f"    pin_memory=True")
+#     print(f")")
 
-    return recommended_batch_size, memory_stats
+#     return recommended_batch_size, memory_stats
 
-# Example usage
-if __name__ == "__main__":
-    try:
-        print("\nTesting optimal batch size configuration...")
-        optimal_batch_size, memory_stats = test_batch_memory_limits(train_loader)
-    except Exception as e:
-        print(f"Error during batch size testing: {str(e)}")
-        print("Using default conservative values:")
-        print("batch_size = 8")
-        print("accumulation_steps = 4")
+# # Example usage
+# if __name__ == "__main__":
+#     try:
+#         print("\nTesting optimal batch size configuration...")
+#         optimal_batch_size, memory_stats = test_batch_memory_limits(train_loader)
+#     except Exception as e:
+#         print(f"Error during batch size testing: {str(e)}")
+#         print("Using default conservative values:")
+#         print("batch_size = 8")
+#         print("accumulation_steps = 4")
 
 """## 1. Autoencoder
 

@@ -1,16 +1,15 @@
-version: "3.8"
-
+version: '3'
 services:
-  pytorch:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: pytorch_container
-    ports:
-      - "8888:8888"
+  dev:
+    build: .
+    image: pytorch-dev
+    container_name: pytorch-dev
     volumes:
       - .:/workspace
-    gpus:
-      - "all"                     # Changed to list syntax
+    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - "8888:8888"  # For JupyterLab
+    tty: true
+    stdin_open: true
