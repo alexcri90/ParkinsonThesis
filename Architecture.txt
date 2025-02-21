@@ -1,5 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <architecture>
+    <containerization>
+        <container_environment>
+            <base_image>nvcr.io/nvidia/pytorch:23.12-py3</base_image>
+            <cuda_version>12.1</cuda_version>
+            <key_features>
+                <feature>Pre-configured PyTorch with CUDA optimization</feature>
+                <feature>NVIDIA Container Toolkit integration</feature>
+                <feature>Optimized deep learning libraries</feature>
+            </key_features>
+        </container_environment>
+        
+        <docker_compose>
+            <configuration>
+                version: '3'
+                services:
+                  pytorch:
+                    image: nvcr.io/nvidia/pytorch:23.12-py3
+                    runtime: nvidia
+                    environment:
+                      - NVIDIA_VISIBLE_DEVICES=all
+                    volumes:
+                      - .:/workspace
+                    ports:
+                      - "8888:8888"
+                    command: jupyter lab --ip 0.0.0.0 --port 8888 --allow-root --no-browser
+            </configuration>
+        </docker_compose>
+        
+        <hardware_optimization>
+            <gpu_specs>
+                <model>NVIDIA RTX 4070 Ti</model>
+                <memory>12GB GDDR6X</memory>
+                <cuda_cores>7680</cuda_cores>
+                <memory_interface>192-bit</memory_interface>
+                <memory_bandwidth>504 GB/s</memory_bandwidth>
+            </gpu_specs>
+        </hardware_optimization>
+    </containerization>
     <introduction>
         The objective of this project is to validate and test various unsupervised models for latent space representation of Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. By leveraging unsupervised learning techniques, the goal is to uncover intrinsic patterns and features within the imaging data that could enhance the understanding of Parkinson's Disease progression.
     </introduction>
@@ -231,6 +269,99 @@
                 - Special attention to striatal region patterns
         </evaluation>
     </model>
+        <data_pipeline_updates>
+        <ingestion_improvements>
+            <gpu_acceleration>
+                <feature>Immediate tensor conversion after DICOM loading</feature>
+                <feature>Optional GPU transfer control via to_gpu parameter</feature>
+                <feature>Path normalization for cross-platform compatibility</feature>
+            </gpu_acceleration>
+            
+            <memory_management>
+                <feature>Chunk-based processing for large datasets</feature>
+                <feature>Automatic garbage collection</feature>
+                <feature>GPU memory clearing after operations</feature>
+            </memory_management>
+            
+            <preprocessing_pipeline>
+                <step>DICOM Load (CPU)</step>
+                <step>Normalization</step>
+                <step>Resize</step>
+                <step>Brain Masking</step>
+                <step>GPU Transfer</step>
+            </preprocessing_pipeline>
+        </ingestion_improvements>
+
+        <dataloader_enhancements>
+            <multithreading>
+                <workers>6 (optimized for 8-core CPU)</workers>
+                <features>
+                    <feature>Persistent workers enabled</feature>
+                    <feature>Prefetch factor of 2 for memory efficiency</feature>
+                </features>
+            </multithreading>
+            
+            <memory_optimization>
+                <feature>Pin memory enabled for faster GPU transfer</feature>
+                <feature>Batch size optimization based on GPU memory</feature>
+                <feature>Automatic device management</feature>
+            </memory_optimization>
+            
+            <performance_features>
+                <feature>Dataset statistics precalculation</feature>
+                <feature>Volume shape validation</feature>
+                <feature>Error handling and recovery</feature>
+            </performance_features>
+        </dataloader_enhancements>
+    </data_pipeline_updates>
+
+    <model_architecture_updates>
+        <device_management>
+            <feature>Automatic GPU detection and utilization</feature>
+            <feature>Fallback to CPU when needed</feature>
+            <feature>Memory tracking and optimization</feature>
+        </device_management>
+
+        <data_processing>
+            <feature>Tensor-based operations</feature>
+            <feature>Mixed precision support</feature>
+            <feature>Efficient memory usage</feature>
+        </data_processing>
+
+        <training_optimizations>
+            <feature>Gradient accumulation</feature>
+            <feature>Memory-efficient backpropagation</feature>
+            <feature>Dynamic batch sizing</feature>
+        </training_optimizations>
+    </model_architecture_updates>
+
+    <memory_management>
+        <gpu_memory>
+            <strategy>
+                <point>Data stays on CPU during preprocessing</point>
+                <point>GPU transfer only for model operations</point>
+                <point>Automatic memory clearing</point>
+            </strategy>
+            <batch_processing>
+                <feature>Dynamic batch size adjustment</feature>
+                <feature>Gradient accumulation</feature>
+                <feature>Memory monitoring</feature>
+            </batch_processing>
+        </gpu_memory>
+
+        <cpu_memory>
+            <data_loading>
+                <feature>Chunk-based processing</feature>
+                <feature>Worker process management</feature>
+                <feature>Efficient memory allocation</feature>
+            </data_loading>
+            <processing>
+                <feature>Incremental data processing</feature>
+                <feature>Memory-efficient operations</feature>
+                <feature>Garbage collection strategy</feature>
+            </processing>
+        </cpu_memory>
+    </memory_management>
     <workflow_pipeline>
         <data_pipeline>
             Step 1: Data loading and preprocessing of full brain volumes

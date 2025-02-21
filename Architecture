@@ -209,7 +209,6 @@
             <unsupervised_models>
                 - Autoencoders: Train deep autoencoders to learn latent representations of the imaging data.
                 - Variational Autoencoders (VAEs): Utilize VAEs to model the underlying distribution of the data.
-                - Generative Adversarial Networks (GANs): Explore Deep Convolutional GANs for generating synthetic images and learning latent features.
                 - Principal Component Analysis (PCA): Apply PCA for dimensionality reduction and feature extraction.
                 - t-Distributed Stochastic Neighbor Embedding (t-SNE): Use t-SNE for visualizing high-dimensional data in 2D or 3D space.
                 - UMAP: Employ Uniform Manifold Approximation and Projection (UMAP) for nonlinear dimensionality reduction.

@@ -1,29 +1,17 @@
-# Use NVIDIA's PyTorch container as base
-FROM nvcr.io/nvidia/pytorch:23.12-py3
+# Use the official NVIDIA NGC PyTorch container with Python 3.12 (24.12 release)
+FROM nvcr.io/nvidia/pytorch:24.12-py3
 
-# Set working directory
+# Set the working directory inside the container
 WORKDIR /workspace
 
-# Install additional dependencies
-RUN pip install --no-cache-dir \
-    scikit-learn \
-    scikit-image \
-    SimpleITK \
-    nibabel \
-    nilearn \
-    albumentations \
-    seaborn \
-    pandas \
-    tqdm \
-    pydicom \
-    umap-learn
+# Copy your repository contents into the container
+COPY . /workspace
 
-# Set environment variables for better GPU utilization
-ENV NVIDIA_VISIBLE_DEVICES=all
-ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+# (Optional) Install additional dependencies if needed:
+# RUN pip install -r requirements.txt
 
-# Copy project files
-COPY . /workspace/
+# Expose port 8888 (for Jupyter Lab or other web apps)
+EXPOSE 8888
 
-# Command to run Jupyter Lab
+# Default command - adjust as necessary for your development needs
 CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--allow-root", "--no-browser"]

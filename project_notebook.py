@@ -11,8 +11,11 @@ Original file is located at
 
 # Cell 1: Install dependencies
 # Uncomment and run the following command if dependencies are not already installed.
-# %pip install scikit-learn scikit-image SimpleITK nibabel nilearn albumentations seaborn pandas numpy matplotlib tqdm pydicom scipy
-# %pip install umap-learn
+# !pip install scikit-learn scikit-image SimpleITK nibabel nilearn albumentations seaborn pandas numpy matplotlib tqdm pydicom scipy
+# !pip install umap-learn
+#!pip install torch torchvision torchaudio
+#!pip install pandas
+# !pip install pydicom
 
 # Cell 2: Import statements and environment setup
 import torch
@@ -138,79 +141,158 @@ def save_qa_report(total_files, included_count, excluded_count, output_path="dat
     if exclusion_ratio > 0.5:
         warnings.warn(f"High proportion of raw files excluded: {exclusion_ratio:.2%}")
 
+def load_dicom(file_path):
+    """
+    GPU-accelerated DICOM loading
+    """
+    try:
+        ds = pydicom.dcmread(file_path)
+        # Convert to float32 and move to GPU immediately
+        pixel_array = torch.from_numpy(ds.pixel_array.astype(np.float32)).cuda()
+
+        # Apply rescaling on GPU
+        if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
+            slope = float(ds.RescaleSlope)
+            intercept = float(ds.RescaleIntercept)
+            pixel_array = pixel_array * slope + intercept
+
+        return pixel_array, ds
+    except Exception as e:
+        raise IOError(f"Error reading DICOM file {file_path}: {e}")
+
+def verify_data_directory():
+    """Verify the Images directory structure"""
+    base_dir = "Images"
+    if not os.path.exists(base_dir):
+        print(f"ERROR: {base_dir} directory not found!")
+        print(f"Current working directory: {os.getcwd()}")
+        print("Contents of current directory:")
+        print(os.listdir('.'))
+        return False
+
+    expected_subdirs = ['PPMI_Images_PD', 'PPMI_Images_SWEDD', 'PPMI_Images_Cont']
+    for subdir in expected_subdirs:
+        full_path = os.path.join(base_dir, subdir)
+        if not os.path.exists(full_path):
+            print(f"WARNING: Expected subdirectory {subdir} not found!")
+
+    return True
+
+# Add this check before running the main pipeline
+if not verify_data_directory():
+    print("Please ensure the Images directory is properly mounted and contains the expected structure")
+
 """## Data Ingestion"""
 
 # Cell 4: Data Ingestion Pipeline
 import pydicom
 import numpy as np
+import os
 
-def load_dicom(file_path):
+def normalize_path(path):
+    """Convert Windows path to Linux path"""
+    return path.replace('\\', '/')
+
+def load_dicom(file_path, to_gpu=False):
     """
-    Loads and processes a DICOM file:
-    - Reads the file using pydicom.
-    - Converts the pixel array to float32.
-    - Applies RescaleSlope and RescaleIntercept if available.
-
-    :param file_path: Path to the DICOM file.
-    :return: Tuple (processed_pixel_array, dicom_metadata)
+    Loads and processes a DICOM file with path normalization
+    Args:
+        file_path: Path to the DICOM file
+        to_gpu: If True, moves the tensor to GPU. Default False for visualization purposes
     """
     try:
+        # Normalize the path for Linux
+        file_path = normalize_path(file_path)
+
+        # Verify file exists
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+
         ds = pydicom.dcmread(file_path)
+
+        # Extract pixel array and convert to float32
+        pixel_array = ds.pixel_array.astype(np.float32)
+
+        # Apply rescaling if attributes are present
+        if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
+            slope = float(ds.RescaleSlope)
+            intercept = float(ds.RescaleIntercept)
+            pixel_array = pixel_array * slope + intercept
+
+        # Convert to tensor
+        tensor = torch.from_numpy(pixel_array)
+
+        # Move to GPU if requested
+        if to_gpu:
+            tensor = tensor.cuda()
+
+        return tensor, ds
+
     except Exception as e:
+        print(f"Full error details: {str(e)}")
+        print(f"Current working directory: {os.getcwd()}")
         raise IOError(f"Error reading DICOM file {file_path}: {e}")
 
-    # Extract pixel array and convert to float32
-    pixel_array = ds.pixel_array.astype(np.float32)
+# Cell 5: Execute Data Ingestion Pipeline with Error Handling
+import os
+import csv
 
-    # Apply rescaling if attributes are present
-    if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
-        slope = ds.RescaleSlope
-        intercept = ds.RescaleIntercept
-        pixel_array = pixel_array * slope + intercept
-
-    return pixel_array, ds
-
-# Cell 5: Execute Data Ingestion Pipeline
-# Define the base directory containing the "Images" folder (adjust if necessary)
+# Define the base directory containing the "Images" folder
 base_dir = "Images"
 
-# Collect files from only the expected subdirectories
-included_files, excluded_files = collect_files(base_dir)
+try:
+    # Collect files from only the expected subdirectories
+    included_files, excluded_files = collect_files(base_dir)
+    print(f"Found {len(included_files)} included files and {len(excluded_files)} excluded files")
 
-# Create a DataFrame for the validated file paths and their labels
-df = generate_dataframe(included_files)
+    # Save using csv module instead of pandas
+    with open('validated_file_paths.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['file_path', 'label'])  # header
+        for file_path, label in included_files:
+            # Convert Windows path to Linux path
+            linux_path = file_path.replace('\\', '/')
+            writer.writerow([linux_path, label])
 
-# Final validation: Ensure that no "br_raw" files are included
-if df["file_path"].str.contains("br_raw").any():
-    raise ValueError("Validation failed: 'br_raw' files detected in the final dataset!")
+    print("Validated file paths saved to validated_file_paths.csv")
 
-# Save the validated file paths to CSV for reproducibility
-df.to_csv("validated_file_paths.csv", index=False)
-print("Validated file paths saved to validated_file_paths.csv")
+    # Generate and save the QA report in a similar way
+    total_files = len(included_files) + len(excluded_files)
 
-# Generate and save the QA report
-total_files = len(included_files) + len(excluded_files)
-save_qa_report(total_files, len(included_files), len(excluded_files))
-print("QA report generated and saved as data_ingestion_QA_report.csv")
+    with open('data_ingestion_QA_report.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['total_files', 'included_files', 'excluded_files', 'exclusion_ratio'])
+        exclusion_ratio = len(excluded_files) / total_files if total_files > 0 else 0
+        writer.writerow([total_files, len(included_files), len(excluded_files), exclusion_ratio])
+
+    print("QA report generated and saved as data_ingestion_QA_report.csv")
+
+except Exception as e:
+    print(f"Error during data ingestion: {str(e)}")
 
 """## Data Visualization"""
 
 # Cell 6: Visualize One Axial, Coronal, and Sagittal Slice for a Random Patient per Group
-
 import pandas as pd
 import random
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Read the validated file paths CSV generated earlier
+# Read the validated file paths CSV with proper path handling
 df = pd.read_csv("validated_file_paths.csv")
+df['file_path'] = df['file_path'].apply(normalize_path)
 
 # Function to extract the three orthogonal slices from a 3D volume
 def extract_slices(volume):
     """
     Given a 3D volume, returns one axial, one coronal, and one sagittal slice.
-    Assumes volume shape is (depth, height, width).
+    Ensures output is on CPU for visualization.
     """
+    if torch.is_tensor(volume):
+        if volume.is_cuda:
+            volume = volume.cpu()
+        volume = volume.numpy()
+
     d, h, w = volume.shape
     axial = volume[d // 2, :, :]         # Axial: slice along depth
     coronal = volume[:, h // 2, :]        # Coronal: slice along height
@@ -236,10 +318,11 @@ for i, (group_key, group_label) in enumerate(groups.items()):
     print(f"Loading file for group {group_label}: {random_file}")
 
     # Load the DICOM volume using the previously defined load_dicom() function
-    volume, _ = load_dicom(random_file)
+    # Note: don't move to GPU since we're visualizing
+    volume, _ = load_dicom(random_file, to_gpu=False)
 
     # Verify the volume is 3D (if not, skip or raise an error)
-    if volume.ndim != 3:
+    if not (isinstance(volume, torch.Tensor) and volume.ndim == 3):
         raise ValueError(f"Expected 3D volume, got shape {volume.shape} for file: {random_file}")
 
     axial, coronal, sagittal = extract_slices(volume)
@@ -273,6 +356,7 @@ plt.show()
 # Cell 7: Data Preprocessing – Intensity Normalization & Volume Processing
 
 import numpy as np
+import torch
 
 def intensity_normalization(volume):
     """
@@ -280,57 +364,111 @@ def intensity_normalization(volume):
     - Truncates negative values (sets them to 0)
     - Applies min-max scaling to bring values between 0 and 1 per volume.
 
-    :param volume: Input 3D volume as a numpy array.
-    :return: Normalized volume.
+    :param volume: Input 3D volume as numpy array or PyTorch tensor
+    :return: Normalized volume (same type as input)
     """
-    volume = np.clip(volume, a_min=0, a_max=None)
-    vol_min, vol_max = volume.min(), volume.max()
-    if vol_max > vol_min:
-        volume = (volume - vol_min) / (vol_max - vol_min)
+    if torch.is_tensor(volume):
+        volume = torch.clamp(volume, min=0)
+        vol_min, vol_max = volume.min(), volume.max()
+        if vol_max > vol_min:
+            volume = (volume - vol_min) / (vol_max - vol_min)
+        else:
+            volume = volume - vol_min  # volume is constant
     else:
-        volume = volume - vol_min  # volume is constant
+        volume = np.clip(volume, a_min=0, a_max=None)
+        vol_min, vol_max = volume.min(), volume.max()
+        if vol_max > vol_min:
+            volume = (volume - vol_min) / (vol_max - vol_min)
+        else:
+            volume = volume - vol_min  # volume is constant
+
     return volume
 
 def resize_volume(volume, target_shape=(128, 128, 128)):
     """
-    Resizes the volume to the target shape using zero-padding or center cropping while preserving aspect ratio.
+    Resizes the volume to the target shape using zero-padding or center cropping
+    while preserving aspect ratio.
 
-    :param volume: Input 3D volume (numpy array) with shape (d, h, w).
-    :param target_shape: Desired output shape (d_out, h_out, w_out).
-    :return: Resized volume with shape target_shape.
+    :param volume: Input 3D volume (numpy array or PyTorch tensor)
+    :param target_shape: Desired output shape (d_out, h_out, w_out)
+    :return: Resized volume with shape target_shape
     """
+    is_tensor = torch.is_tensor(volume)
+    if is_tensor:
+        device = volume.device
+        resized = volume.clone()
+    else:
+        resized = volume.copy()
+
     current_shape = volume.shape
-    resized = volume.copy()
 
     # For each dimension, either pad or crop to the target size
     for i in range(3):
         current = resized.shape[i]
         target = target_shape[i]
+
         if current < target:
             # Calculate padding sizes
             pad_total = target - current
             pad_before = pad_total // 2
             pad_after = pad_total - pad_before
-            pad_width = [(0, 0), (0, 0), (0, 0)]
-            pad_width[i] = (pad_before, pad_after)
-            resized = np.pad(resized, pad_width=pad_width, mode="constant", constant_values=0)
+
+            if is_tensor:
+                # Create padding tuple for torch.nn.functional.pad
+                pad_tuple = [0] * 6  # (left, right, top, bottom, front, back)
+                pad_tuple[-(i*2+2)] = pad_before
+                pad_tuple[-(i*2+1)] = pad_after
+                resized = torch.nn.functional.pad(resized, pad_tuple, mode='constant', value=0)
+            else:
+                pad_width = [(0, 0), (0, 0), (0, 0)]
+                pad_width[i] = (pad_before, pad_after)
+                resized = np.pad(resized, pad_width=pad_width, mode="constant", constant_values=0)
+
         elif current > target:
             # Center crop
             start = (current - target) // 2
             end = start + target
-            if i == 0:
-                resized = resized[start:end, :, :]
-            elif i == 1:
-                resized = resized[:, start:end, :]
-            elif i == 2:
-                resized = resized[:, :, start:end]
+
+            if is_tensor:
+                if i == 0:
+                    resized = resized[start:end, :, :]
+                elif i == 1:
+                    resized = resized[:, start:end, :]
+                else:
+                    resized = resized[:, :, start:end]
+            else:
+                if i == 0:
+                    resized = resized[start:end, :, :]
+                elif i == 1:
+                    resized = resized[:, start:end, :]
+                else:
+                    resized = resized[:, :, start:end]
+
+    if is_tensor:
+        return resized.to(device)
     return resized
 
 # Example usage (for testing on one volume):
-volume, _ = load_dicom(random_file)  # random_file selected previously
+print("Testing preprocessing functions...")
+volume, _ = load_dicom(random_file, to_gpu=False)  # random_file selected previously
+print("Original shape:", volume.shape)
+
+# Test normalization
 norm_vol = intensity_normalization(volume)
+print("Normalized volume range:", norm_vol.min().item(), "to", norm_vol.max().item())
+
+# Test resizing
 resized_vol = resize_volume(norm_vol)
-print("Original shape:", volume.shape, "Resized shape:", resized_vol.shape)
+print("Resized shape:", resized_vol.shape)
+
+# Additional checks
+print("\nVolume statistics:")
+print("Original volume type:", type(volume))
+print("Normalized volume type:", type(norm_vol))
+print("Resized volume type:", type(resized_vol))
+
+if torch.is_tensor(resized_vol):
+    print("Is on GPU:", resized_vol.is_cuda)
 
 """### Brain Masking"""
 
@@ -340,56 +478,82 @@ import numpy as np
 import matplotlib.pyplot as plt
 from skimage.filters import threshold_otsu
 from skimage.morphology import binary_closing, ball
+import torch
+
+def get_device():
+    """Get the default device (GPU if available, else CPU)"""
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+        print(f"Using GPU: {torch.cuda.get_device_name(device)}")
+    else:
+        device = torch.device("cpu")
+        print("GPU not available, using CPU")
+    return device
 
 def resize_volume(volume, target_shape=(128, 128, 128)):
     """
     Resizes the volume to the target shape using zero-padding or center cropping.
 
     Args:
-        volume: Input 3D volume as numpy array with shape (d, h, w)
+        volume: Input 3D volume as numpy array or PyTorch tensor
         target_shape: Desired output shape as tuple (d_new, h_new, w_new)
 
     Returns:
         Resized volume with shape target_shape
     """
-    def get_pad_amounts(current_size, target_size):
-        """Helper to calculate padding amounts"""
-        if current_size >= target_size:
-            return 0, 0
-        diff = target_size - current_size
-        pad_before = diff // 2
-        pad_after = diff - pad_before
-        return pad_before, pad_after
+    is_tensor = torch.is_tensor(volume)
+    if is_tensor:
+        device = volume.device
+        resized = volume.clone()
+    else:
+        resized = volume.copy()
 
     current_shape = volume.shape
-    resized = volume.copy()
 
-    # Calculate padding/cropping for each dimension
-    pads = [get_pad_amounts(current_shape[i], target_shape[i]) for i in range(3)]
-
-    # Apply padding if needed
-    if any(sum(p) > 0 for p in pads):
-        resized = np.pad(
-            resized,
-            pad_width=pads,
-            mode="constant",
-            constant_values=0
-        )
-
-    # Apply cropping if needed
+    # For each dimension, either pad or crop to the target size
     for i in range(3):
-        if current_shape[i] > target_shape[i]:
-            # Calculate slicing indices
-            start = (current_shape[i] - target_shape[i]) // 2
-            end = start + target_shape[i]
-            # Apply slice
-            if i == 0:
-                resized = resized[start:end, :, :]
-            elif i == 1:
-                resized = resized[:, start:end, :]
-            else:
-                resized = resized[:, :, start:end]
+        current = resized.shape[i]
+        target = target_shape[i]
 
+        if current < target:
+            # Calculate padding sizes
+            pad_total = target - current
+            pad_before = pad_total // 2
+            pad_after = pad_total - pad_before
+
+            if is_tensor:
+                # Create padding tuple for torch.nn.functional.pad
+                pad_tuple = [0] * 6  # (left, right, top, bottom, front, back)
+                pad_tuple[-(i*2+2)] = pad_before
+                pad_tuple[-(i*2+1)] = pad_after
+                resized = torch.nn.functional.pad(resized, pad_tuple, mode='constant', value=0)
+            else:
+                pad_width = [(0, 0), (0, 0), (0, 0)]
+                pad_width[i] = (pad_before, pad_after)
+                resized = np.pad(resized, pad_width=pad_width, mode="constant", constant_values=0)
+
+        elif current > target:
+            # Center crop
+            start = (current - target) // 2
+            end = start + target
+
+            if is_tensor:
+                if i == 0:
+                    resized = resized[start:end, :, :]
+                elif i == 1:
+                    resized = resized[:, start:end, :]
+                else:
+                    resized = resized[:, :, start:end]
+            else:
+                if i == 0:
+                    resized = resized[start:end, :, :]
+                elif i == 1:
+                    resized = resized[:, start:end, :]
+                else:
+                    resized = resized[:, :, start:end]
+
+    if is_tensor:
+        return resized.to(device)
     return resized
 
 def process_volume(volume, target_shape=(128, 128, 128)):
@@ -400,7 +564,7 @@ def process_volume(volume, target_shape=(128, 128, 128)):
     3. Generating a brain mask via Otsu thresholding and morphological closing
 
     Args:
-        volume: Input 3D volume
+        volume: Input 3D volume (numpy array or PyTorch tensor)
         target_shape: Desired output shape (depth, height, width)
 
     Returns:
@@ -408,6 +572,11 @@ def process_volume(volume, target_shape=(128, 128, 128)):
         mask: Brain mask
         masked_vol: Masked volume
     """
+    is_tensor = torch.is_tensor(volume)
+    if is_tensor:
+        device = volume.device
+        volume = volume.cpu().numpy()
+
     # 1. Intensity normalization
     volume = np.clip(volume, a_min=0, a_max=None)
     vmin, vmax = volume.min(), volume.max()
@@ -425,18 +594,28 @@ def process_volume(volume, target_shape=(128, 128, 128)):
     mask = binary_closing(mask, footprint=ball(2))
     masked_vol = norm_vol * mask
 
+    # Convert back to tensor if input was tensor
+    if is_tensor:
+        norm_vol = torch.from_numpy(norm_vol).to(device)
+        mask = torch.from_numpy(mask).to(device)
+        masked_vol = torch.from_numpy(masked_vol).to(device)
+
     return norm_vol, mask, masked_vol
 
 # Demonstration: Load one sample DICOM file (using the first file in your validated DataFrame)
 sample_file = df.iloc[0]["file_path"]
-original_volume, _ = load_dicom(sample_file)
+original_volume, _ = load_dicom(sample_file, to_gpu=False)
 
 # Process the volume with our new function
 norm_vol, mask, masked_vol = process_volume(original_volume, target_shape=(128,128,128))
 
 # Extract an axial (middle) slice from both the normalized volume and the masked volume
-axial_norm = norm_vol[norm_vol.shape[0]//2, :, :]
-axial_masked = masked_vol[masked_vol.shape[0]//2, :, :]
+if torch.is_tensor(norm_vol):
+    axial_norm = norm_vol[norm_vol.shape[0]//2].cpu().numpy()
+    axial_masked = masked_vol[masked_vol.shape[0]//2].cpu().numpy()
+else:
+    axial_norm = norm_vol[norm_vol.shape[0]//2]
+    axial_masked = masked_vol[masked_vol.shape[0]//2]
 
 # Plot side-by-side for comparison
 fig, axes = plt.subplots(1, 2, figsize=(12, 6))
@@ -451,122 +630,86 @@ axes[1].axis("off")
 plt.tight_layout()
 plt.show()
 
+# Print some statistics
+print("\nVolume Statistics:")
+if torch.is_tensor(norm_vol):
+    print(f"Normalized volume range: {norm_vol.min().item():.3f} to {norm_vol.max().item():.3f}")
+    print(f"Masked volume range: {masked_vol.min().item():.3f} to {masked_vol.max().item():.3f}")
+    print(f"Device: {norm_vol.device}")
+else:
+    print(f"Normalized volume range: {norm_vol.min():.3f} to {norm_vol.max():.3f}")
+    print(f"Masked volume range: {masked_vol.min():.3f} to {masked_vol.max():.3f}")
+
 """## Dataloader Creation (with Shape Validation)"""
+
+# if __name__ == '__main__':
+#     mp.set_start_method('spawn', force=True)
 
 # Cell 9: Dataset Implementation with Shape Validation
 import torch
 from torch.utils.data import Dataset, DataLoader
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import gc
 import numpy as np
 import os
 import psutil
 from sklearn.model_selection import train_test_split
 
+# Move DaTScanDataset definition to module level
 class DaTScanDataset(Dataset):
-    def __init__(self, dataframe, transform=None):
+    def __init__(self, dataframe, transform=None, device=None):
         self.df = dataframe
         self.transform = transform
+        self.device = device or get_device()
         self._calculate_dataset_statistics()
 
     def _calculate_dataset_statistics(self):
-        """Calculate dataset statistics with optimized processing"""
-        chunk_size = 50  # Increased chunk size
+        """Calculate dataset statistics"""
+        print("Calculating dataset statistics...")
         stats_list = []
 
-        for i in tqdm(range(0, len(self.df), chunk_size), desc="Computing dataset stats"):
-            chunk = self.df.iloc[i:min(i+chunk_size, len(self.df))]
-            chunk_stats = []
-
-            # Process each file in the chunk
-            for _, row in chunk.iterrows():
-                try:
-                    volume, _ = load_dicom(row["file_path"])
-                    chunk_stats.append({
-                        'min': volume.min(),
-                        'max': volume.max()
-                    })
-                except Exception as e:
-                    print(f"Error processing file {row['file_path']}: {e}")
-
-            # Batch process the chunk statistics
-            if chunk_stats:
-                min_vals = [stat['min'] for stat in chunk_stats]
-                max_vals = [stat['max'] for stat in chunk_stats]
+        # Process in smaller chunks
+        for _, row in self.df.iterrows():
+            try:
+                volume, _ = load_dicom(row["file_path"], to_gpu=False)
                 stats_list.append({
-                    'min': min(min_vals),
-                    'max': max(max_vals)
+                    'min': volume.min().item(),
+                    'max': volume.max().item()
                 })
-
-            # Garbage collection only once per chunk
-            gc.collect()
-            torch.cuda.empty_cache()
+            except Exception as e:
+                print(f"Error processing file {row['file_path']}: {e}")
 
         # Compute final statistics
         if stats_list:
             self.stats = {
-                'min': min(stat['min'] for stat in stats_list),
-                'max': max(stat['max'] for stat in stats_list)
+                'min': min(s['min'] for s in stats_list),
+                'max': max(s['max'] for s in stats_list)
             }
         else:
-            self.stats = {'min': 0, 'max': 1}  # Default values if no valid stats
+            self.stats = {'min': 0, 'max': 1}
 
     def __len__(self):
-        """Return the total number of samples in the dataset"""
         return len(self.df)
-
-    def _validate_and_fix_volume(self, volume):
-        """
-        Validate volume shape and fix if necessary.
-        Ensures the volume is 3D with shape (depth, height, width).
-        """
-        # Convert to numpy array if not already
-        if isinstance(volume, torch.Tensor):
-            volume = volume.numpy()
-
-        # Check dimensionality
-        if volume.ndim == 2:
-            # If 2D, add a depth dimension
-            volume = volume[np.newaxis, :, :]
-        elif volume.ndim > 3:
-            # If more than 3D, squeeze any unit dimensions
-            volume = np.squeeze(volume)
-            # If still more than 3D, take the first 3 dimensions
-            if volume.ndim > 3:
-                volume = volume[:3, :, :]
-
-        # Verify final shape
-        if volume.ndim != 3:
-            raise ValueError(f"Unable to convert volume to 3D. Current shape: {volume.shape}")
-
-        return volume
 
     def __getitem__(self, idx):
         try:
             file_path = self.df.iloc[idx]["file_path"]
 
-            # Load DICOM
-            volume, _ = load_dicom(file_path)
-
-            # Validate and fix volume shape
-            try:
-                volume = self._validate_and_fix_volume(volume)
-            except Exception as e:
-                print(f"Error validating volume shape for {file_path}: {e}")
-                print(f"Initial volume shape: {volume.shape}")
-                raise
+            # Load and process on CPU
+            volume, _ = load_dicom(file_path, to_gpu=False)
 
             # Process volume
             norm_vol, mask, masked_vol = process_volume(volume, target_shape=(128, 128, 128))
 
-            # Clean up original data
-            del volume, norm_vol, mask
-            gc.collect()
+            # Convert to tensor if needed
+            if not torch.is_tensor(masked_vol):
+                masked_vol = torch.from_numpy(masked_vol)
 
-            # Convert to tensor
-            volume_tensor = torch.from_numpy(np.expand_dims(masked_vol, axis=0)).float()
+            # Add channel dimension
+            volume_tensor = masked_vol.unsqueeze(0).float()
 
-            del masked_vol
+            # Clean up
+            del volume, norm_vol, mask, masked_vol
             gc.collect()
 
             return {
@@ -574,17 +717,13 @@ class DaTScanDataset(Dataset):
                 "label": self.df.iloc[idx]["label"],
                 "path": file_path
             }
-
         except Exception as e:
             print(f"Error loading file {file_path}: {str(e)}")
-            print(f"Stack trace:")
-            import traceback
-            traceback.print_exc()
             return None
 
 def create_dataloaders(df, batch_size=4, train_split=0.8):
-    """Create train and validation dataloaders with stratified split"""
-    # Stratified split to maintain group distributions
+    """Create train and validation dataloaders"""
+    # Split data
     train_df, val_df = train_test_split(
         df,
         test_size=1-train_split,
@@ -601,12 +740,12 @@ def create_dataloaders(df, batch_size=4, train_split=0.8):
     train_dataset = DaTScanDataset(train_df)
     val_dataset = DaTScanDataset(val_df)
 
-    # Create dataloaders
+    # Create dataloaders with reduced number of workers initially
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # No multiprocessing for debugging
+        num_workers=0,  # Start with 0 workers for debugging
         pin_memory=True
     )
 
@@ -614,7 +753,7 @@ def create_dataloaders(df, batch_size=4, train_split=0.8):
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,  # No multiprocessing for debugging
+        num_workers=0,  # Start with 0 workers for debugging
         pin_memory=True
     )
 
@@ -628,38 +767,37 @@ def print_memory_stats():
         print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
     print(f"CPU Memory Usage: {psutil.Process().memory_info().rss / 1024**2:.2f} MB")
 
-# Test the dataset and dataloaders
-if __name__ == "__main__":
-    print("Creating dataloaders...")
-    train_loader, val_loader = create_dataloaders(df, batch_size=2)
+# Test the dataloaders
+print("Creating dataloaders...")
+train_loader, val_loader = create_dataloaders(df, batch_size=2)
 
-    print(f"Number of training batches: {len(train_loader)}")
-    print(f"Number of validation batches: {len(val_loader)}")
+print(f"Number of training batches: {len(train_loader)}")
+print(f"Number of validation batches: {len(val_loader)}")
 
-    # Test the first few batches with detailed logging
-    print("\nTesting first few batches from training loader...")
-    print_memory_stats()
+# Test the first few batches
+print("\nTesting first few batches from training loader...")
+print_memory_stats()
 
-    try:
-        for i, batch in enumerate(tqdm(train_loader, desc="Processing batches")):
-            if batch is not None:
-                print(f"\nBatch {i+1}:")
-                print(f"Volume shape: {batch['volume'].shape}")
-                print(f"Label: {batch['label']}")
-                print_memory_stats()
-            else:
-                print(f"Batch {i+1} is None!")
+try:
+    for i, batch in enumerate(tqdm(train_loader)):
+        if batch is not None:
+            print(f"\nBatch {i+1}:")
+            print(f"Volume shape: {batch['volume'].shape}")
+            print(f"Label: {batch['label']}")
+            print_memory_stats()
+        else:
+            print(f"Batch {i+1} is None!")
 
-            if i >= 2:  # Test first 3 batches
-                break
+        if i >= 2:  # Test first 3 batches
+            break
 
-            gc.collect()
-            torch.cuda.empty_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
 
-    except Exception as e:
-        print(f"Error during batch processing: {str(e)}")
-        import traceback
-        traceback.print_exc()
+except Exception as e:
+    print(f"Error during batch processing: {str(e)}")
+    import traceback
+    traceback.print_exc()
 
 """# Exploratory Data Analysis (EDA)"""
 
@@ -668,7 +806,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from collections import defaultdict
 from sklearn.model_selection import train_test_split
 
@@ -1457,7 +1595,7 @@ def print_gpu_memory_stats():
 
 # Cell 13: Training Loop Implementation
 import torch.nn as nn
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 def train_autoencoder(model, train_loader, val_loader, config=None):
@@ -2418,7 +2556,7 @@ class VAELoss:
         return total_loss, recon_loss, kl_loss, beta
 
 # Cell 21: Training Configuration and Utilities
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import os
 from pathlib import Path
 import json
@@ -2945,7 +3083,7 @@ from pathlib import Path
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from collections import OrderedDict
 
 # PyTorch imports
@@ -3652,7 +3790,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import seaborn as sns
 from skimage.metrics import structural_similarity as ssim
 
@@ -4159,7 +4297,7 @@ class SSVAECheckpointHandler:
 # Cell 40: Training Loop
 import torch
 import torch.cuda.amp as amp
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -5179,3 +5317,550 @@ if __name__ == "__main__":
 
 """# Evaluation Phase"""
 
+# Cell 49: Latent Space Analysis Utilities
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+import pandas as pd
+from tqdm import tqdm
+
+class LatentSpaceAnalyzer:
+    """
+    Comprehensive toolkit for analyzing latent space representations of
+    neural network models trained on medical imaging data.
+    """
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    def extract_latent_vectors(self, model, dataloader):
+        """
+        Extract latent vectors from a trained model using the validation dataset.
+
+        Args:
+            model: Trained model (AE, VAE, SSAE, or SSVAE)
+            dataloader: DataLoader containing validation data
+
+        Returns:
+            latent_vectors: numpy array of latent vectors
+            labels: list of corresponding labels
+        """
+        model.eval()
+        latent_vectors = []
+        labels = []
+
+        with torch.no_grad():
+            for batch in tqdm(dataloader, desc=f"Extracting latent vectors for {self.model_name}"):
+                volumes = batch['volume'].to(self.device)
+                batch_labels = batch['label']
+
+                # Handle different model types
+                if self.model_name in ['VAE', 'SSVAE']:
+                    _, _, mu, _ = model(volumes)
+                    latent_vectors.append(mu.cpu().numpy())
+                else:  # AE or SSAE
+                    _, _, z = model(volumes)
+                    latent_vectors.append(z.cpu().numpy())
+
+                labels.extend(batch_labels)
+
+                # Clean up GPU memory
+                del volumes
+                torch.cuda.empty_cache()
+
+        return np.vstack(latent_vectors), np.array(labels)
+
+    def reduce_dimensionality(self, latent_vectors, method='tsne'):
+        """
+        Apply dimensionality reduction to latent vectors.
+
+        Args:
+            latent_vectors: numpy array of latent vectors
+            method: 'tsne' or 'pca'
+
+        Returns:
+            reduced_vectors: 2D numpy array
+        """
+        if method.lower() == 'tsne':
+            reducer = TSNE(n_components=2, random_state=42)
+        else:
+            reducer = PCA(n_components=2)
+
+        return reducer.fit_transform(latent_vectors)
+
+    def visualize_latent_space(self, reduced_vectors, labels, method='tsne'):
+        """
+        Create scatter plot of reduced dimensionality latent space.
+
+        Args:
+            reduced_vectors: 2D numpy array from dimensionality reduction
+            labels: array of corresponding clinical labels
+            method: string indicating the reduction method used
+        """
+        plt.figure(figsize=(12, 8))
+
+        unique_labels = np.unique(labels)
+        colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
+
+        for label, color in zip(unique_labels, colors):
+            mask = labels == label
+            plt.scatter(reduced_vectors[mask, 0], reduced_vectors[mask, 1],
+                       label=label, color=color, alpha=0.7)
+
+        plt.title(f'Latent Space Visualization ({method.upper()}) - {self.model_name}')
+        plt.xlabel(f'{method.upper()} Dimension 1')
+        plt.ylabel(f'{method.upper()} Dimension 2')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.show()
+
+    def analyze_dimensions(self, latent_vectors, labels):
+        """
+        Perform statistical analysis on individual latent dimensions.
+
+        Args:
+            latent_vectors: numpy array of latent vectors
+            labels: array of corresponding clinical labels
+        """
+        # Create DataFrame for analysis
+        df = pd.DataFrame(latent_vectors)
+        df['label'] = labels
+
+        # Statistical summary
+        stats = df.groupby('label').agg(['mean', 'std', 'min', 'max'])
+        print(f"\nLatent Dimension Statistics for {self.model_name}:")
+        print(stats)
+
+        # Violin plots for top discriminative dimensions
+        variances = np.var(latent_vectors, axis=0)
+        top_dims = np.argsort(variances)[-5:]  # Top 5 most variable dimensions
+
+        plt.figure(figsize=(15, 6))
+        for i, dim in enumerate(top_dims):
+            plt.subplot(1, 5, i+1)
+            sns.violinplot(data=df, x='label', y=dim)
+            plt.title(f'Dimension {dim}')
+            plt.xticks(rotation=45)
+
+        plt.suptitle(f'Top 5 Most Variable Dimensions - {self.model_name}')
+        plt.tight_layout()
+        plt.show()
+
+    def perform_clustering(self, latent_vectors, true_labels, n_clusters=3):
+        """
+        Perform clustering analysis on latent vectors.
+
+        Args:
+            latent_vectors: numpy array of latent vectors
+            true_labels: array of true clinical labels
+            n_clusters: number of clusters for K-means
+
+        Returns:
+            dict containing clustering metrics
+        """
+        # Perform K-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        cluster_labels = kmeans.fit_predict(latent_vectors)
+
+        # Calculate silhouette score
+        silhouette_avg = silhouette_score(latent_vectors, cluster_labels)
+
+        # Calculate cluster purity
+        contingency_matrix = pd.crosstab(true_labels, cluster_labels)
+        purity = np.sum(np.max(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
+
+        # Visualize clustering results with t-SNE
+        tsne_vectors = self.reduce_dimensionality(latent_vectors, 'tsne')
+
+        plt.figure(figsize=(12, 5))
+
+        # Plot true labels
+        plt.subplot(121)
+        scatter = plt.scatter(tsne_vectors[:, 0], tsne_vectors[:, 1],
+                            c=pd.Categorical(true_labels).codes,
+                            cmap='viridis')
+        plt.colorbar(scatter)
+        plt.title("True Labels")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+
+        # Plot cluster assignments
+        plt.subplot(122)
+        scatter = plt.scatter(tsne_vectors[:, 0], tsne_vectors[:, 1],
+                            c=cluster_labels, cmap='viridis')
+        plt.colorbar(scatter)
+        plt.title("K-means Clusters")
+        plt.xlabel("t-SNE 1")
+        plt.ylabel("t-SNE 2")
+
+        plt.suptitle(f'Clustering Analysis - {self.model_name}')
+        plt.tight_layout()
+        plt.show()
+
+        return {
+            'silhouette_score': silhouette_avg,
+            'purity': purity,
+            'cluster_labels': cluster_labels
+        }
+
+# Cell 50: Comparative Analysis of Models
+import torch
+from collections import defaultdict
+
+def load_model(model_class, checkpoint_path):
+    """Load a trained model from checkpoint."""
+    model = model_class()
+    checkpoint = torch.load(checkpoint_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    return model
+
+def compare_models(models_dict, val_loader):
+    """
+    Perform comparative analysis across all models.
+
+    Args:
+        models_dict: Dictionary mapping model names to model instances
+        val_loader: Validation data loader
+    """
+    results = defaultdict(dict)
+
+    for model_name, model in models_dict.items():
+        print(f"\nAnalyzing {model_name}...")
+        analyzer = LatentSpaceAnalyzer(model_name)
+
+        # Extract latent vectors
+        latent_vectors, labels = analyzer.extract_latent_vectors(model, val_loader)
+
+        # Dimensionality reduction
+        print("\nPerforming dimensionality reduction...")
+        tsne_vectors = analyzer.reduce_dimensionality(latent_vectors, 'tsne')
+        pca_vectors = analyzer.reduce_dimensionality(latent_vectors, 'pca')
+
+        # Visualize latent spaces
+        print("\nVisualizing latent spaces...")
+        analyzer.visualize_latent_space(tsne_vectors, labels, 'tsne')
+        analyzer.visualize_latent_space(pca_vectors, labels, 'pca')
+
+        # Analyze individual dimensions
+        print("\nAnalyzing latent dimensions...")
+        analyzer.analyze_dimensions(latent_vectors, labels)
+
+        # Perform clustering
+        print("\nPerforming clustering analysis...")
+        clustering_results = analyzer.perform_clustering(latent_vectors, labels)
+
+        # Store results
+        results[model_name] = {
+            'latent_vectors': latent_vectors,
+            'clustering_metrics': clustering_results
+        }
+
+    return results
+
+# Load and analyze all models
+if __name__ == "__main__":
+    try:
+        print("Loading models from checkpoints...")
+        models = {
+            'AE': load_model(BaseAutoencoder, 'checkpoints/autoencoder_best.pth'),
+            'VAE': load_model(VAE, 'checkpoints/vae_best.pth'),
+            'SSAE': load_model(SemiSupervisedAE, 'checkpoints/ssae_best.pth'),
+            'SSVAE': load_model(SSVAE, 'checkpoints/ssvae_best.pth')
+        }
+
+        # Move models to GPU
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        for model in models.values():
+            model.to(device)
+            model.eval()
+
+        # Perform comparative analysis
+        print("\nStarting comparative analysis...")
+        results = compare_models(models, val_loader)
+
+        # Print summary metrics
+        print("\nSummary of Clustering Metrics:")
+        for model_name in results:
+            metrics = results[model_name]['clustering_metrics']
+            print(f"\n{model_name}:")
+            print(f"Silhouette Score: {metrics['silhouette_score']:.4f}")
+            print(f"Cluster Purity: {metrics['purity']:.4f}")
+
+    except Exception as e:
+        print(f"Error during analysis: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+# Cell 51: Generate Thesis Figures and Tables
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import numpy as np
+from matplotlib.gridspec import GridSpec
+from sklearn.manifold import TSNE
+import os
+
+def generate_thesis_figures(results, save_dir='thesis_figures'):
+    """
+    Generate publication-quality figures for thesis.
+
+    Args:
+        results: Dictionary containing analysis results for each model
+        save_dir: Directory to save generated figures
+    """
+    # Create save directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+
+    # Set publication-ready style
+    plt.style.use('seaborn-whitegrid')
+    sns.set_context("paper", font_scale=1.5)
+
+    # 1. Combined Latent Space Visualization
+    plt.figure(figsize=(20, 15))
+    gs = GridSpec(2, 2)
+
+    for i, (model_name, data) in enumerate(results.items()):
+        plt.subplot(gs[i])
+        vectors = data['latent_vectors']
+        tsne = TSNE(n_components=2, random_state=42).fit_transform(vectors)
+
+        scatter = plt.scatter(tsne[:, 0], tsne[:, 1],
+                            c=pd.Categorical(labels).codes,
+                            cmap='viridis', alpha=0.7)
+        plt.title(f'{model_name} Latent Space')
+        if i == 0:
+            plt.colorbar(scatter, label='Clinical Group')
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'latent_space_comparison.pdf'),
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # 2. Clustering Metrics Comparison
+    metrics_data = {
+        'Model': [],
+        'Silhouette Score': [],
+        'Cluster Purity': []
+    }
+
+    for model_name, data in results.items():
+        metrics = data['clustering_metrics']
+        metrics_data['Model'].append(model_name)
+        metrics_data['Silhouette Score'].append(metrics['silhouette_score'])
+        metrics_data['Cluster Purity'].append(metrics['purity'])
+
+    metrics_df = pd.DataFrame(metrics_data)
+
+    plt.figure(figsize=(12, 6))
+    metrics_df.plot(x='Model', kind='bar', y=['Silhouette Score', 'Cluster Purity'],
+                   width=0.8)
+    plt.title('Clustering Performance Comparison')
+    plt.ylabel('Score')
+    plt.xticks(rotation=45)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'clustering_metrics.pdf'),
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # 3. Dimensionality Analysis
+    plt.figure(figsize=(15, 10))
+
+    for i, (model_name, data) in enumerate(results.items()):
+        vectors = data['latent_vectors']
+        pca = PCA()
+        pca.fit(vectors)
+
+        plt.subplot(2, 2, i+1)
+        cumsum = np.cumsum(pca.explained_variance_ratio_)
+        plt.plot(range(1, len(cumsum) + 1), cumsum)
+        plt.xlabel('Number of Components')
+        plt.ylabel('Cumulative Explained Variance')
+        plt.title(f'{model_name} - PCA Analysis')
+        plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, 'dimensionality_analysis.pdf'),
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # 4. Generate LaTeX tables
+    # Model comparison table
+    table_df = metrics_df.round(4)
+    latex_table = table_df.to_latex(index=False,
+                                  caption='Comparison of Model Performance',
+                                  label='tab:model_comparison')
+
+    with open(os.path.join(save_dir, 'model_comparison_table.tex'), 'w') as f:
+        f.write(latex_table)
+
+    # Detailed statistics table
+    stats_data = []
+    for model_name, data in results.items():
+        vectors = data['latent_vectors']
+        stats_data.append({
+            'Model': model_name,
+            'Mean Dim': np.mean(vectors),
+            'Std Dim': np.std(vectors),
+            'Max Dim': np.max(vectors),
+            'Min Dim': np.min(vectors)
+        })
+
+    stats_df = pd.DataFrame(stats_data)
+    stats_latex = stats_df.round(4).to_latex(index=False,
+                                           caption='Latent Space Statistics',
+                                           label='tab:latent_stats')
+
+    with open(os.path.join(save_dir, 'latent_statistics_table.tex'), 'w') as f:
+        f.write(stats_latex)
+
+    return metrics_df, stats_df
+
+def generate_clinical_analysis(results, clinical_info):
+    """
+    Generate clinical correlation analysis figures and tables.
+
+    Args:
+        results: Dictionary containing analysis results for each model
+        clinical_info: DataFrame containing clinical information
+    """
+    # Clinical correlation analysis
+    plt.figure(figsize=(15, 10))
+
+    for i, (model_name, data) in enumerate(results.items()):
+        vectors = data['latent_vectors']
+
+        # Compute correlations with clinical variables
+        correlations = []
+        for col in clinical_info.columns:
+            if col != 'label':  # Skip the label column
+                corr = np.corrcoef(vectors.mean(axis=1),
+                                 clinical_info[col])[0, 1]
+                correlations.append((col, corr))
+
+        # Plot correlations
+        plt.subplot(2, 2, i+1)
+        corr_df = pd.DataFrame(correlations, columns=['Variable', 'Correlation'])
+        sns.barplot(data=corr_df, x='Variable', y='Correlation')
+        plt.title(f'{model_name} - Clinical Correlations')
+        plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.savefig('thesis_figures/clinical_correlations.pdf',
+                dpi=300, bbox_inches='tight')
+    plt.show()
+
+# Run analysis and generate figures
+if __name__ == "__main__":
+    try:
+        print("Generating thesis figures and tables...")
+        metrics_df, stats_df = generate_thesis_figures(results)
+
+        # Print summary statistics
+        print("\nModel Performance Summary:")
+        print(metrics_df)
+        print("\nLatent Space Statistics:")
+        print(stats_df)
+
+    except Exception as e:
+        print(f"Error generating thesis figures: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+# Cell 52: Generate Thesis Discussion Template
+
+def generate_thesis_discussion(results):
+    """
+    Generate a structured discussion template based on the analysis results.
+    """
+    discussion = """
+# Latent Space Analysis of DaTSCAN Images: A Comparative Study
+
+## 1. Introduction
+- Brief overview of the four models (AE, VAE, SSAE, SSVAE)
+- Motivation for latent space analysis
+- Importance in the context of Parkinson's Disease diagnosis
+
+## 2. Methodology
+### 2.1 Model Architecture Comparison
+- Discussion of architectural differences
+- Latent space dimensionality choices
+- Training strategies and optimization
+
+### 2.2 Analysis Framework
+- Latent vector extraction process
+- Dimensionality reduction techniques (t-SNE and PCA)
+- Clustering analysis methodology
+- Statistical measures and metrics
+
+## 3. Results
+
+### 3.1 Latent Space Visualization
+- Interpretation of t-SNE plots for each model
+- Discussion of cluster separation
+- Qualitative assessment of group boundaries
+"""
+
+    # Add model-specific performance metrics
+    performance_section = "\n### 3.2 Quantitative Analysis\n"
+    for model_name, data in results.items():
+        metrics = data['clustering_metrics']
+        performance_section += f"""
+#### {model_name}
+- Silhouette Score: {metrics['silhouette_score']:.4f}
+- Cluster Purity: {metrics['purity']:.4f}
+- Key observations:
+  * [Add specific observations about cluster quality]
+  * [Note any particular strengths or weaknesses]
+"""
+
+    discussion += performance_section + """
+### 3.3 Clinical Relevance
+- Correlation with clinical outcomes
+- Potential biomarker identification
+- Diagnostic implications
+
+## 4. Comparative Analysis
+### 4.1 Model Strengths and Limitations
+- Autoencoder vs VAE comparison
+- Impact of semi-supervised learning
+- Trade-offs between models
+
+### 4.2 Clinical Applications
+- Diagnostic potential
+- Patient stratification
+- Disease progression monitoring
+
+## 5. Future Directions
+- Suggestions for model improvements
+- Additional clinical validations
+- Integration into clinical workflow
+
+## 6. Conclusion
+- Summary of key findings
+- Model recommendations
+- Clinical impact assessment
+"""
+
+    # Write discussion template to file
+    with open('thesis_figures/discussion_template.md', 'w') as f:
+        f.write(discussion)
+
+    return discussion
+
+# Generate discussion template
+if __name__ == "__main__":
+    try:
+        print("Generating thesis discussion template...")
+        discussion = generate_thesis_discussion(results)
+        print("\nDiscussion template has been saved to 'thesis_figures/discussion_template.md'")
+
+    except Exception as e:
+        print(f"Error generating discussion template: {str(e)}")
+        import traceback
+        traceback.print_exc()

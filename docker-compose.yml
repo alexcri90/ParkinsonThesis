@@ -1,13 +1,16 @@
-version: '3'
+version: "3.8"
+
 services:
   pytorch:
-    image: nvcr.io/nvidia/pytorch:23.12-py3
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-    volumes:
-      - .:/workspace
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pytorch_container
     ports:
       - "8888:8888"
-    command: jupyter lab --ip=0.0.0.0 --port=8888 --allow-root --no-browser --NotebookApp.token='' --NotebookApp.password=''
-    network_mode: host
+    volumes:
+      - .:/workspace
+    gpus:
+      - "all"                     # Changed to list syntax
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all

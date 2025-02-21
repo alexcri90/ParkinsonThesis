@@ -1,18 +1,11 @@
 {
-    "name": "PyTorch Development",
-    "image": "nvcr.io/nvidia/pytorch:23.12-py3",
-    "runArgs": ["--gpus=all"],
-    "mounts": [
-        "source=${localWorkspaceFolder},target=/workspace,type=bind"
-    ],
+    "name": "PyTorch Container",
+    "dockerComposeFile": ["../docker-compose.yml"],
+    "service": "pytorch",
     "workspaceFolder": "/workspace",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-python.python",
-                "ms-python.vscode-pylance",
-                "ms-toolsai.jupyter"
-            ]
-        }
-    }
-}
+    "extensions": [
+      "ms-python.python",
+      "ms-azuretools.vscode-docker"
+    ]
+  }
+  
