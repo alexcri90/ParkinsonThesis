@@ -1,2 +1,6 @@
-total_files,included_files,excluded_files,exclusion_ratio
-3879,2986,893,0.23021397267336943
+Metric,Value
+Timestamp,2025-02-22 16:17:07
+Total Files Processed,3879
+Files Included,2986
+Files Excluded,893
+Inclusion Rate,76.98%

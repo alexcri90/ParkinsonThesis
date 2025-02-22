@@ -2,8 +2,8 @@
 <architecture>
     <containerization>
         <container_environment>
-            <base_image>nvcr.io/nvidia/pytorch:23.12-py3</base_image>
-            <cuda_version>12.1</cuda_version>
+            <base_image>nvcr.io/nvidia/pytorch:24.12-py3</base_image>
+            <cuda_version>12.6</cuda_version>
             <key_features>
                 <feature>Pre-configured PyTorch with CUDA optimization</feature>
                 <feature>NVIDIA Container Toolkit integration</feature>
@@ -15,16 +15,19 @@
             <configuration>
                 version: '3'
                 services:
-                  pytorch:
-                    image: nvcr.io/nvidia/pytorch:23.12-py3
+                dev:
+                    build: .
+                    image: pytorch-dev
+                    container_name: pytorch-dev
+                    volumes:
+                    - .:/workspace
                     runtime: nvidia
                     environment:
-                      - NVIDIA_VISIBLE_DEVICES=all
-                    volumes:
-                      - .:/workspace
+                    - NVIDIA_VISIBLE_DEVICES=all
                     ports:
-                      - "8888:8888"
-                    command: jupyter lab --ip 0.0.0.0 --port 8888 --allow-root --no-browser
+                    - "8888:8888"  # For JupyterLab
+                    tty: true
+                    stdin_open: true
             </configuration>
         </docker_compose>
         
@@ -209,7 +212,6 @@
             <unsupervised_models>
                 - Autoencoders: Train deep autoencoders to learn latent representations of the imaging data.
                 - Variational Autoencoders (VAEs): Utilize VAEs to model the underlying distribution of the data.
-                - Generative Adversarial Networks (GANs): Explore Deep Convolutional GANs for generating synthetic images and learning latent features.
                 - Principal Component Analysis (PCA): Apply PCA for dimensionality reduction and feature extraction.
                 - t-Distributed Stochastic Neighbor Embedding (t-SNE): Use t-SNE for visualizing high-dimensional data in 2D or 3D space.
                 - UMAP: Employ Uniform Manifold Approximation and Projection (UMAP) for nonlinear dimensionality reduction.
