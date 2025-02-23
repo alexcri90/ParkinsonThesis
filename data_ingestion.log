@@ -973,3 +973,13 @@
 2025-02-23 20:29:19,552 - INFO - Loading DICOM file: Images/PPMI_Images_SWEDD/3319/Reconstructed_DaTSCAN/2014-06-25_15_41_45.0/I449244/PPMI_3319_NM_Reconstructed_DaTSCAN_Br_20141022165545733_1_S225357_I449244.dcm
 2025-02-23 20:29:19,568 - INFO - Initial pixel array shape: (91, 109, 91)
 2025-02-23 20:29:19,569 - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-23 20:56:12,937 - INFO - Dataset splits: train=2091, val=597, test=298
+2025-02-23 20:56:18,709 - INFO - Kept 2091/2091 valid file paths
+2025-02-23 20:56:18,714 - INFO - Initialized dataset with 2091 samples
+2025-02-23 20:56:18,714 - INFO - Found labels: ['Control', 'PD', 'SWEDD']
+2025-02-23 20:56:20,894 - INFO - Kept 597/597 valid file paths
+2025-02-23 20:56:20,897 - INFO - Initialized dataset with 597 samples
+2025-02-23 20:56:20,901 - INFO - Found labels: ['Control', 'PD', 'SWEDD']
+2025-02-23 20:56:21,938 - INFO - Kept 298/298 valid file paths
+2025-02-23 20:56:21,940 - INFO - Initialized dataset with 298 samples
+2025-02-23 20:56:21,940 - INFO - Found labels: ['Control', 'PD', 'SWEDD']
