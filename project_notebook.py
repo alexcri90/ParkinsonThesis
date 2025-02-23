@@ -551,3 +551,1084 @@ if __name__ == "__main__":
     plt.colorbar()
     plt.show()
 
+"""## Dataloader Creation (with Shape Validation)"""
+
+#!pip install ipywidgets
+import importlib
+import dataset_utils
+importlib.reload(dataset_utils)
+
+# Cell 8: Pipeline Validation and Quality Checks
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+from tqdm import tqdm
+
+def validate_pipeline(df, num_samples=10):
+    """
+    Validates the entire pipeline by checking:
+    1. Slice dimensions
+    2. GPU tensor operations
+    3. Intensity distributions
+    4. Memory usage
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Statistics collectors
+    shapes = []
+    intensities = []
+    memory_usage = []
+
+    # Sample files
+    sample_files = df.sample(n=min(num_samples, len(df)))
+
+    for _, row in tqdm(sample_files.iterrows(), total=len(sample_files)):
+        # Load and process volume
+        volume_tensor, _ = load_dicom(row['file_path'], device)
+
+        if volume_tensor is None:
+            print(f"Failed to load {row['file_path']}")
+            continue
+
+        # Record initial GPU memory
+        if torch.cuda.is_available():
+            memory_usage.append(torch.cuda.memory_allocated() / 1024**2)  # MB
+
+        # Process volume
+        norm_vol, mask, masked_vol = process_volume(
+            volume_tensor[9:73],  # Extract required slices
+            target_shape=(64, 128, 128),
+            device=device
+        )
+
+        # Record shape
+        shapes.append(masked_vol.shape)
+
+        # Record intensity statistics
+        intensities.append({
+            'mean': masked_vol.mean().item(),
+            'std': masked_vol.std().item(),
+            'min': masked_vol.min().item(),
+            'max': masked_vol.max().item()
+        })
+
+        # Clear GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    # Plot results
+    plt.figure(figsize=(15, 5))
+
+    # Plot 1: Shape verification
+    plt.subplot(131)
+    shape_counts = {}
+    for s in shapes:
+        shape_counts[str(s)] = shape_counts.get(str(s), 0) + 1
+    plt.bar(shape_counts.keys(), shape_counts.values())
+    plt.title('Output Shapes')
+    plt.xticks(rotation=45)
+
+    # Plot 2: Intensity distribution
+    plt.subplot(132)
+    # Create DataFrame for seaborn boxplot
+    intensity_data = []
+    for i in intensities:
+        intensity_data.extend([
+            {'Metric': 'Mean', 'Value': i['mean']},
+            {'Metric': 'Std', 'Value': i['std']}
+        ])
+    intensity_df = pd.DataFrame(intensity_data)
+    sns.boxplot(data=intensity_df, x='Metric', y='Value')
+    plt.title('Intensity Statistics')
+
+    # Plot 3: Memory usage
+    if memory_usage:
+        plt.subplot(133)
+        plt.plot(memory_usage)
+        plt.title('GPU Memory Usage (MB)')
+        plt.xlabel('Sample')
+        plt.ylabel('Memory (MB)')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary
+    print("\nValidation Summary:")
+    print(f"Processed {len(shapes)} samples successfully")
+    print(f"All shapes identical: {len(set(str(s) for s in shapes)) == 1}")
+    print(f"Target shape achieved: {all(s == (64, 128, 128) for s in shapes)}")
+
+    # Print intensity statistics
+    print("\nIntensity Statistics:")
+    means = [i['mean'] for i in intensities]
+    stds = [i['std'] for i in intensities]
+    print(f"Mean intensity: {np.mean(means):.3f} (±{np.std(means):.3f})")
+    print(f"Mean std: {np.mean(stds):.3f} (±{np.std(stds):.3f})")
+
+    return shapes, intensities, memory_usage
+
+# Run validation
+df = pd.read_csv("validated_file_paths.csv")
+shapes, intensities, memory_usage = validate_pipeline(df)
+
+# Cell 9: Validate Masking and ROI Selection
+def validate_masking(df, num_samples=5):
+    """
+    Validates the masking process by visualizing:
+    1. Original volume
+    2. Anatomical ROI mask
+    3. Otsu mask
+    4. Final masked volume
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Sample files
+    sample_files = df.sample(n=min(num_samples, len(df)))
+
+    for _, row in sample_files.iterrows():
+        # Load volume
+        volume_tensor, _ = load_dicom(row['file_path'], device)
+        if volume_tensor is None:
+            continue
+
+        # Extract slices and process
+        volume = volume_tensor[9:73]
+        norm_vol, mask, masked_vol = process_volume(
+            volume,
+            target_shape=(64, 128, 128),
+            device=device
+        )
+
+        # Create anatomical ROI mask
+        roi_mask = torch.zeros_like(norm_vol, device=device)
+        roi_mask[20:40, 82:103, 43:82] = 1
+
+        # Plot middle slices
+        mid_slice = norm_vol.shape[0] // 2
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+        fig.suptitle(f"Slice {mid_slice} Analysis - {row['label']}")
+
+        # Original normalized volume
+        im0 = axes[0, 0].imshow(norm_vol[mid_slice].cpu().numpy(), cmap='gray')
+        axes[0, 0].set_title('Normalized Volume')
+        plt.colorbar(im0, ax=axes[0, 0])
+
+        # ROI mask
+        im1 = axes[0, 1].imshow(roi_mask[mid_slice].cpu().numpy(), cmap='hot')
+        axes[0, 1].set_title('Anatomical ROI Mask')
+        plt.colorbar(im1, ax=axes[0, 1])
+
+        # Otsu mask
+        im2 = axes[1, 0].imshow(mask[mid_slice].cpu().numpy(), cmap='hot')
+        axes[1, 0].set_title('Otsu Mask')
+        plt.colorbar(im2, ax=axes[1, 0])
+
+        # Final masked volume
+        im3 = axes[1, 1].imshow(masked_vol[mid_slice].cpu().numpy(), cmap='gray')
+        axes[1, 1].set_title('Masked Volume')
+        plt.colorbar(im3, ax=axes[1, 1])
+
+        plt.tight_layout()
+        plt.show()
+
+        # Clear GPU memory
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+# Run masking validation
+validate_masking(df)
+
+
+
+# Cell 10: GPU Performance Benchmarking
+import time
+from torch.profiler import profile, record_function, ProfilerActivity
+
+def benchmark_pipeline(df, num_samples=5):
+    """
+    Benchmarks the pipeline comparing CPU vs GPU operations
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    sample_files = df.sample(n=min(num_samples, len(df)))
+
+    def process_batch(files, use_gpu=True):
+        target_device = device if use_gpu else torch.device('cpu')
+        times = []
+
+        for _, row in files.iterrows():
+            start = time.time()
+
+            # Load and process
+            volume_tensor, _ = load_dicom(row['file_path'], target_device)
+            if volume_tensor is not None:
+                volume = volume_tensor[9:73]
+                norm_vol, mask, masked_vol = process_volume(
+                    volume,
+                    target_shape=(64, 128, 128),
+                    device=target_device
+                )
+
+            end = time.time()
+            times.append(end - start)
+
+            # Clear GPU memory
+            if use_gpu and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+        return times
+
+    # Benchmark CPU
+    print("Running CPU benchmark...")
+    cpu_times = process_batch(sample_files, use_gpu=False)
+
+    # Benchmark GPU
+    print("Running GPU benchmark...")
+    gpu_times = process_batch(sample_files, use_gpu=True)
+
+    # Plot results
+    plt.figure(figsize=(10, 5))
+    plt.boxplot([cpu_times, gpu_times], labels=['CPU', 'GPU'])
+    plt.title('Processing Time Comparison')
+    plt.ylabel('Time (seconds)')
+    plt.show()
+
+    # Print summary
+    print("\nBenchmark Summary:")
+    print(f"CPU mean time: {np.mean(cpu_times):.3f}s (±{np.std(cpu_times):.3f}s)")
+    print(f"GPU mean time: {np.mean(gpu_times):.3f}s (±{np.std(gpu_times):.3f}s)")
+    print(f"Speedup: {np.mean(cpu_times)/np.mean(gpu_times):.2f}x")
+
+    # Profile GPU operations
+    if torch.cuda.is_available():
+        print("\nGPU Operation Profile:")
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                    profile_memory=True, record_shapes=True) as prof:
+            with record_function("sample_processing"):
+                # Process one sample
+                sample_row = sample_files.iloc[0]
+                volume_tensor, _ = load_dicom(sample_row['file_path'], device)
+                if volume_tensor is not None:
+                    volume = volume_tensor[9:73]
+                    norm_vol, mask, masked_vol = process_volume(
+                        volume,
+                        target_shape=(64, 128, 128),
+                        device=device
+                    )
+
+        print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+
+# Run benchmark
+benchmark_pipeline(df)
+
+"""# Exploratory Data Analysis (EDA)"""
+
+# Cell 11: Group-wise Intensity Distribution Analysis
+import torch
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+def analyze_group_intensities(df, num_samples_per_group=30):
+    """
+    Analyzes intensity distributions across patient groups
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Prepare data collection
+    intensity_data = []
+
+    # Sample equal numbers from each group
+    for group in ['Control', 'PD', 'SWEDD']:
+        group_df = df[df['label'] == group]
+        n_samples = min(num_samples_per_group, len(group_df))
+        samples = group_df.sample(n=n_samples)
+
+        for _, row in tqdm(samples.iterrows(), desc=f"Processing {group}"):
+            volume_tensor, _ = load_dicom(row['file_path'], device)
+            if volume_tensor is None:
+                continue
+
+            # Process volume
+            norm_vol, mask, masked_vol = process_volume(
+                volume_tensor[9:73],
+                target_shape=(64, 128, 128),
+                device=device
+            )
+
+            # Calculate statistics for anatomical ROI
+            roi_mask = torch.zeros_like(norm_vol, device=device)
+            roi_mask[20:40, 82:103, 43:82] = 1
+            roi_values = masked_vol[roi_mask.bool()]
+
+            # Collect metrics
+            metrics = {
+                'group': group,
+                'mean': roi_values.mean().item(),
+                'median': roi_values.median().item(),
+                'std': roi_values.std().item(),
+                'q25': roi_values.quantile(0.25).item(),
+                'q75': roi_values.quantile(0.75).item()
+            }
+            intensity_data.append(metrics)
+
+            # Clear GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    # Convert to DataFrame
+    intensity_df = pd.DataFrame(intensity_data)
+
+    # Create visualization
+    plt.figure(figsize=(15, 5))
+
+    # Plot 1: Violin plots
+    plt.subplot(131)
+    sns.violinplot(data=intensity_df, x='group', y='mean', inner='box')
+    plt.title('Distribution of Mean Intensities by Group')
+    plt.xticks(rotation=45)
+
+    # Plot 2: Box plots with outliers
+    plt.subplot(132)
+    sns.boxplot(data=intensity_df, x='group', y='std')
+    plt.title('Distribution of Standard Deviations by Group')
+    plt.xticks(rotation=45)
+
+    # Plot 3: IQR ranges
+    plt.subplot(133)
+    for i, group in enumerate(intensity_df['group'].unique()):
+        group_data = intensity_df[intensity_df['group'] == group]
+        plt.vlines(x=i, ymin=group_data['q25'].mean(), ymax=group_data['q75'].mean(),
+                  color='black', linewidth=2)
+        plt.scatter(i, group_data['median'].mean(), color='red', s=100)
+    plt.xticks(range(len(intensity_df['group'].unique())),
+               intensity_df['group'].unique(), rotation=45)
+    plt.title('IQR Ranges by Group')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary statistics
+    print("\nSummary Statistics by Group:")
+    print(intensity_df.groupby('group').agg({
+        'mean': ['mean', 'std'],
+        'median': 'mean',
+        'std': 'mean',
+    }).round(3))
+
+    return intensity_df
+
+# Run analysis
+df = pd.read_csv("validated_file_paths.csv")
+intensity_results = analyze_group_intensities(df)
+
+# Cell 12: Spatial Pattern Analysis
+import torch
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+def analyze_spatial_patterns(df, num_samples_per_group=10):
+    """
+    Analyzes spatial patterns in the volumes:
+    1. Slice-wise intensity profiles
+    2. Regional intensity variations
+    3. Group-wise spatial differences
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Initialize collectors
+    slice_profiles = {group: [] for group in ['Control', 'PD', 'SWEDD']}
+    regional_stats = {group: [] for group in ['Control', 'PD', 'SWEDD']}
+
+    for group in ['Control', 'PD', 'SWEDD']:
+        group_df = df[df['label'] == group]
+        samples = group_df.sample(n=min(num_samples_per_group, len(group_df)))
+
+        for _, row in tqdm(samples.iterrows(), desc=f"Processing {group}"):
+            volume_tensor, _ = load_dicom(row['file_path'], device)
+            if volume_tensor is None:
+                continue
+
+            # Process volume
+            norm_vol, mask, masked_vol = process_volume(
+                volume_tensor[9:73],
+                target_shape=(64, 128, 128),
+                device=device
+            )
+
+            # 1. Slice-wise profile
+            slice_means = torch.mean(masked_vol, dim=(1,2)).cpu().numpy()
+            slice_profiles[group].append(slice_means)
+
+            # 2. Regional analysis
+            # Define regions (anterior, posterior, left, right)
+            regions = {
+                'anterior': masked_vol[:, :64, :],
+                'posterior': masked_vol[:, 64:, :],
+                'left': masked_vol[:, :, :64],
+                'right': masked_vol[:, :, 64:]
+            }
+
+            stats = {f"{region}_{stat}": value.item()
+                    for region, tensor in regions.items()
+                    for stat, value in {
+                        'mean': tensor.mean(),
+                        'std': tensor.std()
+                    }.items()}
+            regional_stats[group].append(stats)
+
+            # Clear GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    # Plotting
+    plt.figure(figsize=(15, 15))
+
+    # Plot 1: Slice-wise intensity profiles
+    plt.subplot(221)
+    for group in slice_profiles:
+        profiles = np.array(slice_profiles[group])
+        mean_profile = np.mean(profiles, axis=0)
+        std_profile = np.std(profiles, axis=0)
+        x = np.arange(len(mean_profile))
+        plt.plot(x, mean_profile, label=group)
+        plt.fill_between(x, mean_profile-std_profile, mean_profile+std_profile, alpha=0.3)
+    plt.title('Slice-wise Intensity Profiles')
+    plt.xlabel('Slice Index')
+    plt.ylabel('Mean Intensity')
+    plt.legend()
+
+    # Plot 2: Regional comparisons
+    plt.subplot(222)
+    regional_data = []
+    for group in regional_stats:
+        for stats in regional_stats[group]:
+            for region in ['anterior', 'posterior', 'left', 'right']:
+                regional_data.append({
+                    'group': group,
+                    'region': region,
+                    'mean': stats[f'{region}_mean']
+                })
+    regional_df = pd.DataFrame(regional_data)
+    sns.boxplot(data=regional_df, x='region', y='mean', hue='group')
+    plt.title('Regional Intensity Distributions')
+    plt.xticks(rotation=45)
+
+    # Plot 3: Anterior-Posterior asymmetry
+    plt.subplot(223)
+    asymmetry_data = []
+    for group in regional_stats:
+        for stats in regional_stats[group]:
+            asymmetry = stats['anterior_mean'] - stats['posterior_mean']
+            asymmetry_data.append({'group': group, 'asymmetry': asymmetry})
+    asymmetry_df = pd.DataFrame(asymmetry_data)
+    sns.boxplot(data=asymmetry_df, x='group', y='asymmetry')
+    plt.title('Anterior-Posterior Asymmetry')
+    plt.xticks(rotation=45)
+
+    # Plot 4: Left-Right asymmetry
+    plt.subplot(224)
+    lr_asymmetry_data = []
+    for group in regional_stats:
+        for stats in regional_stats[group]:
+            asymmetry = stats['left_mean'] - stats['right_mean']
+            lr_asymmetry_data.append({'group': group, 'asymmetry': asymmetry})
+    lr_asymmetry_df = pd.DataFrame(lr_asymmetry_data)
+    sns.boxplot(data=lr_asymmetry_df, x='group', y='asymmetry')
+    plt.title('Left-Right Asymmetry')
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary statistics
+    print("\nRegional Statistics Summary:")
+    regional_df_summary = regional_df.groupby(['group', 'region'])['mean'].agg(['mean', 'std']).round(3)
+    print(regional_df_summary)
+
+    return slice_profiles, regional_stats
+
+# Run analysis
+spatial_profiles, regional_statistics = analyze_spatial_patterns(df)
+
+# Cell 13: Comprehensive Summary Statistics
+import torch
+import numpy as np
+import pandas as pd
+from scipy import stats as scipy_stats
+import seaborn as sns
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+
+def generate_summary_statistics(df, num_samples_per_group=30):
+    """
+    Generates comprehensive summary statistics for the dataset:
+    1. Group-wise statistics
+    2. ROI analysis
+    3. Statistical tests between groups
+    4. Quality metrics
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Data collectors
+    group_stats = {group: [] for group in ['Control', 'PD', 'SWEDD']}
+    quality_metrics = []
+
+    # Process samples
+    for group in ['Control', 'PD', 'SWEDD']:
+        group_df = df[df['label'] == group]
+        samples = group_df.sample(n=min(num_samples_per_group, len(group_df)))
+
+        for _, row in tqdm(samples.iterrows(), desc=f"Processing {group}"):
+            volume_tensor, _ = load_dicom(row['file_path'], device)
+            if volume_tensor is None:
+                continue
+
+            # Process volume
+            norm_vol, mask, masked_vol = process_volume(
+                volume_tensor[9:73],
+                target_shape=(64, 128, 128),
+                device=device
+            )
+
+            # ROI analysis
+            roi_mask = torch.zeros_like(norm_vol, device=device)
+            roi_mask[20:40, 82:103, 43:82] = 1
+            roi_values = masked_vol[roi_mask.bool()]
+
+            # Convert to numpy for statistics
+            roi_numpy = roi_values.cpu().numpy()
+
+            # Calculate statistics
+            stats_dict = {
+                'mean': roi_values.mean().item(),
+                'median': roi_values.median().item(),
+                'std': roi_values.std().item(),
+                'skewness': scipy_stats.skew(roi_numpy),
+                'kurtosis': scipy_stats.kurtosis(roi_numpy),
+                'q1': np.percentile(roi_numpy, 25),
+                'q3': np.percentile(roi_numpy, 75),
+                'mask_coverage': (mask.sum() / mask.numel()).item(),
+                'roi_coverage': (roi_mask.sum() / roi_mask.numel()).item()
+            }
+
+            group_stats[group].append(stats_dict)
+
+            # Quality metrics
+            quality_metrics.append({
+                'group': group,
+                'file': row['file_path'],
+                'snr': (roi_values.mean() / roi_values.std()).item(),
+                'mask_coverage': stats_dict['mask_coverage'],
+                'roi_coverage': stats_dict['roi_coverage']
+            })
+
+            # Clear GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    # Convert to DataFrames
+    stats_dfs = {group: pd.DataFrame(stats) for group, stats in group_stats.items()}
+    quality_df = pd.DataFrame(quality_metrics)
+
+    # Create visualizations
+    plt.figure(figsize=(15, 10))
+
+    # Plot 1: SNR Distribution
+    plt.subplot(221)
+    sns.boxplot(data=quality_df, x='group', y='snr')
+    plt.title('Signal-to-Noise Ratio by Group')
+    plt.xticks(rotation=45)
+
+    # Plot 2: Coverage Metrics
+    plt.subplot(222)
+    coverage_data = pd.melt(quality_df,
+                           id_vars=['group'],
+                           value_vars=['mask_coverage', 'roi_coverage'],
+                           var_name='metric', value_name='coverage')
+    sns.boxplot(data=coverage_data, x='group', y='coverage', hue='metric')
+    plt.title('Coverage Metrics by Group')
+    plt.xticks(rotation=45)
+
+    # Plot 3: Distribution Metrics
+    plt.subplot(223)
+    dist_data = []
+    for group, stats in group_stats.items():
+        for s in stats:
+            dist_data.extend([
+                {'group': group, 'metric': 'skewness', 'value': s['skewness']},
+                {'group': group, 'metric': 'kurtosis', 'value': s['kurtosis']}
+            ])
+    dist_df = pd.DataFrame(dist_data)
+    sns.boxplot(data=dist_df, x='group', y='value', hue='metric')
+    plt.title('Distribution Metrics by Group')
+    plt.xticks(rotation=45)
+
+    # Plot 4: ROI Statistics
+    plt.subplot(224)
+    roi_data = []
+    for group, stats in group_stats.items():
+        for s in stats:
+            roi_data.extend([
+                {'group': group, 'metric': 'mean', 'value': s['mean']},
+                {'group': group, 'metric': 'median', 'value': s['median']},
+                {'group': group, 'metric': 'std', 'value': s['std']}
+            ])
+    roi_df = pd.DataFrame(roi_data)
+    sns.boxplot(data=roi_df, x='group', y='value', hue='metric')
+    plt.title('ROI Statistics by Group')
+    plt.xticks(rotation=45)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary reports
+    print("=== Summary Statistics by Group ===")
+    for group, df in stats_dfs.items():
+        print(f"\n{group} Statistics:")
+        print(df.describe().round(3))
+
+    print("\n=== Quality Metrics ===")
+    print(quality_df.groupby('group').agg({
+        'snr': ['mean', 'std'],
+        'mask_coverage': ['mean', 'std'],
+        'roi_coverage': ['mean', 'std']
+    }).round(3))
+
+    # Perform statistical tests
+    print("\n=== Statistical Tests ===")
+    # Extract mean values for each group
+    control_means = [s['mean'] for s in group_stats['Control']]
+    pd_means = [s['mean'] for s in group_stats['PD']]
+    swedd_means = [s['mean'] for s in group_stats['SWEDD']]
+
+    # Perform one-way ANOVA
+    f_stat, p_val = scipy_stats.f_oneway(control_means, pd_means, swedd_means)
+    print(f"One-way ANOVA: F-statistic = {f_stat:.3f}, p-value = {p_val:.3f}")
+
+    # Perform pairwise t-tests with Bonferroni correction
+    alpha = 0.05 / 3  # Bonferroni correction for 3 comparisons
+    print("\nPairwise t-tests (Bonferroni-corrected α = {:.3f}):".format(alpha))
+
+    # Control vs PD
+    t_stat, p_val = scipy_stats.ttest_ind(control_means, pd_means)
+    print(f"Control vs PD: t-statistic = {t_stat:.3f}, p-value = {p_val:.3f}")
+
+    # Control vs SWEDD
+    t_stat, p_val = scipy_stats.ttest_ind(control_means, swedd_means)
+    print(f"Control vs SWEDD: t-statistic = {t_stat:.3f}, p-value = {p_val:.3f}")
+
+    # PD vs SWEDD
+    t_stat, p_val = scipy_stats.ttest_ind(pd_means, swedd_means)
+    print(f"PD vs SWEDD: t-statistic = {t_stat:.3f}, p-value = {p_val:.3f}")
+
+    return stats_dfs, quality_df
+
+# Run analysis
+df = pd.read_csv("validated_file_paths.csv")
+stats_dataframes, quality_metrics = generate_summary_statistics(df)
+
+# Cell 14: Slice-wise Variance Analysis Across Views
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm import tqdm
+
+def analyze_slice_variance(df, num_samples_per_group=30):
+    """
+    Analyzes slice-wise variance across axial, coronal, and sagittal views.
+    Compares variance patterns between Control, PD, and SWEDD groups.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Data collectors for each view and group
+    variance_data = {
+        'axial': {group: [] for group in ['Control', 'PD', 'SWEDD']},
+        'coronal': {group: [] for group in ['Control', 'PD', 'SWEDD']},
+        'sagittal': {group: [] for group in ['Control', 'PD', 'SWEDD']}
+    }
+
+    # Process samples for each group
+    for group in ['Control', 'PD', 'SWEDD']:
+        group_df = df[df['label'] == group]
+        samples = group_df.sample(n=min(num_samples_per_group, len(group_df)))
+
+        for _, row in tqdm(samples.iterrows(), desc=f"Processing {group}"):
+            volume_tensor, _ = load_dicom(row['file_path'], device)
+            if volume_tensor is None:
+                continue
+
+            # Process volume
+            norm_vol, mask, masked_vol = process_volume(
+                volume_tensor[9:73],
+                target_shape=(64, 128, 128),
+                device=device
+            )
+
+            # Calculate variance for each slice in each view
+            # Axial view (top to bottom)
+            axial_var = torch.var(masked_vol, dim=(1,2)).cpu().numpy()  # Variance across each axial slice
+            variance_data['axial'][group].append(axial_var)
+
+            # Coronal view (front to back)
+            coronal_var = torch.var(masked_vol, dim=(0,2)).cpu().numpy()  # Variance across each coronal slice
+            variance_data['coronal'][group].append(coronal_var)
+
+            # Sagittal view (left to right)
+            sagittal_var = torch.var(masked_vol, dim=(0,1)).cpu().numpy()  # Variance across each sagittal slice
+            variance_data['sagittal'][group].append(sagittal_var)
+
+            # Clear GPU memory
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    # Calculate mean and std for each group and view
+    plt.figure(figsize=(20, 6))
+    views = ['axial', 'coronal', 'sagittal']
+
+    for idx, view in enumerate(views, 1):
+        plt.subplot(1, 3, idx)
+
+        for group in ['Control', 'PD', 'SWEDD']:
+            # Stack all samples for this group and view
+            all_samples = np.stack(variance_data[view][group])
+
+            # Calculate mean and std across samples
+            mean_var = np.mean(all_samples, axis=0)
+            std_var = np.std(all_samples, axis=0)
+
+            # Create x-axis based on number of slices
+            x = np.arange(len(mean_var))
+
+            # Plot mean line and confidence interval
+            plt.plot(x, mean_var, label=group, linewidth=2)
+            plt.fill_between(x, mean_var - std_var, mean_var + std_var, alpha=0.2)
+
+        plt.title(f'{view.capitalize()} View Variance')
+        plt.xlabel('Slice Index')
+        plt.ylabel('Average Variance')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary statistics
+    print("\nAverage Variance by Group and View:")
+    for view in views:
+        print(f"\n{view.capitalize()} View:")
+        for group in ['Control', 'PD', 'SWEDD']:
+            all_samples = np.stack(variance_data[view][group])
+            mean_total = np.mean(all_samples)
+            std_total = np.std(all_samples)
+            print(f"{group}: {mean_total:.3f} (±{std_total:.3f})")
+
+    return variance_data
+
+# Run analysis
+df = pd.read_csv("validated_file_paths.csv")
+slice_variance_data = analyze_slice_variance(df)
+
+"""# Model
+
+## Autoencoder
+"""
+
+# Cell 15: Autoencoder Model Architecture
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv3d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm3d(out_channels)
+
+    def forward(self, x):
+        return F.relu(self.bn(self.conv(x)))
+
+class ConvTransBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.ConvTranspose3d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm3d(out_channels)
+
+    def forward(self, x):
+        return F.relu(self.bn(self.conv(x)))
+
+class Autoencoder(nn.Module):
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        # Encoder
+        self.enc1 = ConvBlock(1, 32)      # 64x128x128 -> 64x128x128
+        self.enc2 = ConvBlock(32, 64)     # 64x128x128 -> 64x128x128
+        self.enc3 = ConvBlock(64, 128)    # 64x128x128 -> 64x128x128
+        self.enc4 = ConvBlock(128, 256)   # 64x128x128 -> 64x128x128
+
+        # Pooling layers
+        self.pool1 = nn.MaxPool3d(2)      # 64x128x128 -> 32x64x64
+        self.pool2 = nn.MaxPool3d(2)      # 32x64x64 -> 16x32x32
+        self.pool3 = nn.MaxPool3d(2)      # 16x32x32 -> 8x16x16
+
+        # Fully connected layers
+        self.flatten_size = 256 * 8 * 16 * 16
+        self.fc1 = nn.Linear(self.flatten_size, 1024)
+        self.fc2 = nn.Linear(1024, latent_dim)
+
+        # Decoder
+        self.fc3 = nn.Linear(latent_dim, 1024)
+        self.fc4 = nn.Linear(1024, self.flatten_size)
+
+        # Upsampling layers
+        self.upsample1 = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
+        self.upsample2 = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
+        self.upsample3 = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
+
+        # Decoder convolutions
+        self.dec1 = ConvTransBlock(256, 128)
+        self.dec2 = ConvTransBlock(128, 64)
+        self.dec3 = ConvTransBlock(64, 32)
+        self.dec4 = ConvTransBlock(32, 1)
+
+    def encode(self, x):
+        # Encoder
+        x = self.pool1(self.enc1(x))      # 64x128x128 -> 32x64x64
+        x = self.pool2(self.enc2(x))      # 32x64x64 -> 16x32x32
+        x = self.pool3(self.enc3(x))      # 16x32x32 -> 8x16x16
+        x = self.enc4(x)                  # 8x16x16 -> 8x16x16
+
+        # Flatten and encode to latent space
+        x = x.view(-1, self.flatten_size)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+    def decode(self, x):
+        # Decode from latent space
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        x = x.view(-1, 256, 8, 16, 16)
+
+        # Decoder
+        x = self.dec1(x)                  # 8x16x16 -> 8x16x16
+        x = self.upsample1(x)             # 8x16x16 -> 16x32x32
+        x = self.dec2(x)                  # 16x32x32 -> 16x32x32
+        x = self.upsample2(x)             # 16x32x32 -> 32x64x64
+        x = self.dec3(x)                  # 32x64x64 -> 32x64x64
+        x = self.upsample3(x)             # 32x64x64 -> 64x128x128
+        x = self.dec4(x)                  # 64x128x128 -> 64x128x128
+
+        return torch.sigmoid(x)
+
+    def forward(self, x):
+        latent = self.encode(x)
+        return self.decode(latent), latent
+
+def count_parameters(model):
+    """Counts the number of trainable parameters in the model"""
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+# Test the model
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Create model
+    model = Autoencoder().to(device)
+    print(f"\nModel Parameters: {count_parameters(model):,}")
+
+    # Test with random input
+    x = torch.randn(1, 1, 64, 128, 128).to(device)
+    reconstruction, latent = model(x)
+
+    print(f"\nInput shape: {x.shape}")
+    print(f"Latent shape: {latent.shape}")
+    print(f"Output shape: {reconstruction.shape}")
+
+    # Calculate memory usage
+    memory_used = torch.cuda.memory_allocated() / 1024**2
+    print(f"\nGPU Memory used: {memory_used:.2f} MB")
+
+# Cell 16: Dataset and DataLoader Setup with Clean Progress Tracking
+import torch
+from torch.utils.data import Dataset, DataLoader
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+import gc
+import time
+
+class DATScanDataset(Dataset):
+    def __init__(self, df, name="unnamed"):
+        self.df = df
+        self.name = name
+        self.cached_volumes = []
+        self.labels = []
+        self.cache_volumes()
+
+    def cache_volumes(self):
+        """Pre-process and cache all volumes"""
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Force initial cleanup
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        start_time = time.time()
+        processed_count = 0
+
+        for idx, (_, row) in enumerate(tqdm(self.df.iterrows(), total=len(self.df),
+                                          desc=f"Caching {self.name}")):
+            try:
+                # Load and process volume
+                volume_tensor, _ = load_dicom(row['file_path'], device)
+                if volume_tensor is None:
+                    continue
+
+                if len(volume_tensor.shape) == 2:
+                    volume_tensor = volume_tensor.unsqueeze(0)
+
+                if volume_tensor.shape[0] < 73:
+                    continue
+
+                # Process volume
+                volume_tensor = volume_tensor[9:73]
+                volume_tensor = volume_tensor - volume_tensor.min()
+                if volume_tensor.max() > 0:
+                    volume_tensor = volume_tensor / volume_tensor.max()
+
+                # Resize
+                h, w = volume_tensor.shape[1:]
+                pad_h = max(0, 128 - h)
+                pad_w = max(0, 128 - w)
+
+                if pad_h > 0 or pad_w > 0:
+                    pad_h1, pad_h2 = pad_h // 2, pad_h - pad_h // 2
+                    pad_w1, pad_w2 = pad_w // 2, pad_w - pad_w // 2
+                    volume_tensor = torch.nn.functional.pad(
+                        volume_tensor,
+                        (pad_w1, pad_w2, pad_h1, pad_h2),
+                        mode='constant',
+                        value=0
+                    )
+                else:
+                    start_h = (h - 128) // 2
+                    start_w = (w - 128) // 2
+                    volume_tensor = volume_tensor[:, start_h:start_h+128, start_w:start_w+128]
+
+                # Mask and normalize
+                mask = torch.zeros((64, 128, 128), dtype=torch.bool, device=device)
+                mask[20:40, 82:103, 43:82] = True
+                masked_vol = volume_tensor * mask.float()
+                roi_mean = volume_tensor[mask].mean()
+                if roi_mean > 0:
+                    masked_vol = masked_vol / roi_mean
+
+                # Store
+                volume = masked_vol.unsqueeze(0).cpu()
+                self.cached_volumes.append(volume)
+                self.labels.append(row['label'])
+                processed_count += 1
+
+                # Cleanup every 10 samples
+                if idx % 10 == 0:
+                    del volume_tensor, masked_vol, mask
+                    torch.cuda.empty_cache()
+                    gc.collect()
+
+            except Exception as e:
+                print(f"Error processing {row['file_path']}: {str(e)}")
+                continue
+
+        # Final cleanup
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def __len__(self):
+        return len(self.cached_volumes)
+
+    def __getitem__(self, idx):
+        return self.cached_volumes[idx]
+
+def create_dataloaders(df, batch_size=2, val_split=0.2, test_split=0.1, num_workers=4):
+    """Creates train, validation, and test dataloaders"""
+    # Split data
+    total_size = len(df)
+    val_size = int(val_split * total_size)
+    test_size = int(test_split * total_size)
+    train_size = total_size - val_size - test_size
+
+    train_df = df.iloc[:train_size].reset_index(drop=True)
+    val_df = df.iloc[train_size:train_size+val_size].reset_index(drop=True)
+    test_df = df.iloc[train_size+val_size:].reset_index(drop=True)
+
+    # Create datasets
+    train_dataset = DATScanDataset(train_df, name="Train")
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    val_dataset = DATScanDataset(val_df, name="Validation")
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    test_dataset = DATScanDataset(test_df, name="Test")
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    # Create dataloaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+
+    return train_loader, val_loader, test_loader
+
+# Test the dataloaders
+if __name__ == "__main__":
+    df = pd.read_csv("validated_file_paths.csv")
+    train_loader, val_loader, test_loader = create_dataloaders(df)
+
+    print(f"\nDataset sizes:")
+    print(f"Train: {len(train_loader.dataset)} volumes")
+    print(f"Validation: {len(val_loader.dataset)} volumes")
+    print(f"Test: {len(test_loader.dataset)} volumes")
+
+    print("\nVerifying first batch from each loader:")
+    for name, loader in [("Train", train_loader), ("Val", val_loader), ("Test", test_loader)]:
+        batch = next(iter(loader))
+        print(f"{name} batch shape: {batch.shape}")
+        del batch
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    print("\nDataloaders ready!")
