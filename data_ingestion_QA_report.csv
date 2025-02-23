@@ -1,7 +1,2 @@
-Metric,Value
-Total Files Processed,3879
-Files Included,2986
-Files Excluded,893
-Inclusion Rate (%),76.98
-Exclusion Rate (%),23.02
-Report Generation Time,2025-02-22 19:43:52
+total_files,included_files,excluded_files,exclusion_ratio
+3879,2986,893,0.23021397267336943
