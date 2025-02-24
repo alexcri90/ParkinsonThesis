@@ -1,191 +1,159 @@
-import numpy as np
+# preprocessing.py
 import torch
-import pandas as pd
-from torch.utils.data import Dataset
-from scipy import ndimage
-from skimage.transform import resize
-import pydicom
-from typing import Tuple, Optional, Dict
-import torch.utils.data
+import numpy as np
+from skimage.filters import threshold_otsu
+from skimage.morphology import binary_closing, ball
 
-class DATSCANPreprocessor:
-    def __init__(self,
-                 target_shape: Tuple[int, int, int] = (128, 128, 128),
-                 normalize_method: str = 'minmax',
-                 apply_brain_mask: bool = True,
-                 augment: bool = False):
-        self.target_shape = target_shape
-        self.normalize_method = normalize_method
-        self.apply_brain_mask = apply_brain_mask
-        self.augment = augment
+def resize_volume(volume, target_shape=(64, 128, 128)):
+    """
+    Resizes the volume to the target shape using zero-padding or center cropping.
+    """
+    def get_pad_amounts(current_size, target_size):
+        if current_size >= target_size:
+            return 0, 0
+        diff = target_size - current_size
+        pad_before = diff // 2
+        pad_after = diff - pad_before
+        return pad_before, pad_after
 
-    def normalize_intensity(self, img: np.ndarray) -> np.ndarray:
-        # Truncate negative values
-        img = np.maximum(img, 0)
-        if self.normalize_method == 'minmax':
-            min_val = np.min(img)
-            max_val = np.max(img)
-            if max_val > min_val:  # Avoid division by zero
-                img = (img - min_val) / (max_val - min_val)
-            else:
-                img = np.zeros_like(img) # If image is uniform, set to zeros
-        return img
+    # Convert to numpy if needed
+    is_tensor = isinstance(volume, torch.Tensor)
+    if is_tensor:
+        device = volume.device
+        volume = volume.cpu().numpy()
 
-    def create_brain_mask(self, img: np.ndarray, threshold_factor: float = 0.1) -> np.ndarray:
-        threshold = img.mean() * threshold_factor
-        mask = img > threshold
-        mask = ndimage.binary_fill_holes(mask)
-        return mask
+    current_shape = volume.shape
+    resized = volume.copy()
 
-    def pad_volume(self, img: np.ndarray) -> np.ndarray:
-        target_shape = self.target_shape
-        current_shape = img.shape
-        pad_width = []
-        for target_dim, current_dim in zip(target_shape, current_shape):
-            if current_dim > target_dim:
-                start = (current_dim - target_dim) // 2
-                end = start + target_dim
-                pad_width.append((-(start), -(current_dim - end)))
-            else:
-                pad_before = (target_dim - current_dim) // 2
-                pad_after = target_dim - current_dim - pad_before
-                pad_width.append((pad_before, pad_after))
-        for axis, (pad_before, pad_after) in enumerate(pad_width):
-            if pad_before >= 0 and pad_after >= 0:
-                padding = [(0, 0)] * img.ndim
-                padding[axis] = (pad_before, pad_after)
-                img = np.pad(img, padding, mode='constant', constant_values=0)
-            else:
-                slicing = [slice(None)] * img.ndim
-                slicing[axis] = slice(-pad_before, img.shape[axis] + pad_after)
-                img = img[tuple(slicing)]
-        return img
+    # Calculate padding/cropping for each dimension
+    pads = [get_pad_amounts(current_shape[i], target_shape[i]) for i in range(3)]
 
-    def resize_volume(self, img: np.ndarray) -> np.ndarray:
-        current_shape = img.shape
-        target_shape = self.target_shape
-        current_max_dim = max(current_shape)
-        target_max_dim = max(target_shape)
-        if current_max_dim > target_max_dim:
-            scale_factor = target_max_dim / current_max_dim
-            new_shape = tuple(int(dim * scale_factor) for dim in current_shape)
-            img = resize(img, new_shape, mode='reflect', anti_aliasing=True)
-        return self.pad_volume(img)
-
-    def __call__(self, img: np.ndarray) -> np.ndarray:
-        img = self.normalize_intensity(img)
-        if self.apply_brain_mask:
-            mask = self.create_brain_mask(img)
-            img = img * mask
-        if self.target_shape is not None and img.shape != self.target_shape:
-            img = self.resize_volume(img)
-        return img
-
-
-class DATSCANDataset(Dataset):
-    def __init__(self,
-                 file_paths: list,
-                 labels: list,  # Add labels here
-                 preprocessor: DATSCANPreprocessor):
-        self.file_paths = file_paths
-        self.labels = labels # Store labels
-        self.preprocessor = preprocessor
-
-    def __len__(self):
-        return len(self.file_paths)
-
-    def __getitem__(self, idx):
-        file_path = self.file_paths[idx]
-        label = self.labels[idx] # Get corresponding label
-
-        # Read the DICOM file and convert pixel data to float32
-        img = pydicom.dcmread(file_path).pixel_array.astype(np.float32)
-
-        # Ensure 3D shape before preprocessing
-        if len(img.shape) == 2:
-            img = np.stack([img] * self.preprocessor.target_shape[0], axis=0)
-
-        # Preprocess the image
-        img = self.preprocessor(img)
-
-        # Ensure the image has the correct shape
-        if img.shape != self.preprocessor.target_shape:
-            raise ValueError(f"Image shape {img.shape} does not match target shape {self.preprocessor.target_shape}")
-
-        # Add channel dimension and return
-        return torch.from_numpy(img).float().unsqueeze(0), torch.tensor(label, dtype=torch.long)
-
-
-def create_dataloaders(df: pd.DataFrame,
-                      batch_size: int = 32,
-                      target_shape: Tuple[int, int, int] = (128, 128, 128),
-                      normalize_method: str = 'minmax',
-                      apply_brain_mask: bool = True,
-                      augment: bool = False,
-                      device: torch.device = torch.device('cpu'),
-                      num_workers: int = 4) -> Dict[str, torch.utils.data.DataLoader]:
-    """Create DataLoaders for each group"""
-
-    # Map labels to numerical values
-    label_mapping = {'PD': 0, 'SWEDD': 1, 'Control': 2}
-
-    preprocessor = DATSCANPreprocessor(
-        target_shape=target_shape,
-        normalize_method=normalize_method,
-        apply_brain_mask=apply_brain_mask,
-        augment=augment
-    )
-
-    dataloaders = {}
-    for group in ['PD', 'SWEDD', 'Control']:
-        group_files = df[df['label'] == group]['file_path'].tolist()
-        group_labels = [label_mapping[group]] * len(group_files)  # Create numerical labels
-        dataset = DATSCANDataset(
-            file_paths=group_files,
-            labels=group_labels, # Pass labels to the dataset
-            preprocessor=preprocessor
+    # Apply padding if needed
+    if any(sum(p) > 0 for p in pads):
+        resized = np.pad(
+            resized,
+            pad_width=pads,
+            mode="constant",
+            constant_values=0
         )
 
-        dataloaders[group] = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=True,
-            num_workers=num_workers,
-            pin_memory=True if device.type == 'cuda' else False
-        )
+    # Apply cropping if needed
+    for i in range(3):
+        if current_shape[i] > target_shape[i]:
+            start = (current_shape[i] - target_shape[i]) // 2
+            end = start + target_shape[i]
+            if i == 0:
+                resized = resized[start:end, :, :]
+            elif i == 1:
+                resized = resized[:, start:end, :]
+            else:
+                resized = resized[:, :, start:end]
 
-    return dataloaders
+    # Convert back to tensor if input was tensor
+    if is_tensor:
+        resized = torch.from_numpy(resized).to(device)
 
-def load_and_preprocess_data(file_path, target_shape=(128, 128, 128)):
+    return resized
+
+def normalize_intensity(volume):
     """
-    Load and preprocess DICOM data with consistent dimensions
+    Normalize intensity values:
+    1. Set minimum to 0
+    2. Scale to [0,1] range
+    3. Normalize based on anatomical region
     """
-    try:
-        # Load the DICOM image
-        ds = pydicom.dcmread(file_path)
-        image = ds.pixel_array.astype(np.float32)
+    if isinstance(volume, np.ndarray):
+        volume = torch.from_numpy(volume)
+    
+    # Ensure float32
+    volume = volume.float()
+    
+    # Basic normalization
+    volume = volume - volume.min()
+    if volume.max() > 0:
+        volume = volume / volume.max()
+    
+    # Create anatomical mask for normalization
+    mask = torch.zeros_like(volume)
+    mask[20:40, 82:103, 43:82] = 1
+    
+    # Normalize based on anatomical region mean
+    mask_mean = volume[mask.bool()].mean()
+    if mask_mean > 0:
+        volume = volume / mask_mean
+    
+    return volume
 
-        # Normalize the image
-        image = (image - np.min(image)) / (np.max(image) - np.min(image))
+def generate_brain_mask(volume):
+    """
+    Generate brain mask using Otsu thresholding and morphological operations.
+    """
+    # Convert to numpy for scikit-image operations
+    if isinstance(volume, torch.Tensor):
+        volume = volume.cpu().numpy()
+    
+    # Apply Otsu thresholding
+    thresh = threshold_otsu(volume)
+    mask = volume > thresh
+    
+    # Apply morphological closing to fill holes
+    mask = binary_closing(mask, footprint=ball(2))
+    
+    # Convert back to tensor if input was tensor
+    if isinstance(volume, torch.Tensor):
+        mask = torch.from_numpy(mask)
+    
+    return mask
 
-        # Ensure 3D shape
-        if len(image.shape) == 2:
-            image = np.expand_dims(image, axis=0)
+def process_volume(volume, target_shape=(64, 128, 128)):
+    """
+    Complete preprocessing pipeline:
+    1. Resize to target shape
+    2. Normalize intensities
+    3. Generate and apply brain mask
+    4. Add channel dimension
+    """
+    # Ensure we're working with a tensor
+    if not isinstance(volume, torch.Tensor):
+        volume = torch.from_numpy(volume)
+    
+    # Get device
+    device = volume.device if isinstance(volume, torch.Tensor) else None
+    
+    # Resize
+    volume = resize_volume(volume, target_shape)
+    
+    # Normalize intensities
+    volume = normalize_intensity(volume)
+    
+    # Generate and apply brain mask
+    mask = generate_brain_mask(volume)
+    masked_volume = volume * mask
+    
+    # Add channel dimension if not present
+    if masked_volume.dim() == 3:
+        masked_volume = masked_volume.unsqueeze(0)
+    
+    # Move to correct device
+    if device is not None:
+        masked_volume = masked_volume.to(device)
+    
+    return masked_volume
 
-        # Resize to target shape
-        current_shape = image.shape
-        scale_factors = (target_shape[0]/current_shape[0],
-                        target_shape[1]/current_shape[1],
-                        target_shape[2]/current_shape[2] if len(current_shape) > 2 else 1)
-
-        image = zoom(image, scale_factors, order=1)
-
-        # Add batch dimension if needed
-        if len(image.shape) == 3:
-            image = np.expand_dims(image, axis=0)
-
-        return image
-
-    except Exception as e:
-        print(f"Error processing {file_path}: {str(e)}")
-        return None
+def validate_processing(volume):
+    """
+    Validate the processing of a volume:
+    - Check shape
+    - Check value range
+    - Check for NaN/Inf values
+    """
+    validation = {
+        'shape': volume.shape,
+        'min_val': float(volume.min()),
+        'max_val': float(volume.max()),
+        'mean_val': float(volume.mean()),
+        'has_nan': torch.isnan(volume).any().item(),
+        'has_inf': torch.isinf(volume).any().item()
+    }
+    
+    return validation
