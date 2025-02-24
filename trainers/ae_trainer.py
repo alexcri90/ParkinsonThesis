@@ -124,11 +124,17 @@ class AutoencoderTrainer(BaseTrainer):
         with torch.no_grad():
             # Get samples
             data, _ = next(iter(test_loader))
+            # Only use as many samples as are available in the batch
+            num_samples = min(num_samples, data.size(0))
             data = data[:num_samples].to(self.device)
             reconstructions, _ = self.model(data)
             
             # Plot comparisons
             fig, axes = plt.subplots(num_samples, 2, figsize=(10, 3*num_samples))
+            
+            # If there's only one sample, axes won't be 2D
+            if num_samples == 1:
+                axes = axes.reshape(1, -1)
             
             for i in range(num_samples):
                 # Plot original
@@ -143,8 +149,5 @@ class AutoencoderTrainer(BaseTrainer):
                 axes[i, 1].axis('off')
             
             plt.tight_layout()
-            
-            # Save figure
             plt.savefig(self.model_dir / 'reconstructions.png')
-            
             return fig
