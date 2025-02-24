@@ -1,0 +1,62 @@
+2025-02-24 15:24:11,421 - trainer.autoencoder - INFO - Configuration saved to trained_models\autoencoder\config.json
+2025-02-24 15:24:11,421 - trainer.autoencoder - INFO - No checkpoint found, starting from scratch
+2025-02-24 15:24:11,421 - trainer.autoencoder - INFO - Starting training from epoch 0 to 100
+2025-02-24 15:24:11,423 - trainer.autoencoder - INFO - Training on device: cuda
+2025-02-24 15:27:25,529 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:27:25,529 - trainer.autoencoder - INFO - Epoch 0: train_loss=0.170572, val_loss=0.092464, lr=0.00001000
+2025-02-24 15:30:11,713 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:30:11,713 - trainer.autoencoder - INFO - Epoch 1: train_loss=0.069425, val_loss=0.063568, lr=0.00001000
+2025-02-24 15:33:36,269 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:33:36,270 - trainer.autoencoder - INFO - Epoch 2: train_loss=0.055028, val_loss=0.057340, lr=0.00001000
+2025-02-24 15:37:58,489 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:37:58,490 - trainer.autoencoder - INFO - Epoch 3: train_loss=0.050424, val_loss=0.054234, lr=0.00001000
+2025-02-24 15:46:19,979 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:46:19,979 - trainer.autoencoder - INFO - Epoch 4: train_loss=0.048169, val_loss=0.053068, lr=0.00001000
+2025-02-24 15:49:47,114 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:49:47,114 - trainer.autoencoder - INFO - Epoch 5: train_loss=0.046664, val_loss=0.051970, lr=0.00001000
+2025-02-24 15:55:26,010 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:55:26,012 - trainer.autoencoder - INFO - Epoch 6: train_loss=0.045865, val_loss=0.050915, lr=0.00001000
+2025-02-24 15:58:09,405 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 15:58:09,405 - trainer.autoencoder - INFO - Epoch 7: train_loss=0.045114, val_loss=0.050412, lr=0.00001000
+2025-02-24 16:00:52,794 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:00:52,794 - trainer.autoencoder - INFO - Epoch 8: train_loss=0.044698, val_loss=0.050631, lr=0.00001000
+2025-02-24 16:03:36,171 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:03:36,171 - trainer.autoencoder - INFO - Epoch 9: train_loss=0.044371, val_loss=0.051873, lr=0.00001000
+2025-02-24 16:06:19,358 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:06:19,358 - trainer.autoencoder - INFO - Epoch 10: train_loss=0.043947, val_loss=0.049354, lr=0.00001000
+2025-02-24 16:09:03,291 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:09:03,291 - trainer.autoencoder - INFO - Epoch 11: train_loss=0.043668, val_loss=0.049467, lr=0.00001000
+2025-02-24 16:11:49,671 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:11:49,671 - trainer.autoencoder - INFO - Epoch 12: train_loss=0.043404, val_loss=0.049767, lr=0.00001000
+2025-02-24 16:14:36,383 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:14:36,383 - trainer.autoencoder - INFO - Epoch 13: train_loss=0.043212, val_loss=0.049054, lr=0.00001000
+2025-02-24 16:17:44,412 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:17:44,412 - trainer.autoencoder - INFO - Epoch 14: train_loss=0.043031, val_loss=0.049186, lr=0.00001000
+2025-02-24 16:20:29,126 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:20:29,126 - trainer.autoencoder - INFO - Epoch 15: train_loss=0.042944, val_loss=0.048897, lr=0.00001000
+2025-02-24 16:23:13,917 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:23:13,917 - trainer.autoencoder - INFO - Epoch 16: train_loss=0.042809, val_loss=0.049306, lr=0.00001000
+2025-02-24 16:25:58,889 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:25:58,889 - trainer.autoencoder - INFO - Epoch 17: train_loss=0.042705, val_loss=0.048798, lr=0.00001000
+2025-02-24 16:28:43,396 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:28:43,396 - trainer.autoencoder - INFO - Epoch 18: train_loss=0.042515, val_loss=0.048917, lr=0.00001000
+2025-02-24 16:31:27,748 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:31:27,748 - trainer.autoencoder - INFO - Epoch 19: train_loss=0.042510, val_loss=0.048784, lr=0.00001000
+2025-02-24 16:34:15,022 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:34:15,022 - trainer.autoencoder - INFO - Epoch 20: train_loss=0.042338, val_loss=0.048612, lr=0.00001000
+2025-02-24 16:37:00,354 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:37:00,355 - trainer.autoencoder - INFO - Epoch 21: train_loss=0.042181, val_loss=0.048740, lr=0.00001000
+2025-02-24 16:39:45,415 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:39:45,415 - trainer.autoencoder - INFO - Epoch 22: train_loss=0.042108, val_loss=0.048327, lr=0.00001000
+2025-02-24 16:42:30,153 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:42:30,153 - trainer.autoencoder - INFO - Epoch 23: train_loss=0.041991, val_loss=0.048648, lr=0.00001000
+2025-02-24 16:45:16,118 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:45:16,118 - trainer.autoencoder - INFO - Epoch 24: train_loss=0.041970, val_loss=0.048686, lr=0.00001000
+2025-02-24 16:48:25,556 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:48:25,556 - trainer.autoencoder - INFO - Epoch 25: train_loss=0.041914, val_loss=0.049042, lr=0.00001000
+2025-02-24 16:51:13,765 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:51:13,766 - trainer.autoencoder - INFO - Epoch 26: train_loss=0.043976, val_loss=0.048822, lr=0.00001000
+2025-02-24 16:53:55,306 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-24 16:53:55,306 - trainer.autoencoder - INFO - Epoch 27: train_loss=0.042083, val_loss=0.048277, lr=0.00001000
+2025-02-24 16:56:44,469 - trainer.autoencoder - INFO - Checkpoint saved: trained_models\autoencoder\checkpoints\autoencoder_epoch.pt
+2025-02-24 16:56:44,469 - trainer.autoencoder - INFO - Epoch 28: train_loss=0.041617, val_loss=0.049595, lr=0.00001000

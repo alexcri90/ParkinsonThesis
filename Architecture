@@ -271,6 +271,141 @@
                 - Special attention to striatal region patterns
         </evaluation>
     </model>
+        <model_implementation>
+            <name>autoencoder_unsupervised</name>
+            <module_structure>
+                <preprocessing_module>
+                    <file>preprocessing.py</file>
+                    <functions>
+                        <function name="resize_volume">
+                            <description>Resizes volume to target shape using zero-padding or center cropping</description>
+                            <parameters>volume, target_shape=(64, 128, 128)</parameters>
+                        </function>
+                        <function name="normalize_intensity">
+                            <description>Normalizes intensity values with anatomical region consideration</description>
+                            <parameters>volume</parameters>
+                        </function>
+                        <function name="generate_brain_mask">
+                            <description>Generates brain mask using Otsu thresholding and morphological operations</description>
+                            <parameters>volume</parameters>
+                        </function>
+                        <function name="process_volume">
+                            <description>Complete preprocessing pipeline with resizing, normalization, and masking</description>
+                            <parameters>volume, target_shape=(64, 128, 128)</parameters>
+                        </function>
+                        <function name="validate_processing">
+                            <description>Validates volume processing with shape and value checks</description>
+                            <parameters>volume</parameters>
+                        </function>
+                    </functions>
+                </preprocessing_module>
+
+                <dataset_module>
+                    <file>dataset.py</file>
+                    <class name="DATSCANDataset">
+                        <description>Custom Dataset class for DATSCAN images</description>
+                        <features>
+                            <feature>Automatic label mapping from strings to indices</feature>
+                            <feature>DICOM loading with preprocessing</feature>
+                            <feature>Error handling and recovery</feature>
+                            <feature>Data validation and statistics</feature>
+                        </features>
+                        <methods>
+                            <method>__init__: Initialize dataset with paths and labels</method>
+                            <method>_validate_paths: Validate file existence</method>
+                            <method>_load_dicom: Load and preprocess DICOM files</method>
+                            <method>get_label_distribution: Analyze label statistics</method>
+                            <method>get_sample_shape: Return data dimensions</method>
+                            <method>get_num_classes: Return number of unique classes</method>
+                        </methods>
+                    </class>
+                </dataset_module>
+
+                <model_module>
+                    <file>model.py</file>
+                    <components>
+                        <component name="ResidualBlock3D">
+                            <description>3D residual block with dual convolutions</description>
+                            <features>
+                                <feature>Dual 3D convolutions</feature>
+                                <feature>Batch normalization</feature>
+                                <feature>Shortcut connections</feature>
+                            </features>
+                        </component>
+                        <component name="Encoder">
+                            <description>3D convolutional encoder with residual connections</description>
+                            <architecture>
+                                <layer>Initial conv: 1→32 channels</layer>
+                                <layer>ResBlock1: 32→64 channels</layer>
+                                <layer>ResBlock2: 64→128 channels</layer>
+                                <layer>ResBlock3: 128→256 channels</layer>
+                                <layer>ResBlock4: 256→512 channels</layer>
+                                <layer>FC layers to latent space</layer>
+                            </architecture>
+                        </component>
+                        <component name="Decoder">
+                            <description>3D convolutional decoder with residual connections</description>
+                            <architecture>
+                                <layer>FC from latent to 3D shape</layer>
+                                <layer>ResBlock+Upsample: 512→256</layer>
+                                <layer>ResBlock+Upsample: 256→128</layer>
+                                <layer>ResBlock+Upsample: 128→64</layer>
+                                <layer>ResBlock+Upsample: 64→32</layer>
+                                <layer>Final conv to 1 channel</layer>
+                            </architecture>
+                        </component>
+                        <component name="Autoencoder">
+                            <description>Complete autoencoder combining encoder and decoder</description>
+                            <features>
+                                <feature>Kaiming weight initialization</feature>
+                                <feature>Separate encode/decode methods</feature>
+                                <feature>Memory-efficient architecture</feature>
+                            </features>
+                        </component>
+                    </components>
+                </model_module>
+
+                <utils_module>
+                    <file>utils.py</file>
+                    <components>
+                        <component name="EarlyStopping">
+                            <description>Early stopping implementation with checkpointing</description>
+                        </component>
+                        <component name="AverageMeter">
+                            <description>Tracks and computes running averages</description>
+                        </component>
+                        <functions>
+                            <function name="train_epoch">
+                                <description>Single epoch training loop</description>
+                            </function>
+                            <function name="validate">
+                                <description>Validation loop with metrics</description>
+                            </function>
+                            <function name="train_model">
+                                <description>Complete training pipeline with logging</description>
+                            </function>
+                            <function name="evaluate_reconstruction">
+                                <description>Evaluates reconstruction quality (MSE, SSIM)</description>
+                            </function>
+                            <function name="visualize_reconstructions">
+                                <description>Creates visualization of reconstructions</description>
+                            </function>
+                        </functions>
+                    </components>
+                </utils_module>
+
+                <train_module>
+                    <file>train.py</file>
+                    <features>
+                        <feature>Main training script</feature>
+                        <feature>Hyperparameter management</feature>
+                        <feature>Dataset splitting and loading</feature>
+                        <feature>Training loop execution</feature>
+                        <feature>Results logging and visualization</feature>
+                    </features>
+                </train_module>
+            </module_structure>
+        </model_implementation>
         <data_pipeline_updates>
         <ingestion_improvements>
             <gpu_acceleration>

@@ -1,0 +1,50 @@
+## Project Structure Summary
+
+### Core Components:
+
+1. **Dataset (`dataset.py`)**
+    - Custom `DATSCANDataset` class for loading DICOM images
+    - Handles preprocessing, caching, and efficient data loading
+    - Provides label mapping and statistics
+2. **Models (`models/` directory)**
+    - `base.py`: Base model class with common functionality (saving/loading/initialization)
+    - `autoencoder.py`: Implementation of a 3D convolutional autoencoder with residual blocks
+3. **Trainers (`trainers/` directory)**
+    - `base_trainer.py`: Base training logic with checkpoint management, progress tracking, and evaluation
+    - `ae_trainer.py`: Specific trainer for autoencoders with visualization methods
+4. **Configuration (`config.py`)**
+    - Flexible configuration system with defaults and overrides
+    - Profiles for different model types (AE, VAE)
+5. **Training Script (`train.py`)**
+    - Main script to train models from command line
+    - Handles argument parsing and configuration loading
+    - Creates the data loaders, model, and trainer
+6. **Jupyter Integration Cells**
+    - Cells for training and evaluating models directly in Jupyter notebook
+    - Visualization functions for latent space exploration
+
+### Key Features:
+
+1. **Training Persistence**
+    - Models are saved in individual directories under `trained_models/`
+    - Automatic checkpoint management with best model saving
+    - Resume training from the latest checkpoint
+    - Progress tracking with metrics
+2. **Modularity**
+    - Easy to add new models by extending the base classes
+    - Consistent interfaces across model types
+    - Clear separation of concerns
+3. **Memory Management**
+    - Efficient batch processing with periodic memory clearing
+    - GPU optimizations with proper tensor management
+    - Configurable batch size for memory constraints
+4. **Progress Tracking**
+    - Progress bars during training
+    - Learning curve visualization
+    - Logging to file and console
+5. **Evaluation Tools**
+    - Metrics calculation (MSE, SSIM)
+    - Reconstruction visualization
+    - Latent space exploration with dimensionality reduction
+
+Command Line:

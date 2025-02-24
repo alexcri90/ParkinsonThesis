@@ -1,152 +1,182 @@
 # dataset.py
+import os
 import torch
 from torch.utils.data import Dataset
 import numpy as np
-import logging
-from pathlib import Path
-import gc
 import pydicom
-from preprocessing import process_volume
+import logging
+from tqdm import tqdm
+import gc
+from pathlib import Path
 
 class DATSCANDataset(Dataset):
-    """Custom Dataset for DATSCAN images."""
+    """Custom Dataset class for DATSCAN images"""
     
-    def __init__(self, file_paths, labels, transform=None):
+    def __init__(self, file_paths, labels, transform=None, preload=False, cache_dir=None):
         """
-        Initialize the dataset.
+        Initialize dataset with paths and labels
         
         Args:
-            file_paths (list): List of paths to DICOM files
-            labels (list): List of labels corresponding to the files
-            transform (callable, optional): Optional transform to be applied
+            file_paths (list): List of file paths to DICOM images
+            labels (list): List of labels corresponding to each file
+            transform (callable, optional): Optional transform to apply to the data
+            preload (bool): Whether to preload all data into memory
+            cache_dir (str): Directory to cache processed volumes
         """
         self.file_paths = file_paths
+        self.labels = labels
         self.transform = transform
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        # Set up logging
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
-        
-        # Create label mapping
-        unique_labels = sorted(set(labels))
-        self.label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
-        self.labels = [self.label_to_idx[label] for label in labels]
-        
-        self.logger.info(f"Label mapping: {self.label_to_idx}")
+        self.preload = preload
+        self.cache_dir = cache_dir
         
         # Validate paths
         self._validate_paths()
         
-    def _validate_paths(self):
-        """Validate that all file paths exist."""
-        invalid_paths = []
-        for path in self.file_paths:
-            if not Path(path).exists():
-                invalid_paths.append(path)
+        # Map string labels to integer indices
+        self.label_map = {
+            'Control': 0,
+            'PD': 1,
+            'SWEDD': 2
+        }
         
-        if invalid_paths:
-            self.logger.warning(f"Found {len(invalid_paths)} invalid paths")
-            valid_indices = [i for i, path in enumerate(self.file_paths) 
-                           if Path(path).exists()]
-            self.file_paths = [self.file_paths[i] for i in valid_indices]
-            self.labels = [self.labels[i] for i in valid_indices]
+        # Preload data if requested
+        self.data_cache = {}
+        if self.preload:
+            self._preload_data()
+        
+        # Set up logging
+        self.logger = logging.getLogger(__name__)
     
-    def __len__(self):
-        return len(self.file_paths)
+    def _validate_paths(self):
+        """Validate file existence"""
+        valid_paths = []
+        valid_labels = []
+        
+        for i, path in enumerate(self.file_paths):
+            if os.path.exists(path):
+                valid_paths.append(path)
+                valid_labels.append(self.labels[i])
+            else:
+                logging.warning(f"File not found: {path}")
+        
+        self.file_paths = valid_paths
+        self.labels = valid_labels
+        
+        if len(self.file_paths) == 0:
+            raise ValueError("No valid files found in the dataset")
+    
+    def _preload_data(self):
+        """Preload all data into memory"""
+        logging.info("Preloading dataset...")
+        
+        for i in tqdm(range(len(self.file_paths)), desc="Preloading data"):
+            path = self.file_paths[i]
+            cache_path = None
+            
+            # Check if cache directory is specified
+            if self.cache_dir:
+                cache_path = Path(self.cache_dir) / f"{Path(path).stem}.pt"
+            
+            # Try to load from cache first
+            if cache_path and cache_path.exists():
+                try:
+                    self.data_cache[i] = torch.load(cache_path)
+                    continue
+                except Exception as e:
+                    logging.warning(f"Failed to load cached data: {e}")
+            
+            # Load and process DICOM
+            try:
+                volume = self._load_dicom(path)
+                self.data_cache[i] = volume
+                
+                # Cache the processed volume if cache directory specified
+                if cache_path:
+                    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+                    torch.save(volume, cache_path)
+                
+            except Exception as e:
+                logging.error(f"Error loading file {path}: {e}")
+                # Insert a placeholder tensor with zeros
+                self.data_cache[i] = torch.zeros((1, 64, 128, 128), dtype=torch.float32)
+        
+        # Force garbage collection after preloading
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     
     def _load_dicom(self, file_path):
-        """Load a DICOM file."""
+        """Load and preprocess DICOM file"""
         try:
+            # Load DICOM
             ds = pydicom.dcmread(file_path)
-            if not hasattr(ds, 'pixel_array'):
-                return None
             
+            # Convert to float32 array
             pixel_array = ds.pixel_array.astype(np.float32)
             
+            # Apply rescaling if available
             if hasattr(ds, 'RescaleSlope') and hasattr(ds, 'RescaleIntercept'):
                 slope = float(ds.RescaleSlope)
                 intercept = float(ds.RescaleIntercept)
                 pixel_array = pixel_array * slope + intercept
             
-            return torch.from_numpy(pixel_array)
-            
-        except Exception as e:
-            self.logger.error(f"Error reading DICOM file {file_path}: {str(e)}")
-            return None
-    
-    def __getitem__(self, idx):
-        """Get a sample from the dataset."""
-        try:
-            # Load DICOM file
-            volume = self._load_dicom(self.file_paths[idx])
-            
-            if volume is None:
-                raise ValueError(f"Failed to load DICOM file: {self.file_paths[idx]}")
-            
-            # Extract required slices [9:73]
-            volume = volume[9:73]
+            # Extract slices [9:73]
+            volume = pixel_array[9:73]
             
             # Process volume
-            processed_vol = process_volume(volume)
+            from preprocessing import process_volume
+            processed_volume = process_volume(volume, target_shape=(64, 128, 128))
             
-            # Apply any additional transforms
-            if self.transform is not None:
-                processed_vol = self.transform(processed_vol)
-            
-            # Get label (already converted to numerical index)
-            label = self.labels[idx]
-            
-            # Convert to tensor with proper type
-            label_tensor = torch.tensor(label, dtype=torch.long)
-            
-            return processed_vol.float(), label_tensor
+            return processed_volume
             
         except Exception as e:
-            self.logger.error(f"Error loading sample {idx}: {str(e)}")
-            # Return a default sample with the correct types
-            return (torch.zeros((1, 64, 128, 128), dtype=torch.float32),
-                    torch.tensor(0, dtype=torch.long))
+            logging.error(f"Error loading {file_path}: {str(e)}")
+            raise
+    
+    def __len__(self):
+        """Return the number of samples in the dataset"""
+        return len(self.file_paths)
+    
+    def __getitem__(self, idx):
+        """Get a sample from the dataset"""
+        # Handle out of bounds index
+        if idx >= len(self.file_paths):
+            raise IndexError(f"Index {idx} out of bounds for dataset of size {len(self.file_paths)}")
+        
+        # Get the file path and label
+        file_path = self.file_paths[idx]
+        label = self.label_map.get(self.labels[idx], -1)  # Default to -1 if label not found
+        
+        # Load volume from cache if preloaded
+        if self.preload and idx in self.data_cache:
+            volume = self.data_cache[idx]
+        else:
+            try:
+                # Load and process the DICOM file
+                volume = self._load_dicom(file_path)
+            except Exception as e:
+                logging.error(f"Error loading file {file_path}: {e}")
+                # Return a placeholder tensor with zeros
+                volume = torch.zeros((1, 64, 128, 128), dtype=torch.float32)
+        
+        # Apply transformations if any
+        if self.transform:
+            volume = self.transform(volume)
+        
+        return volume, label
     
     def get_label_distribution(self):
-        """Get the distribution of labels in the dataset."""
-        from collections import Counter
-        label_counts = Counter(self.labels)
-        # Convert numerical indices back to original labels
-        idx_to_label = {v: k for k, v in self.label_to_idx.items()}
-        return {idx_to_label[idx]: count for idx, count in label_counts.items()}
+        """Analyze label statistics"""
+        label_counts = {}
+        for label in self.labels:
+            label_counts[label] = label_counts.get(label, 0) + 1
+        return label_counts
     
-    def get_sample_shape(self):
-        """Get the shape of a sample from the dataset."""
-        sample, _ = self[0]
-        return tuple(sample.shape)
+    def get_sample_shape(self, idx=0):
+        """Return data dimensions"""
+        sample, _ = self[idx]
+        return sample.shape
     
     def get_num_classes(self):
-        """Get the number of unique classes."""
-        return len(self.label_to_idx)
-
-# Test the dataset
-if __name__ == "__main__":
-    import pandas as pd
-    
-    # Load file paths
-    df = pd.read_csv("validated_file_paths.csv")
-    
-    # Create dataset
-    dataset = DATSCANDataset(df['file_path'].tolist(), df['label'].tolist())
-    
-    # Print dataset info
-    print(f"Dataset size: {len(dataset)}")
-    print(f"Label distribution: {dataset.get_label_distribution()}")
-    print(f"Sample shape: {dataset.get_sample_shape()}")
-    print(f"Number of classes: {dataset.get_num_classes()}")
-    
-    # Test loading a few samples
-    for i in range(min(3, len(dataset))):
-        sample, label = dataset[i]
-        print(f"\nSample {i}:")
-        print(f"  Shape: {sample.shape}")
-        print(f"  Label: {label}")
-        print(f"  Value range: [{sample.min():.2f}, {sample.max():.2f}]")
-        print(f"  Data type: {sample.dtype}")
-        print(f"  Label type: {label.dtype}")
+        """Return number of unique classes"""
+        return len(set(self.labels))

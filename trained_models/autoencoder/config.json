@@ -1,0 +1,39 @@
+{
+    "data": {
+        "batch_size": 4,
+        "num_workers": 6,
+        "pin_memory": true,
+        "train_split": 0.7,
+        "val_split": 0.15,
+        "test_split": 0.15,
+        "preload": false,
+        "cache_dir": "data_cache"
+    },
+    "model": {
+        "name": "autoencoder",
+        "latent_dim": 128
+    },
+    "training": {
+        "num_epochs": 100,
+        "learning_rate": 1e-05,
+        "weight_decay": 1e-05,
+        "grad_clip": 1.0,
+        "early_stop_patience": 10
+    },
+    "scheduler": {
+        "type": "reduce_lr",
+        "factor": 0.5,
+        "patience": 5,
+        "min_lr": 1e-07
+    },
+    "directories": {
+        "output_dir": "trained_models",
+        "data_dir": "data"
+    },
+    "device": "cuda",
+    "logging": {
+        "log_interval": 10,
+        "save_interval": 1,
+        "tensorboard": true
+    }
+}
