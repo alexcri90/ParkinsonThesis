@@ -171,6 +171,8 @@ def main():
                         help='Latent dimension size')
     parser.add_argument('--output_dir', type=str, default=None,
                         help='Output directory for trained models')
+    parser.add_argument('--name', type=str, default=None,
+                    help='Custom name for the model')
     
     args = parser.parse_args()
     
@@ -207,6 +209,8 @@ def main():
         config['model']['latent_dim'] = args.latent_dim
     if args.output_dir:
         config['directories']['output_dir'] = args.output_dir
+    if args.name:
+        config['model']['name'] = args.name
     
     # Print configuration
     logger.info(f"Training {args.model} with configuration:")
