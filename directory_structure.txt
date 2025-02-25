@@ -1,0 +1,49 @@
+ParkinsonThesis/
+│
+├── __init__.py                  # Package initialization
+├── config.py                    # Configuration system and default settings
+├── dataset.py                   # Dataset implementation for DATSCAN images
+├── preprocessing.py             # Preprocessing functions for DICOM volumes
+├── train.py                     # Main training script
+├── evaluate_models.py           # Evaluation script for notebooks
+│
+├── models/                      # Model implementations
+│   ├── __init__.py              # Module initialization
+│   ├── base.py                  # Base model class with common functionality
+│   └── autoencoder.py           # Autoencoder implementation
+│
+├── trainers/                    # Training logic
+│   ├── __init__.py              # Module initialization
+│   ├── base_trainer.py          # Base trainer with common training logic
+│   └── ae_trainer.py            # Autoencoder-specific trainer
+│
+├── data/                        # Data directories
+│   └── data_cache/              # Optional cache for processed volumes
+│
+├── trained_models/              # Storage for trained models
+│   ├── autoencoder/             # Default autoencoder model
+│   │   ├── checkpoints/         # Model checkpoint files
+│   │   │   ├── autoencoder_best.pt      # Best model checkpoint
+│   │   │   └── autoencoder_epoch.pt     # Latest epoch checkpoint
+│   │   ├── logs/                # Training logs
+│   │   │   └── training.log     # Detailed training log
+│   │   ├── config.json          # Training configuration
+│   │   ├── evaluation_results.json  # Test set metrics
+│   │   ├── learning_curves.png  # Loss visualization
+│   │   └── reconstructions.png  # Sample reconstructions
+│   │
+│   └── autoencoder_ld256/       # Example of additional model with different latent dim
+│       ├── checkpoints/
+│       ├── logs/
+│       └── ... (similar structure)
+│
+├── Images/                      # Original DATSCAN images
+│   ├── PPMI_Images_PD/          # Parkinson's Disease images 
+│   ├── PPMI_Images_SWEDD/       # SWEDD images
+│   └── PPMI_Images_Cont/        # Control images
+│
+├── validated_file_paths.csv     # CSV with validated DICOM paths
+├── data_ingestion_QA_report.csv # Quality assurance report for data
+├── training.log                 # Main log file
+├── requirements.txt             # Python dependencies
+└── README.md                    # Project documentation
