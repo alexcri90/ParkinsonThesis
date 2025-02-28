@@ -1,122 +1,449 @@
-# DATSCAN Analysis Project
+# DATSCAN Unsupervised Learning Project Documentation
 
-## Project Structure
-This project consists of several Python modules and a main Jupyter notebook:
-- `preprocessing.py`: Contains data loading and preprocessing functionality
-- `model.py`: Contains the basic VAE model implementation
-- `preprocessing_semisupervised.py`: Enhanced preprocessing with metadata handling
-- `model_semisupervised.py`: Semi-supervised VAE implementation
-- `notebook.py`: Main Jupyter notebook for execution
+## Project Overview
 
-## Notebook Structure
-The notebook is organized into functional sections:
-1. **Setup** (Cells 0-1)
-   - Dependencies installation
-   - Basic imports
+This project implements unsupervised learning models for analyzing Dopamine Transporter Imaging (DATSCAN) in Parkinson's Disease. The goal is to uncover intrinsic patterns and features within the imaging data using various unsupervised techniques (Autoencoders, VAEs, etc.).
 
-2. **Data Loading** (Cells 2-6)
-   - CSV processing
-   - DICOM file path collection
-   - Dataset organization
+## Directory Structure
 
-3. **Exploratory Data Analysis (EDA)** (Cells 7-24)
-   - Image statistics
-   - Group comparisons
-   - Volume visualization
-   - Optional but recommended for first-time analysis
+```
+project_root/
+├── dataset.py                 # Dataset implementation for DATSCAN images
+├── preprocessing.py           # Preprocessing functions for DICOM volumes
+├── config.py                  # Configuration system and default settings
+├── train.py                   # Main training script
+├── __init__.py                # Package initialization
+├── models/                    # Model implementations
+│   ├── __init__.py            # Module initialization
+│   ├── base.py                # Base model class with common functionality
+│   ├── autoencoder.py         # Autoencoder implementation
+│   └── vae.py                 # (Future) VAE implementation
+├── trainers/                  # Training logic
+│   ├── __init__.py            # Module initialization
+│   ├── base_trainer.py        # Base trainer with common training logic
+│   └── ae_trainer.py          # Autoencoder-specific trainer
+└── trained_models/            # Storage for trained models (auto-created)
+    ├── autoencoder/           # Autoencoder model outputs
+    │   ├── checkpoints/       # Model checkpoint files
+    │   ├── logs/              # Training logs
+    │   ├── learning_curves.png # Loss visualization
+    │   ├── reconstructions.png # Sample reconstructions
+    │   ├── config.json        # Training configuration
+    │   └── evaluation_results.json # Test set metrics
+    └── vae/                   # (Future) VAE model outputs
+```
 
-4. **Preprocessing Setup** (Cells 25-26)
-   - Preprocessing module initialization
-   - Dataloader creation
+## Core Components
 
-5. **Basic VAE** (Cells 27-32)
-   - Model training
-   - Latent space analysis
-   - Results visualization
+### 1. Dataset (`dataset.py`)
 
-6. **Semi-supervised Extension** (Cells 33-40)
-   - Metadata analysis
-   - Enhanced model setup
-   - Training and evaluation
+The `DATSCANDataset` class handles:
+- Loading DICOM files with proper preprocessing
+- Mapping string labels to numeric indices
+- Preloading data for faster training (optional)
+- Caching processed volumes to disk (optional)
 
-## Usage Scenarios
+### 2. Models (`models/`)
 
-### 1. First-Time User
-Required sequence:
-1. Run Setup (Cells 0-1)
-2. Run Data Loading (Cells 2-6)
-3. Run EDA (Cells 7-24) - Recommended for data understanding
-4. For Basic VAE:
-   - Run Cells 25-26
-   - Run Cells 27-28 for model setup
-   - Run Cell 29 for training
-5. For Semi-supervised VAE:
-   - Ensure Cells 25-26 are run
-   - Run Cells 33-35 for metadata setup
-   - Run Cell 36 for model training
+Models are organized with inheritance to share common functionality:
 
-### 2. Partially Trained Basic VAE
-Required sequence:
-1. Run Setup (Cells 0-1)
-2. Run Data Loading (Cells 2-6)
-3. Run Preprocessing Setup (Cells 25-26)
-4. Run Cell 29b for model loading
-5. Run Cell 29 with remaining epochs
-6. Run Analysis (Cells 30-32)
+- **BaseModel** (`models/base.py`): Abstract base class with:
+  - Checkpoint saving/loading
+  - Weight initialization
+  - Parameter counting
+  - Model discovery
 
-### 3. Completed Basic VAE
-Required sequence:
-1. Run Setup (Cells 0-1)
-2. Run Data Loading (Cells 2-6)
-3. Run Preprocessing Setup (Cells 25-26)
-4. Run Cell 29b for model loading
-5. Run Analysis (Cells 30-32)
+- **Autoencoder** (`models/autoencoder.py`): 3D convolutional autoencoder with:
+  - Residual blocks for improved training
+  - Deep architecture optimized for 3D volumes
+  - Configurable latent dimension
 
-### 4. Partially Trained Semi-supervised VAE
-Required sequence:
-1. Run Setup (Cells 0-1)
-2. Run Data Loading (Cells 2-6)
-3. Run Preprocessing Setup (Cells 25-26)
-4. Run Metadata Setup (Cells 33-35)
-5. Run Cell 36 initialization
-6. Load checkpoint and continue training
-7. Run Analysis (Cells 37-40)
+### 3. Trainers (`trainers/`)
 
-### 5. Completed Semi-supervised VAE
-Required sequence:
-1. Run Setup (Cells 0-1)
-2. Run Data Loading (Cells 2-6)
-3. Run Preprocessing Setup (Cells 25-26)
-4. Run Metadata Setup (Cells 33-35)
-5. Run Cell 36 initialization
-6. Run Analysis (Cells 37-40)
+Trainers handle the training process with inheritance:
 
-## Important Notes
+- **BaseTrainer** (`trainers/base_trainer.py`): Base trainer with:
+  - Training loop with progress tracking
+  - Checkpoint management
+  - Automatic resume from interruptions
+  - Early stopping
+  - Learning rate scheduling
+  - Memory management
+  - Loss visualization
+
+- **AutoencoderTrainer** (`trainers/ae_trainer.py`): Autoencoder-specific trainer with:
+  - Reconstruction evaluation (MSE, SSIM)
+  - Visualization tools for reconstructions
+  - Latent space analysis
+
+### 4. Configuration (`config.py`)
+
+The configuration system allows flexible settings management:
+
+- Nested configuration with defaults
+- JSON file loading/saving
+- Command-line overrides
+- Model-specific presets
+
+### 5. Training Script (`train.py`)
+
+The main entry point for training models:
+
+- Argument parsing
+- Model instantiation
+- Data loading and preparation
+- Training execution
+- Results reporting
+
+## Training Models
+
+### Command Line Usage
+
+To train a model from the command line, for example:
+
+```bash
+python train.py --model autoencoder --batch_size 4 --epochs 100 --lr 1e-4 --latent_dim 128
+```
+
+Available arguments:
+
+- `--model`: Model type to train (currently 'autoencoder', future: 'vae')
+- `--config`: Path to custom configuration JSON file
+- `--batch_size`: Batch size for training
+- `--epochs`: Number of epochs to train
+- `--lr`: Learning rate
+- `--latent_dim`: Latent dimension size
+- `--output_dir`: Output directory for trained models
+
+### Training from Jupyter Notebook
+
+You can use the provided notebook cell for training:
+
+```python
+# Cell 16: Training Unsupervised Autoencoder
+# Configure parameters in the config dictionary
+config = {
+    'data': {
+        'batch_size': 4,  # Adjust as needed
+        'num_workers': 4,
+        # ...
+    },
+    # ...
+}
+
+# Rest of the training code (see Jupyter Notebook Training Cell)
+```
+
+### Pause and Resume Training
+
+Training automatically saves checkpoints and resumes from the latest one:
+
+1. **Automatic Resume**:
+   - When you run training for a model, it checks for existing checkpoints in `trained_models/{model_name}/checkpoints/`
+   - If found, it continues from the last saved epoch
+   - If not found, it starts training from scratch
+
+2. **Manual Interruption**:
+   - You can interrupt training with Ctrl+C
+   - A checkpoint will be automatically saved
+   - Next time you run the training, it will resume from where it was interrupted
+
+3. **Checkpoint Types**:
+   - Regular epoch checkpoints: `{model_name}_epoch.pt`
+   - Best model checkpoints (lowest validation loss): `{model_name}_best.pt`
 
 ### Memory Management
-- The project is optimized for GPUs with 12GB+ memory (e.g., 4070Ti)
-- Each major section includes memory cleanup
-- If memory issues occur, reduce batch sizes in Cells 26 and 35
 
-### Checkpoint Files
-- `datscan_vae_improved.pt`: Basic VAE model checkpoint
-- `datscan_semisupervised_vae.pt`: Semi-supervised VAE checkpoint
-- Checkpoints are saved every 10 epochs
+The system includes several features for efficient memory usage:
 
-### Optional Components
-- EDA section (Cells 7-24) can be skipped if data is already understood
-- Visualization cells can be run independently after model training
-- Analysis sections can be run multiple times without retraining
+1. **GPU Management**:
+   - Regular cache clearing (torch.cuda.empty_cache())
+   - Gradient accumulation for large models
+   - Optional gradient clipping
 
-### Best Practices
-1. Always clear kernel when switching between basic and semi-supervised implementations
-2. Monitor GPU memory usage during training
-3. Save intermediate results during long training sessions
-4. Use provided memory cleanup cells between major operations
+2. **DataLoader Optimization**:
+   - Configurable number of workers
+   - Optional data preloading
+   - Prefetching and pinned memory
 
-### Error Recovery
-If encountering errors:
-1. Clear kernel
-2. Start from the minimal required sequence for your scenario
-3. Ensure all prerequisite cells are executed
-4. Check GPU memory usage and adjust batch sizes if needed
+3. **Batch Processing**:
+   - Adjustable batch size (reduce if running out of memory)
+   - Memory monitoring during training
+
+## Adding New Models
+
+To add a new model type (e.g., VAE), follow these steps:
+
+### 1. Create Model Implementation
+
+Create a new file in the `models/` directory (e.g., `models/vae.py`):
+
+```python
+# models/vae.py
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from models.base import BaseModel
+
+class VAE(BaseModel):
+    """Variational Autoencoder implementation"""
+    
+    def __init__(self, latent_dim=128, kl_weight=0.01, name="vae"):
+        super(VAE, self).__init__(name=name)
+        self.latent_dim = latent_dim
+        self.kl_weight = kl_weight
+        
+        # Define encoder (with mean and logvar outputs)
+        self.encoder = VAEEncoder(latent_dim)
+        
+        # Define decoder
+        self.decoder = VAEDecoder(latent_dim)
+        
+        # Initialize weights
+        self._initialize_weights()
+    
+    def reparameterize(self, mu, logvar):
+        """Reparameterization trick"""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        z = mu + eps * std
+        return z
+    
+    def forward(self, x):
+        # Encode
+        mu, logvar = self.encoder(x)
+        
+        # Reparameterize
+        z = self.reparameterize(mu, logvar)
+        
+        # Decode
+        reconstruction = self.decoder(z)
+        
+        return reconstruction, mu, logvar
+    
+    # Other methods...
+```
+
+### 2. Create Model Trainer
+
+Create a new trainer in the `trainers/` directory (e.g., `trainers/vae_trainer.py`):
+
+```python
+# trainers/vae_trainer.py
+import torch
+import torch.nn.functional as F
+from trainers.base_trainer import BaseTrainer
+
+class VAETrainer(BaseTrainer):
+    """Trainer for Variational Autoencoder"""
+    
+    def train_epoch(self, epoch):
+        """Train for one epoch"""
+        self.model.train()
+        recon_losses = AverageMeter()
+        kl_losses = AverageMeter()
+        total_losses = AverageMeter()
+        
+        # Training loop with progress bar
+        pbar = tqdm(total=len(self.train_loader), desc=f"Epoch {epoch} [Train]")
+        
+        for batch_idx, (data, _) in enumerate(self.train_loader):
+            # Move data to device
+            data = data.to(self.device)
+            
+            # Forward pass
+            self.optimizer.zero_grad()
+            reconstruction, mu, logvar = self.model(data)
+            
+            # Calculate losses
+            recon_loss = F.mse_loss(reconstruction, data)
+            kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+            kl_loss = kl_loss / data.size(0)  # Normalize by batch size
+            
+            # Total loss with KL weight
+            loss = recon_loss + self.model.kl_weight * kl_loss
+            
+            # Backward pass
+            loss.backward()
+            self.optimizer.step()
+            
+            # Update metrics
+            recon_losses.update(recon_loss.item(), data.size(0))
+            kl_losses.update(kl_loss.item(), data.size(0))
+            total_losses.update(loss.item(), data.size(0))
+            
+            # Update progress bar
+            pbar.set_postfix({
+                'loss': f'{total_losses.avg:.6f}',
+                'recon': f'{recon_losses.avg:.6f}',
+                'kl': f'{kl_losses.avg:.6f}'
+            })
+            pbar.update()
+        
+        pbar.close()
+        
+        return total_losses.avg
+    
+    # Other methods...
+```
+
+### 3. Update Configuration
+
+Add the new model to the configuration presets in `config.py`:
+
+```python
+# Add to config.py
+VAE_CONFIG = Config(
+    model={'name': 'vae', 'latent_dim': 128, 'kl_weight': 0.01},
+    training={'learning_rate': 5e-5, 'num_epochs': 150}
+)
+```
+
+### 4. Update Training Script
+
+Modify `train.py` to support the new model:
+
+```python
+# In train.py, modify the main function
+def main():
+    # ...
+    
+    # Get configuration based on model type
+    if args.model == 'autoencoder':
+        config = AUTOENCODER_CONFIG.as_dict()
+    elif args.model == 'vae':
+        config = VAE_CONFIG.as_dict()
+    else:
+        raise ValueError(f"Unknown model type: {args.model}")
+    
+    # ...
+    
+    # Train model
+    try:
+        if args.model == 'autoencoder':
+            results, eval_results = train_autoencoder(config)
+        elif args.model == 'vae':
+            results, eval_results = train_vae(config)  # Add this function
+        # ...
+```
+
+### 5. Add Training Function
+
+Create a training function for the new model in `train.py`:
+
+```python
+def train_vae(config):
+    """Train a VAE model"""
+    logger = logging.getLogger("train_vae")
+    
+    # Set device
+    device = torch.device(config['device'] if torch.cuda.is_available() else "cpu")
+    logger.info(f"Using device: {device}")
+    
+    # Create model
+    from models.vae import VAE
+    model = VAE(
+        latent_dim=config['model']['latent_dim'],
+        kl_weight=config['model'].get('kl_weight', 0.01),
+        name=config['model']['name']
+    ).to(device)
+    
+    # ... Rest is similar to train_autoencoder function
+    
+    # Create trainer with VAE trainer
+    from trainers.vae_trainer import VAETrainer
+    trainer = VAETrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        criterion=criterion,
+        device=device,
+        config=config
+    )
+    
+    # ... Rest is similar to train_autoencoder function
+```
+
+### 6. Update Module Initializations
+
+Update `models/__init__.py` and `trainers/__init__.py` to include the new classes:
+
+```python
+# In models/__init__.py
+from models.base import BaseModel
+from models.autoencoder import Autoencoder
+from models.vae import VAE  # Add this line
+
+__all__ = ['BaseModel', 'Autoencoder', 'VAE']  # Update this line
+```
+
+```python
+# In trainers/__init__.py
+from trainers.base_trainer import BaseTrainer
+from trainers.ae_trainer import AutoencoderTrainer
+from trainers.vae_trainer import VAETrainer  # Add this line
+
+__all__ = ['BaseTrainer', 'AutoencoderTrainer', 'VAETrainer']  # Update this line
+```
+
+## Using Trained Models for Evaluation
+
+To evaluate and visualize the results of trained models, use the evaluate_models.py script in a Jupyter notebook cell:
+
+```python
+# Cell 15: Evaluating Trained Models
+# The code loads the model, visualizes reconstructions, and analyzes the latent space
+# See evaluate_models.py for the complete implementation
+```
+
+## Common Issues and Solutions
+
+### Memory Issues
+
+If you encounter memory errors during training:
+
+1. Reduce batch size in the configuration
+2. Decrease the number of workers
+3. Ensure you're not keeping unnecessary tensors in memory
+4. Use `torch.cuda.empty_cache()` after large operations
+
+### CUDA Out of Memory
+
+If CUDA runs out of memory:
+
+1. Add gradient accumulation (update optimizer less frequently)
+2. Use mixed precision training (added to future versions)
+3. Reduce model size (latent_dim or layer sizes)
+
+### Slow Training
+
+To speed up training:
+
+1. Increase number of workers if CPU-bound
+2. Enable data preloading if memory allows
+3. Use a higher learning rate with proper scheduling
+4. Optimize preprocessing steps
+
+## Future Extensions
+
+The modular design allows for easy extensions:
+
+1. **New Models**:
+   - Variational Autoencoders (VAE)
+   - Conditional VAEs for incorporating disease labels
+   - Disentangled VAEs for interpretable features
+
+2. **Enhanced Training**:
+   - Mixed precision training (FP16)
+   - Gradient accumulation for larger effective batch sizes
+   - Distributed training across multiple GPUs
+
+3. **Advanced Analysis**:
+   - Feature importance analysis
+   - Correlation with clinical metrics
+   - Anomaly detection for diagnosis
+
+## Conclusion
+
+This architecture provides a flexible, maintainable framework for training and evaluating unsupervised learning models on DATSCAN images. The pause/resume functionality, modular structure, and configurability make it easy to experiment with different models and hyperparameters.

@@ -1,148 +1,130 @@
-# models/base.py
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Base model class with common functionality for all models.
+"""
+
+import os
 import torch
 import torch.nn as nn
-from abc import ABC, abstractmethod
-import os
 from pathlib import Path
-import logging
 
-class BaseModel(nn.Module, ABC):
+
+class BaseModel(nn.Module):
     """
-    Base model class for all models in the project.
-    Provides common functionality for model management, saving, and loading.
-    """
+    Base model class with common functionality for all models.
     
+    Args:
+        name: Model name for saving/loading
+    """
     def __init__(self, name="base_model"):
         super(BaseModel, self).__init__()
         self.name = name
-        self.logger = logging.getLogger(f"model.{name}")
     
-    @abstractmethod
-    def forward(self, x):
-        """Forward pass (to be implemented by subclasses)"""
-        pass
-    
-    def save(self, save_dir, epoch, optimizer=None, scheduler=None, losses=None, best=False):
+    def save(self, directory, filename=None):
         """
-        Save model checkpoint
+        Save model weights to file.
         
         Args:
-            save_dir: Directory to save the model
-            epoch: Current epoch number
-            optimizer: Optimizer state to save
-            scheduler: Scheduler state to save
-            losses: Dictionary of losses to save
-            best: Whether this is the best model so far
+            directory: Directory to save the model
+            filename: Optional filename, defaults to model name
         
         Returns:
-            Path to saved checkpoint
+            Path to saved model
         """
-        save_dir = Path(save_dir)
-        os.makedirs(save_dir, exist_ok=True)
+        os.makedirs(directory, exist_ok=True)
+        if filename is None:
+            filename = f"{self.name}.pt"
         
-        # Prepare filename
-        filename = f"{self.name}_{'best' if best else 'epoch'}.pt"
-        save_path = save_dir / filename
-        
-        # Prepare checkpoint
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.state_dict(),
-            'model_name': self.name
-        }
-        
-        # Add optional items
-        if optimizer is not None:
-            checkpoint['optimizer_state_dict'] = optimizer.state_dict()
-        
-        if scheduler is not None:
-            checkpoint['scheduler_state_dict'] = scheduler.state_dict()
-        
-        if losses is not None:
-            checkpoint['losses'] = losses
-        
-        # Save checkpoint
-        torch.save(checkpoint, save_path)
-        self.logger.info(f"Model saved to {save_path}")
-        
-        return save_path
+        path = os.path.join(directory, filename)
+        torch.save(self.state_dict(), path)
+        return path
     
-    def load(self, checkpoint_path, optimizer=None, scheduler=None):
+    def load(self, directory, filename=None):
         """
-        Load model checkpoint
+        Load model weights from file.
         
         Args:
-            checkpoint_path: Path to checkpoint file
-            optimizer: Optimizer to load state into
-            scheduler: Scheduler to load state into
-        
+            directory: Directory containing the model file
+            filename: Optional filename, defaults to model name
+            
         Returns:
-            Dictionary with loaded checkpoint info
+            self with loaded weights
         """
-        if not os.path.exists(checkpoint_path):
-            self.logger.error(f"Checkpoint not found: {checkpoint_path}")
-            raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+        if filename is None:
+            filename = f"{self.name}.pt"
         
-        # Load checkpoint
-        self.logger.info(f"Loading checkpoint from {checkpoint_path}")
-        checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
+        path = os.path.join(directory, filename)
         
-        # Load model weights
-        self.load_state_dict(checkpoint['model_state_dict'])
+        # Load to CPU first to avoid potential CUDA memory issues
+        state_dict = torch.load(path, map_location='cpu')
+        self.load_state_dict(state_dict)
         
-        # Load optimizer state if provided
-        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        
-        # Load scheduler state if provided
-        if scheduler is not None and 'scheduler_state_dict' in checkpoint:
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        
-        self.logger.info(f"Loaded checkpoint from epoch {checkpoint.get('epoch', 'unknown')}")
-        
-        return checkpoint
-    
-    def find_latest_checkpoint(self, checkpoint_dir):
-        """
-        Find the latest checkpoint for this model in the given directory
-        
-        Args:
-            checkpoint_dir: Directory to search for checkpoints
-        
-        Returns:
-            Path to latest checkpoint or None if not found
-        """
-        checkpoint_dir = Path(checkpoint_dir)
-        
-        if not checkpoint_dir.exists():
-            return None
-        
-        # Look for best model first
-        best_path = checkpoint_dir / f"{self.name}_best.pt"
-        if best_path.exists():
-            return best_path
-        
-        # Look for epoch checkpoint
-        epoch_path = checkpoint_dir / f"{self.name}_epoch.pt"
-        if epoch_path.exists():
-            return epoch_path
-        
-        return None
-    
-    def count_parameters(self):
-        """Count the number of trainable parameters in the model"""
-        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+        return self
     
     def _initialize_weights(self):
-        """Initialize model weights (to be used by subclasses)"""
+        """
+        Initialize model weights with He initialization.
+        https://arxiv.org/abs/1502.01852
+        """
         for m in self.modules():
-            if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d)):
-                nn.init.kaiming_normal_(m.weight)
+            if isinstance(m, (nn.Conv3d, nn.ConvTranspose3d, nn.Linear)):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm3d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight)
-                nn.init.constant_(m.bias, 0)
+    
+    def count_parameters(self):
+        """
+        Count the number of trainable parameters in the model.
+        
+        Returns:
+            Number of trainable parameters
+        """
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+    
+    def get_device(self):
+        """
+        Get the device the model is on.
+        
+        Returns:
+            Device (CPU or GPU)
+        """
+        return next(self.parameters()).device
+
+
+def get_model_path(model_name, root_dir="trained_models"):
+    """
+    Get path to model weights file.
+    
+    Args:
+        model_name: Name of the model
+        root_dir: Root directory for trained models
+        
+    Returns:
+        Path to model weights file or None if not found
+    """
+    model_dir = os.path.join(root_dir, model_name)
+    model_file = os.path.join(model_dir, f"{model_name}.pt")
+    
+    if os.path.exists(model_file):
+        return model_file
+    
+    # Try to find the best checkpoint or epoch checkpoint
+    checkpoint_dir = os.path.join(model_dir, "checkpoints")
+    if os.path.exists(checkpoint_dir):
+        best_checkpoint = os.path.join(checkpoint_dir, f"{model_name}_best.pt")
+        if os.path.exists(best_checkpoint):
+            return best_checkpoint
+        
+        # If best checkpoint not found, try to find the latest epoch checkpoint
+        epoch_checkpoints = [f for f in os.listdir(checkpoint_dir) if f.endswith("_epoch.pt")]
+        if epoch_checkpoints:
+            # Sort by epoch number
+            epoch_checkpoints.sort(key=lambda x: int(x.split("_")[-2]))
+            return os.path.join(checkpoint_dir, epoch_checkpoints[-1])
+    
+    return None

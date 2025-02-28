@@ -1,273 +1,487 @@
-# trainers/base_trainer.py
-import torch
-import torch.nn as nn
-import numpy as np
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+Base trainer with common training logic for all models.
+"""
+
 import os
-import logging
-from pathlib import Path
+import gc
 import json
 import time
-from datetime import datetime
+import logging
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.cuda.amp as amp
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-from abc import ABC, abstractmethod
-import gc
+import numpy as np
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 
 class AverageMeter:
     """Computes and stores the average and current value"""
     def __init__(self):
         self.reset()
-        
+
     def reset(self):
         self.val = 0
         self.avg = 0
         self.sum = 0
         self.count = 0
-        
+
     def update(self, val, n=1):
         self.val = val
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
 
-class BaseTrainer(ABC):
-    """Base trainer class for all models"""
+
+class EarlyStopping:
+    """Early stopping handler with patience"""
+    def __init__(self, patience=10, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = None
+        self.should_stop = False
+
+    def __call__(self, val_loss):
+        if self.best_loss is None:
+            self.best_loss = val_loss
+            return False
+
+        if val_loss > self.best_loss - self.min_delta:
+            self.counter += 1
+            if self.counter >= self.patience:
+                self.should_stop = True
+        else:
+            self.best_loss = val_loss
+            self.counter = 0
+
+        return self.should_stop
+
+
+class BaseTrainer:
+    """
+    Base trainer with common training logic for all models.
     
-    def __init__(self, model, train_loader, val_loader, optimizer, criterion, 
-                 device, config):
-        """
-        Initialize the trainer
-        
-        Args:
-            model: The model to train
-            train_loader: DataLoader for training data
-            val_loader: DataLoader for validation data
-            optimizer: Optimizer to use
-            criterion: Loss function
-            device: Device to use (cuda or cpu)
-            config: Configuration dictionary
-        """
+    Args:
+        model: Model to train
+        train_loader: DataLoader for training data
+        val_loader: DataLoader for validation data
+        config: Configuration object
+        criterion: Loss function (default: MSELoss)
+        optimizer: Optimizer (default: Adam)
+        device: Device to train on (default: cuda if available, else cpu)
+    """
+    def __init__(self, model, train_loader, val_loader, config, 
+                 criterion=None, optimizer=None, device=None):
         self.model = model
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.optimizer = optimizer
-        self.criterion = criterion
-        self.device = device
         self.config = config
         
-        # Setup directories
-        self.output_dir = Path(config.get('output_dir', 'trained_models'))
-        self.model_dir = self.output_dir / model.name
-        self.checkpoint_dir = self.model_dir / 'checkpoints'
-        self.log_dir = self.model_dir / 'logs'
+        # Set device
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = device
         
-        # Create directories
-        self.model_dir.mkdir(parents=True, exist_ok=True)
-        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
+        # Move model to device
+        self.model = self.model.to(self.device)
         
-        # Setup logging
-        self.logger = logging.getLogger(f"trainer.{model.name}")
-        file_handler = logging.FileHandler(self.log_dir / 'training.log')
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        self.logger.addHandler(file_handler)
-        self.logger.setLevel(logging.INFO)
+        # Set criterion
+        if criterion is None:
+            self.criterion = nn.MSELoss()
+        else:
+            self.criterion = criterion
         
-        # Training state
-        self.start_epoch = 0
-        self.current_epoch = 0
-        self.best_val_loss = float('inf')
-        self.train_losses = []
-        self.val_losses = []
-        self.early_stop_counter = 0
-        self.early_stop_patience = config.get('early_stop_patience', 7)
+        # Set optimizer
+        if optimizer is None:
+            self.optimizer = optim.Adam(
+                self.model.parameters(), 
+                lr=self.config.training.learning_rate,
+                weight_decay=self.config.training.weight_decay
+            )
+        else:
+            self.optimizer = optimizer
         
-        # Setup scheduler if provided
-        self.scheduler = None
-        if 'scheduler' in config:
-            scheduler_type = config['scheduler'].get('type', 'reduce_lr')
-            if scheduler_type == 'reduce_lr':
-                self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, 
-                    mode='min', 
-                    factor=config['scheduler'].get('factor', 0.5), 
-                    patience=config['scheduler'].get('patience', 5),
-                    verbose=True
-                )
-        
-        # Save config
-        self.save_config()
-        
-        # Try to load latest checkpoint
-        self.load_checkpoint()
-        
-        # Additional setup
-        self.setup()
-    
-    def setup(self):
-        """Additional setup (to be implemented by subclasses)"""
-        pass
-    
-    def save_config(self):
-        """Save configuration to file"""
-        config_path = self.model_dir / 'config.json'
-        with open(config_path, 'w') as f:
-            json.dump(self.config, f, indent=4)
-        self.logger.info(f"Configuration saved to {config_path}")
-    
-    def load_checkpoint(self):
-        """Load the latest checkpoint if available"""
-        # Find latest checkpoint
-        checkpoint_path = self.model.find_latest_checkpoint(self.checkpoint_dir)
-        
-        if checkpoint_path is None:
-            self.logger.info("No checkpoint found, starting from scratch")
-            return False
-        
-        # Load checkpoint
-        checkpoint = self.model.load(checkpoint_path, self.optimizer, self.scheduler)
-        
-        # Restore training state
-        self.start_epoch = checkpoint.get('epoch', 0) + 1  # Start from next epoch
-        self.current_epoch = self.start_epoch
-        self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-        
-        # Restore losses if available
-        if 'losses' in checkpoint:
-            self.train_losses = checkpoint['losses'].get('train_losses', [])
-            self.val_losses = checkpoint['losses'].get('val_losses', [])
-        
-        self.logger.info(f"Resumed from checkpoint at epoch {self.start_epoch}")
-        return True
-    
-    def save_checkpoint(self, epoch, is_best=False):
-        """Save checkpoint"""
-        # Prepare losses for saving
-        losses = {
-            'train_losses': self.train_losses,
-            'val_losses': self.val_losses,
-            'best_val_loss': self.best_val_loss
-        }
-        
-        # Save model
-        checkpoint_path = self.model.save(
-            self.checkpoint_dir, 
-            epoch, 
+        # Set scheduler
+        self.scheduler = ReduceLROnPlateau(
             self.optimizer, 
-            self.scheduler, 
-            losses,
-            best=is_best
+            mode='min', 
+            factor=self.config.training.scheduler_factor,
+            patience=self.config.training.scheduler_patience, 
+            verbose=True
         )
         
-        self.logger.info(f"Checkpoint saved: {checkpoint_path}")
-        return checkpoint_path
-    
-    @abstractmethod
-    def train_epoch(self, epoch):
-        """Train for one epoch (to be implemented by subclasses)"""
-        pass
-    
-    @abstractmethod
-    def validate(self):
-        """Validate the model (to be implemented by subclasses)"""
-        pass
-    
-    def train(self, max_epochs):
-        """Train the model for a specified number of epochs"""
-        self.logger.info(f"Starting training from epoch {self.start_epoch} to {max_epochs}")
-        self.logger.info(f"Training on device: {self.device}")
+        # Set early stopping
+        self.early_stopping = EarlyStopping(
+            patience=self.config.training.early_stopping_patience
+        )
         
-        # Track start time
+        # Set mixed precision scaler
+        self.scaler = amp.GradScaler(enabled=self.config.training.use_mixed_precision)
+        
+        # Set output directory
+        self.output_dir = os.path.join(
+            self.config.general.output_dir,
+            self.model.name
+        )
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        # Set checkpoint directory
+        self.checkpoint_dir = os.path.join(self.output_dir, "checkpoints")
+        os.makedirs(self.checkpoint_dir, exist_ok=True)
+        
+        # Set log directory
+        self.log_dir = os.path.join(self.output_dir, self.config.general.log_dir)
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        # Initialize training history
+        self.train_losses = []
+        self.val_losses = []
+        self.best_val_loss = float('inf')
+        self.current_epoch = 0
+        
+        # Load checkpoint if available
+        self._load_checkpoint()
+    
+    def train(self):
+        """
+        Train the model for the specified number of epochs.
+        
+        Returns:
+            Training history dictionary
+        """
+        logger.info(f"Starting training on {self.device}")
+        logger.info(f"Model: {self.model.name}")
+        logger.info(f"Trainable parameters: {self.model.count_parameters():,}")
+        logger.info(f"Output directory: {self.output_dir}")
+        
+        # Create config file
+        self._save_config()
+        
         start_time = time.time()
-        
         try:
-            for epoch in range(self.start_epoch, max_epochs):
+            for epoch in range(self.current_epoch, self.config.training.num_epochs):
                 self.current_epoch = epoch
                 
-                # Train one epoch
+                # Train for one epoch
                 train_loss = self.train_epoch(epoch)
                 self.train_losses.append(train_loss)
                 
-                # Validate
-                val_loss = self.validate()
+                # Evaluate on validation set
+                val_loss = self.validate_epoch(epoch)
                 self.val_losses.append(val_loss)
                 
-                # Update learning rate
-                if self.scheduler is not None:
-                    if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                        self.scheduler.step(val_loss)
-                    else:
-                        self.scheduler.step()
+                # Update scheduler
+                self.scheduler.step(val_loss)
                 
-                # Check if this is the best model
+                # Save checkpoint
                 is_best = val_loss < self.best_val_loss
                 if is_best:
                     self.best_val_loss = val_loss
-                    self.early_stop_counter = 0
-                else:
-                    self.early_stop_counter += 1
+                    self._save_checkpoint(is_best=True)
                 
-                # Save checkpoint
-                self.save_checkpoint(epoch, is_best)
+                # Regular checkpoint
+                if (epoch + 1) % 10 == 0:
+                    self._save_checkpoint()
                 
-                # Print progress
-                lr = self.optimizer.param_groups[0]['lr']
-                self.logger.info(f"Epoch {epoch}: train_loss={train_loss:.6f}, val_loss={val_loss:.6f}, lr={lr:.8f}")
+                # Plot progress
+                if (epoch + 1) % 5 == 0:
+                    self._plot_progress()
                 
                 # Check early stopping
-                if self.early_stop_counter >= self.early_stop_patience:
-                    self.logger.info(f"Early stopping triggered after {epoch} epochs")
+                if self.early_stopping(val_loss):
+                    logger.info("Early stopping triggered!")
                     break
                 
-                # Clear memory
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+                # Clean up
                 gc.collect()
+                torch.cuda.empty_cache()
             
-            # Training finished
-            total_time = time.time() - start_time
-            self.logger.info(f"Training finished after {time.time() - start_time:.2f} seconds")
+            # Final checkpoint and plot
+            self._save_checkpoint()
+            self._plot_progress()
             
-            # Plot and save learning curves
-            self.plot_learning_curves()
+            # Final model save
+            self.model.save(self.output_dir)
             
+            logger.info(f"Training completed in {time.time() - start_time:.2f} seconds")
+            
+            # Return training history
             return {
                 'train_losses': self.train_losses,
                 'val_losses': self.val_losses,
                 'best_val_loss': self.best_val_loss,
-                'total_time': total_time
+                'total_epochs': self.current_epoch + 1
             }
-            
+        
         except KeyboardInterrupt:
-            self.logger.info("Training interrupted")
-            self.save_checkpoint(self.current_epoch)
+            logger.info("Training interrupted by user!")
+            logger.info("Saving checkpoint...")
+            self._save_checkpoint()
+            self._plot_progress()
+            
+            # Return training history so far
             return {
                 'train_losses': self.train_losses,
                 'val_losses': self.val_losses,
                 'best_val_loss': self.best_val_loss,
+                'total_epochs': self.current_epoch + 1,
                 'interrupted': True
             }
-        except Exception as e:
-            self.logger.error(f"Training error: {str(e)}")
-            raise
     
-    def plot_learning_curves(self):
-        """Plot and save learning curves"""
-        plt.figure(figsize=(10, 5))
-        plt.plot(range(len(self.train_losses)), self.train_losses, label='Train Loss')
-        plt.plot(range(len(self.val_losses)), self.val_losses, label='Validation Loss')
+    def train_epoch(self, epoch):
+        """
+        Train for one epoch.
+        
+        Args:
+            epoch: Current epoch number
+            
+        Returns:
+            Average training loss for the epoch
+        """
+        self.model.train()
+        train_loss = AverageMeter()
+        
+        # Progress bar
+        pbar = tqdm(total=len(self.train_loader), desc=f"Epoch {epoch+1}/{self.config.training.num_epochs} [Train]")
+        
+        # Zero gradients at epoch start
+        self.optimizer.zero_grad()
+        
+        for batch_idx, batch in enumerate(self.train_loader):
+            # Get data
+            inputs = batch['volume'].to(self.device, non_blocking=True)
+            
+            # Mixed precision forward pass
+            with amp.autocast(enabled=self.config.training.use_mixed_precision):
+                # Forward pass
+                outputs = self.model(inputs)
+                
+                # Compute loss
+                loss = self.criterion(outputs, inputs)
+                # Scale loss by accumulation steps
+                loss = loss / self.config.training.accumulation_steps
+            
+            # Mixed precision backward pass
+            self.scaler.scale(loss).backward()
+            
+            # Gradient accumulation
+            if (batch_idx + 1) % self.config.training.accumulation_steps == 0:
+                # Gradient clipping
+                if self.config.training.gradient_clip_val > 0:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(), 
+                        self.config.training.gradient_clip_val
+                    )
+                
+                # Update weights
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
+            
+            # Update running loss
+            train_loss.update(loss.item() * self.config.training.accumulation_steps)
+            
+            # Update progress bar
+            pbar.set_postfix({'loss': f"{train_loss.avg:.6f}"})
+            pbar.update()
+            
+            # Clean up
+            del inputs, outputs, loss
+        
+        pbar.close()
+        
+        # Log training loss
+        logger.info(f"Epoch {epoch+1}/{self.config.training.num_epochs} - Train Loss: {train_loss.avg:.6f}")
+        
+        return train_loss.avg
+    
+    def validate_epoch(self, epoch):
+        """
+        Validate for one epoch.
+        
+        Args:
+            epoch: Current epoch number
+            
+        Returns:
+            Average validation loss for the epoch
+        """
+        self.model.eval()
+        val_loss = AverageMeter()
+        
+        # Progress bar
+        pbar = tqdm(total=len(self.val_loader), desc=f"Epoch {epoch+1}/{self.config.training.num_epochs} [Val]")
+        
+        with torch.no_grad():
+            for batch in self.val_loader:
+                # Get data
+                inputs = batch['volume'].to(self.device, non_blocking=True)
+                
+                # Forward pass
+                outputs = self.model(inputs)
+                
+                # Compute loss
+                loss = self.criterion(outputs, inputs)
+                
+                # Update running loss
+                val_loss.update(loss.item())
+                
+                # Update progress bar
+                pbar.set_postfix({'loss': f"{val_loss.avg:.6f}"})
+                pbar.update()
+                
+                # Clean up
+                del inputs, outputs, loss
+        
+        pbar.close()
+        
+        # Log validation loss
+        logger.info(f"Epoch {epoch+1}/{self.config.training.num_epochs} - Val Loss: {val_loss.avg:.6f}")
+        
+        return val_loss.avg
+    
+    def _save_checkpoint(self, is_best=False):
+        """
+        Save training checkpoint.
+        
+        Args:
+            is_best: Whether this is the best model so far
+        """
+        checkpoint = {
+            'epoch': self.current_epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict() if self.scheduler else None,
+            'best_val_loss': self.best_val_loss,
+            'train_losses': self.train_losses,
+            'val_losses': self.val_losses,
+            'config': self.config.as_dict() if hasattr(self.config, 'as_dict') else self.config,
+        }
+        
+        # Save regular checkpoint
+        checkpoint_path = os.path.join(
+            self.checkpoint_dir, 
+            f"{self.model.name}_{self.current_epoch}_epoch.pt"
+        )
+        torch.save(checkpoint, checkpoint_path)
+        
+        # Save latest checkpoint (overwrite)
+        latest_path = os.path.join(
+            self.checkpoint_dir, 
+            f"{self.model.name}_latest.pt"
+        )
+        torch.save(checkpoint, latest_path)
+        
+        # Save best checkpoint (if applicable)
+        if is_best:
+            best_path = os.path.join(
+                self.checkpoint_dir, 
+                f"{self.model.name}_best.pt"
+            )
+            torch.save(checkpoint, best_path)
+            logger.info(f"New best model saved: {best_path}")
+    
+    def _load_checkpoint(self):
+        """
+        Load latest checkpoint if available.
+        """
+        latest_path = os.path.join(
+            self.checkpoint_dir, 
+            f"{self.model.name}_latest.pt"
+        )
+        
+        if os.path.exists(latest_path):
+            logger.info(f"Loading checkpoint: {latest_path}")
+            
+            # Load to CPU first to avoid CUDA memory issues
+            checkpoint = torch.load(latest_path, map_location='cpu')
+            
+            # Load model state dict
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            
+            # Load optimizer state dict
+            self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            # Load scheduler state dict if available
+            if self.scheduler and checkpoint['scheduler_state_dict']:
+                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            
+            # Load training state
+            self.current_epoch = checkpoint['epoch'] + 1  # Start from next epoch
+            self.best_val_loss = checkpoint['best_val_loss']
+            self.train_losses = checkpoint['train_losses']
+            self.val_losses = checkpoint['val_losses']
+            
+            logger.info(f"Resuming from epoch {self.current_epoch}")
+        else:
+            logger.info("No checkpoint found, starting training from scratch")
+    
+    def _save_config(self):
+        """
+        Save configuration to JSON file.
+        """
+        config_path = os.path.join(self.output_dir, "config.json")
+        
+        with open(config_path, 'w') as f:
+            if hasattr(self.config, 'as_dict'):
+                json.dump(self.config.as_dict(), f, indent=4)
+            else:
+                json.dump(self.config, f, indent=4)
+    
+    def _plot_progress(self):
+        """
+        Plot training and validation loss curves.
+        """
+        plt.figure(figsize=(12, 5))
+        
+        # Plot all epochs
+        plt.subplot(1, 2, 1)
+        plt.plot(range(1, len(self.train_losses) + 1), self.train_losses, label='Train Loss')
+        plt.plot(range(1, len(self.val_losses) + 1), self.val_losses, label='Val Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
+        plt.title('Training and Validation Loss')
         plt.legend()
-        plt.title(f'{self.model.name} Learning Curves')
         plt.grid(True)
         
-        # Save figure
-        plt.savefig(self.model_dir / 'learning_curves.png')
+        # Plot recent epochs
+        if len(self.train_losses) > 10:
+            plt.subplot(1, 2, 2)
+            recent = 20  # Show last 20 epochs
+            start = max(0, len(self.train_losses) - recent)
+            plt.plot(
+                range(start + 1, len(self.train_losses) + 1), 
+                self.train_losses[start:], 
+                label='Train Loss'
+            )
+            plt.plot(
+                range(start + 1, len(self.val_losses) + 1), 
+                self.val_losses[start:], 
+                label='Val Loss'
+            )
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title(f'Last {recent} Epochs')
+            plt.legend()
+            plt.grid(True)
+        
+        plt.tight_layout()
+        
+        # Save the figure
+        plot_path = os.path.join(self.output_dir, "learning_curves.png")
+        plt.savefig(plot_path)
         plt.close()
-    
-    def clear_memory(self):
-        """Clear GPU memory"""
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        gc.collect()

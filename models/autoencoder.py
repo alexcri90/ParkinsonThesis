@@ -1,129 +1,214 @@
-# models/autoencoder.py
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+"""
+3D Autoencoder model for DATSCAN images.
+Implements encoder and decoder for 3D medical volumes.
+"""
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from collections import OrderedDict
 from models.base import BaseModel
 
-class ResidualBlock3D(nn.Module):
-    """3D Residual block with two convolutions and optional bottleneck."""
-    
-    def __init__(self, in_channels, out_channels, stride=1):
-        super(ResidualBlock3D, self).__init__()
-        self.conv1 = nn.Conv3d(in_channels, out_channels, kernel_size=3, 
-                              stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm3d(out_channels)
-        self.conv2 = nn.Conv3d(out_channels, out_channels, kernel_size=3,
-                              stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm3d(out_channels)
 
-        # Shortcut connection to match dimensions
-        self.shortcut = nn.Sequential()
-        if stride != 1 or in_channels != out_channels:
-            self.shortcut = nn.Sequential(
-                nn.Conv3d(in_channels, out_channels, kernel_size=1,
-                         stride=stride, bias=False),
-                nn.BatchNorm3d(out_channels)
-            )
+class ConvBlock(nn.Module):
+    """
+    Memory-efficient convolutional block with batch normalization and ReLU activation.
+    
+    Args:
+        in_channels: Number of input channels
+        out_channels: Number of output channels
+        kernel_size: Size of convolutional kernel
+        stride: Stride for convolution
+        padding: Padding for convolution
+    """
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        self.block = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding)),
+            ('bn', nn.BatchNorm3d(out_channels)),
+            ('relu', nn.ReLU(inplace=True))  # inplace ReLU for memory efficiency
+        ]))
 
     def forward(self, x):
-        residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = F.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out += self.shortcut(residual)
-        out = F.relu(out)
-        return out
+        return self.block(x)
+
 
 class Encoder(nn.Module):
-    """3D Convolutional Encoder with residual connections."""
+    """
+    3D Encoder network optimized for 128³ input volumes.
     
-    def __init__(self, latent_dim):
-        super(Encoder, self).__init__()
-        self.initial = nn.Sequential(
-            nn.Conv3d(1, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm3d(32),
-            nn.ReLU()
-        )
-        self.res1 = ResidualBlock3D(32, 64, stride=2)    # 32x64x64
-        self.res2 = ResidualBlock3D(64, 128, stride=2)   # 16x32x32
-        self.res3 = ResidualBlock3D(128, 256, stride=2)  # 8x16x16
-        self.res4 = ResidualBlock3D(256, 512, stride=2)  # 4x8x8
-        self.flatten_size = 512 * 4 * 8 * 8
-        self.fc = nn.Sequential(
-            nn.Linear(self.flatten_size, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, latent_dim)
+    Args:
+        latent_dim: Dimension of the latent space
+        in_channels: Number of input channels (default: 1 for grayscale)
+    """
+    def __init__(self, latent_dim=128, in_channels=1):
+        super().__init__()
+
+        # Initial feature extraction
+        self.init_conv = ConvBlock(in_channels, 32)  # 128 -> 128
+
+        # Downsampling path with progressive channel increase
+        self.down1 = nn.Sequential(
+            ConvBlock(32, 64, stride=2),    # 128 -> 64
+            ConvBlock(64, 64)
         )
 
+        self.down2 = nn.Sequential(
+            ConvBlock(64, 128, stride=2),    # 64 -> 32
+            ConvBlock(128, 128)
+        )
+
+        self.down3 = nn.Sequential(
+            ConvBlock(128, 256, stride=2),   # 32 -> 16
+            ConvBlock(256, 256)
+        )
+
+        self.down4 = nn.Sequential(
+            ConvBlock(256, 512, stride=2),  # 16 -> 8
+            ConvBlock(512, 512)
+        )
+
+        # Project to latent space
+        self.flatten_size = 512 * 8 * 8 * 4
+        self.fc = nn.Linear(self.flatten_size, latent_dim)
+
     def forward(self, x):
-        x = self.initial(x)
-        x = self.res1(x)
-        x = self.res2(x)
-        x = self.res3(x)
-        x = self.res4(x)
-        x = x.view(-1, self.flatten_size)
-        x = self.fc(x)
-        return x
+        x = self.init_conv(x)
+        d1 = self.down1(x)
+        d2 = self.down2(d1)
+        d3 = self.down3(d2)
+        d4 = self.down4(d3)
+
+        # Flatten and project to latent space
+        flat = torch.flatten(d4, start_dim=1)
+        z = self.fc(flat)
+
+        return z
+
 
 class Decoder(nn.Module):
-    """3D Convolutional Decoder with residual connections."""
+    """
+    3D Decoder network optimized for 128³ output volumes.
     
-    def __init__(self, latent_dim):
-        super(Decoder, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(latent_dim, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 512 * 4 * 8 * 8),
-            nn.ReLU()
-        )
-        self.initial_shape = (512, 4, 8, 8)
-        self.res1 = ResidualBlock3D(512, 256)
-        self.up1 = nn.ConvTranspose3d(256, 256, kernel_size=2, stride=2)
-        self.res2 = ResidualBlock3D(256, 128)
-        self.up2 = nn.ConvTranspose3d(128, 128, kernel_size=2, stride=2)
-        self.res3 = ResidualBlock3D(128, 64)
-        self.up3 = nn.ConvTranspose3d(64, 64, kernel_size=2, stride=2)
-        self.res4 = ResidualBlock3D(64, 32)
-        self.up4 = nn.ConvTranspose3d(32, 32, kernel_size=2, stride=2)
-        self.final = nn.Conv3d(32, 1, kernel_size=3, padding=1)
+    Args:
+        latent_dim: Dimension of the latent space
+        out_channels: Number of output channels (default: 1 for grayscale)
+    """
+    def __init__(self, latent_dim=128, out_channels=1):
+        super().__init__()
 
-    def forward(self, x):
-        x = self.fc(x)
-        x = x.view(-1, *self.initial_shape)
-        x = self.up1(self.res1(x))
-        x = self.up2(self.res2(x))
-        x = self.up3(self.res3(x))
-        x = self.up4(self.res4(x))
-        x = torch.sigmoid(self.final(x))
+        self.flatten_size = 512 * 8 * 8 * 4
+        self.fc = nn.Linear(latent_dim, self.flatten_size)
+
+        # Upsampling path
+        self.up1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(512, 256),
+            ConvBlock(256, 256)
+        )
+
+        self.up2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(256, 128),
+            ConvBlock(128, 128)
+        )
+
+        self.up3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(128, 64),
+            ConvBlock(64, 64)
+        )
+
+        self.up4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(64, 32),
+            ConvBlock(32, 32)
+        )
+
+        # Final convolution
+        self.final_conv = nn.Conv3d(32, out_channels, kernel_size=1)
+
+    def forward(self, z):
+        # Reshape from latent space
+        x = self.fc(z)
+        x = x.view(-1, 512, 4, 8, 8)
+
+        # Upsampling
+        x = self.up1(x)
+        x = self.up2(x)
+        x = self.up3(x)
+        x = self.up4(x)
+
+        # Final convolution
+        x = self.final_conv(x)
+
         return x
 
+
 class Autoencoder(BaseModel):
-    """Complete 3D Convolutional Autoencoder."""
+    """
+    Memory-optimized 3D Autoencoder for 128³ medical volumes.
     
-    def __init__(self, latent_dim=128, name="autoencoder"):
-        super(Autoencoder, self).__init__(name=name)
-        self.encoder = Encoder(latent_dim)
-        self.decoder = Decoder(latent_dim)
+    Args:
+        latent_dim: Dimension of the latent space
+        in_channels: Number of input channels (default: 1 for grayscale)
+        name: Model name for saving/loading
+    """
+    def __init__(self, latent_dim=128, in_channels=1, name="autoencoder"):
+        super().__init__(name=name)
         self.latent_dim = latent_dim
+        self.in_channels = in_channels
+        
+        self.encoder = Encoder(latent_dim, in_channels)
+        self.decoder = Decoder(latent_dim, in_channels)
+        
+        # Initialize weights
         self._initialize_weights()
-    
+
     def forward(self, x):
-        latent = self.encoder(x)
-        reconstruction = self.decoder(latent)
-        return reconstruction, latent
+        z = self.encoder(x)
+        reconstruction = self.decoder(z)
+        return reconstruction
 
     def encode(self, x):
+        """Encode input to latent space"""
         return self.encoder(x)
+
+    def decode(self, z):
+        """Decode from latent space (for generation)"""
+        return self.decoder(z)
     
-    def decode(self, x):
-        return self.decoder(x)
+    def get_latent_dim(self):
+        """Get the dimension of the latent space"""
+        return self.latent_dim
+
+
+# For testing purposes
+if __name__ == "__main__":
+    # Create model and test with dummy data
+    model = Autoencoder(latent_dim=128)
+    print(f"Model parameter count: {model.count_parameters():,}")
     
-    def get_model_info(self):
-        """Return model information"""
-        return {
-            "name": self.name,
-            "latent_dim": self.latent_dim,
-            "parameters": self.count_parameters()
-        }
+    # Create dummy input
+    dummy_input = torch.randn(2, 1, 64, 128, 128)
+    
+    # Test forward pass
+    output = model(dummy_input)
+    print(f"Input shape: {dummy_input.shape}")
+    print(f"Output shape: {output.shape}")
+    assert output.shape == dummy_input.shape, "Output shape must match input shape"
+    
+    # Test encoder
+    latent = model.encode(dummy_input)
+    print(f"Latent shape: {latent.shape}")
+    assert latent.shape == (2, 128), "Latent shape is incorrect"
+    
+    # Test decoder
+    dummy_latent = torch.randn(2, 128)
+    reconstruction = model.decode(dummy_latent)
+    print(f"Reconstruction shape: {reconstruction.shape}")
+    assert reconstruction.shape == dummy_input.shape, "Reconstruction shape must match input shape"
+    
+    print("Model test successful!")

@@ -1,0 +1,4 @@
+.git
+.venv
+trained_models
+__pycache__

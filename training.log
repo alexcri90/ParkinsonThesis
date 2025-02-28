@@ -290,3 +290,1830 @@ IndexError: index 4 is out of bounds for dimension 0 with size 4
 2025-02-24 22:48:24,640 - train_autoencoder - INFO - Generating visualizations...
 2025-02-24 22:48:27,073 - main - INFO - Training completed! Best validation loss: 0.047733
 2025-02-24 22:48:27,073 - main - INFO - Test results: MSE=0.042605, SSIM=0.695625
+2025-02-25 09:52:19,945 - main - INFO - Training autoencoder with configuration:
+2025-02-25 09:52:19,946 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data_cache"
+  },
+  "model": {
+    "name": "autoencoder_ld256",
+    "latent_dim": 256
+  },
+  "training": {
+    "num_epochs": 100,
+    "learning_rate": 1e-05,
+    "weight_decay": 1e-05,
+    "grad_clip": 1.0,
+    "early_stop_patience": 10
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 5,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 09:52:19,994 - train_autoencoder - INFO - Using device: cuda
+2025-02-25 09:52:23,113 - train_autoencoder - INFO - Created autoencoder_ld256 model with 291,299,265 parameters
+2025-02-25 09:52:23,405 - train_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 09:52:24,877 - trainer.autoencoder_ld256 - INFO - Configuration saved to trained_models\autoencoder_ld256\config.json
+2025-02-25 09:52:24,877 - trainer.autoencoder_ld256 - INFO - No checkpoint found, starting from scratch
+2025-02-25 09:52:24,877 - train_autoencoder - INFO - Starting training...
+2025-02-25 09:52:24,877 - trainer.autoencoder_ld256 - INFO - Starting training from epoch 0 to 100
+2025-02-25 09:52:24,877 - trainer.autoencoder_ld256 - INFO - Training on device: cuda
+2025-02-25 09:55:47,505 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 09:55:47,505 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 09:55:47,505 - trainer.autoencoder_ld256 - INFO - Epoch 0: train_loss=0.146594, val_loss=0.080697, lr=0.00001000
+2025-02-25 09:58:27,651 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 09:58:27,651 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 09:58:27,652 - trainer.autoencoder_ld256 - INFO - Epoch 1: train_loss=0.061524, val_loss=0.064828, lr=0.00001000
+2025-02-25 10:01:07,804 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:01:07,805 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:01:07,805 - trainer.autoencoder_ld256 - INFO - Epoch 2: train_loss=0.052891, val_loss=0.058588, lr=0.00001000
+2025-02-25 10:03:47,348 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:03:47,354 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:03:47,354 - trainer.autoencoder_ld256 - INFO - Epoch 3: train_loss=0.049641, val_loss=0.055673, lr=0.00001000
+2025-02-25 10:06:26,618 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:06:26,618 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:06:26,618 - trainer.autoencoder_ld256 - INFO - Epoch 4: train_loss=0.047815, val_loss=0.055034, lr=0.00001000
+2025-02-25 10:09:05,786 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:09:05,787 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:09:05,787 - trainer.autoencoder_ld256 - INFO - Epoch 5: train_loss=0.046556, val_loss=0.054821, lr=0.00001000
+2025-02-25 10:11:45,336 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:11:45,336 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:11:45,337 - trainer.autoencoder_ld256 - INFO - Epoch 6: train_loss=0.045874, val_loss=0.050844, lr=0.00001000
+2025-02-25 10:14:24,176 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:14:24,176 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:14:24,176 - trainer.autoencoder_ld256 - INFO - Epoch 7: train_loss=0.045115, val_loss=0.050937, lr=0.00001000
+2025-02-25 10:17:03,784 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:17:03,784 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:17:03,784 - trainer.autoencoder_ld256 - INFO - Epoch 8: train_loss=0.044669, val_loss=0.050256, lr=0.00001000
+2025-02-25 10:19:43,047 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:19:43,048 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:19:43,048 - trainer.autoencoder_ld256 - INFO - Epoch 9: train_loss=0.044146, val_loss=0.050338, lr=0.00001000
+2025-02-25 10:22:22,492 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:22:22,492 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:22:22,492 - trainer.autoencoder_ld256 - INFO - Epoch 10: train_loss=0.043807, val_loss=0.050432, lr=0.00001000
+2025-02-25 10:25:01,952 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:25:01,952 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:25:01,952 - trainer.autoencoder_ld256 - INFO - Epoch 11: train_loss=0.043601, val_loss=0.049639, lr=0.00001000
+2025-02-25 10:27:41,113 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:27:41,113 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:27:41,113 - trainer.autoencoder_ld256 - INFO - Epoch 12: train_loss=0.043293, val_loss=0.049409, lr=0.00001000
+2025-02-25 10:30:21,886 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:30:21,886 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:30:21,886 - trainer.autoencoder_ld256 - INFO - Epoch 13: train_loss=0.043103, val_loss=0.049006, lr=0.00001000
+2025-02-25 10:33:01,246 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:33:01,247 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:33:01,247 - trainer.autoencoder_ld256 - INFO - Epoch 14: train_loss=0.043417, val_loss=0.049763, lr=0.00001000
+2025-02-25 10:35:40,811 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:35:40,811 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:35:40,811 - trainer.autoencoder_ld256 - INFO - Epoch 15: train_loss=0.042897, val_loss=0.048961, lr=0.00001000
+2025-02-25 10:38:19,967 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:38:19,967 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:38:19,968 - trainer.autoencoder_ld256 - INFO - Epoch 16: train_loss=0.042583, val_loss=0.048585, lr=0.00001000
+2025-02-25 10:40:59,642 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:40:59,642 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:40:59,642 - trainer.autoencoder_ld256 - INFO - Epoch 17: train_loss=0.042473, val_loss=0.048806, lr=0.00001000
+2025-02-25 10:43:39,060 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:43:39,060 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:43:39,060 - trainer.autoencoder_ld256 - INFO - Epoch 18: train_loss=0.042437, val_loss=0.049079, lr=0.00001000
+2025-02-25 10:46:18,470 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:46:18,470 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:46:18,471 - trainer.autoencoder_ld256 - INFO - Epoch 19: train_loss=0.042327, val_loss=0.048886, lr=0.00001000
+2025-02-25 10:48:58,193 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:48:58,193 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:48:58,193 - trainer.autoencoder_ld256 - INFO - Epoch 20: train_loss=0.042223, val_loss=0.048486, lr=0.00001000
+2025-02-25 10:51:37,572 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:51:37,572 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:51:37,572 - trainer.autoencoder_ld256 - INFO - Epoch 21: train_loss=0.042078, val_loss=0.048770, lr=0.00001000
+2025-02-25 10:54:17,069 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:54:17,069 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:54:17,069 - trainer.autoencoder_ld256 - INFO - Epoch 22: train_loss=0.042027, val_loss=0.048432, lr=0.00001000
+2025-02-25 10:56:56,260 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:56:56,260 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 10:56:56,261 - trainer.autoencoder_ld256 - INFO - Epoch 23: train_loss=0.042007, val_loss=0.048182, lr=0.00001000
+2025-02-25 10:59:35,522 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:59:35,522 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 10:59:35,523 - trainer.autoencoder_ld256 - INFO - Epoch 24: train_loss=0.042087, val_loss=0.050896, lr=0.00001000
+2025-02-25 11:02:15,711 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:02:15,711 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:02:15,711 - trainer.autoencoder_ld256 - INFO - Epoch 25: train_loss=0.042057, val_loss=0.048598, lr=0.00001000
+2025-02-25 11:04:55,320 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:04:55,320 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:04:55,320 - trainer.autoencoder_ld256 - INFO - Epoch 26: train_loss=0.041608, val_loss=0.048006, lr=0.00001000
+2025-02-25 11:07:34,923 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:07:34,923 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:07:34,924 - trainer.autoencoder_ld256 - INFO - Epoch 27: train_loss=0.041519, val_loss=0.048645, lr=0.00001000
+2025-02-25 11:10:14,424 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:10:14,424 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:10:14,424 - trainer.autoencoder_ld256 - INFO - Epoch 28: train_loss=0.041646, val_loss=0.048565, lr=0.00001000
+2025-02-25 11:12:54,336 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:12:54,336 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:12:54,337 - trainer.autoencoder_ld256 - INFO - Epoch 29: train_loss=0.041600, val_loss=0.048023, lr=0.00001000
+2025-02-25 11:15:34,581 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:15:34,582 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:15:34,582 - trainer.autoencoder_ld256 - INFO - Epoch 30: train_loss=0.041463, val_loss=0.047943, lr=0.00001000
+2025-02-25 11:18:13,674 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:18:13,675 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:18:13,675 - trainer.autoencoder_ld256 - INFO - Epoch 31: train_loss=0.041353, val_loss=0.048326, lr=0.00001000
+2025-02-25 11:20:53,139 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:20:53,140 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:20:53,140 - trainer.autoencoder_ld256 - INFO - Epoch 32: train_loss=0.041334, val_loss=0.048304, lr=0.00001000
+2025-02-25 11:23:32,350 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:23:32,351 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:23:32,351 - trainer.autoencoder_ld256 - INFO - Epoch 33: train_loss=0.041329, val_loss=0.048170, lr=0.00001000
+2025-02-25 11:26:11,984 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:26:11,985 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:26:11,985 - trainer.autoencoder_ld256 - INFO - Epoch 34: train_loss=0.042105, val_loss=0.049746, lr=0.00001000
+2025-02-25 11:28:51,356 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:28:51,356 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:28:51,356 - trainer.autoencoder_ld256 - INFO - Epoch 35: train_loss=0.041539, val_loss=0.049573, lr=0.00001000
+2025-02-25 11:31:31,010 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:31:31,011 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:31:31,011 - trainer.autoencoder_ld256 - INFO - Epoch 36: train_loss=0.041268, val_loss=0.048826, lr=0.00000500
+2025-02-25 11:34:10,736 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:34:10,737 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_best.pt
+2025-02-25 11:34:10,737 - trainer.autoencoder_ld256 - INFO - Epoch 37: train_loss=0.040818, val_loss=0.047619, lr=0.00000500
+2025-02-25 11:36:50,212 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:36:50,212 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:36:50,212 - trainer.autoencoder_ld256 - INFO - Epoch 38: train_loss=0.040637, val_loss=0.047662, lr=0.00000500
+2025-02-25 11:39:29,474 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:39:29,474 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:39:29,475 - trainer.autoencoder_ld256 - INFO - Epoch 39: train_loss=0.040573, val_loss=0.047701, lr=0.00000500
+2025-02-25 11:42:09,122 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:42:09,122 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:42:09,122 - trainer.autoencoder_ld256 - INFO - Epoch 40: train_loss=0.040531, val_loss=0.047781, lr=0.00000500
+2025-02-25 11:44:48,645 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:44:48,646 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:44:48,646 - trainer.autoencoder_ld256 - INFO - Epoch 41: train_loss=0.040519, val_loss=0.048130, lr=0.00000500
+2025-02-25 11:47:28,176 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:47:28,176 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:47:28,177 - trainer.autoencoder_ld256 - INFO - Epoch 42: train_loss=0.040506, val_loss=0.047728, lr=0.00000500
+2025-02-25 11:50:08,026 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:50:08,026 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:50:08,027 - trainer.autoencoder_ld256 - INFO - Epoch 43: train_loss=0.040483, val_loss=0.048262, lr=0.00000250
+2025-02-25 11:52:47,655 - model.autoencoder_ld256 - INFO - Model saved to trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:52:47,656 - trainer.autoencoder_ld256 - INFO - Checkpoint saved: trained_models\autoencoder_ld256\checkpoints\autoencoder_ld256_epoch.pt
+2025-02-25 11:52:47,656 - trainer.autoencoder_ld256 - INFO - Epoch 44: train_loss=0.040309, val_loss=0.047878, lr=0.00000250
+2025-02-25 11:52:47,656 - trainer.autoencoder_ld256 - INFO - Early stopping triggered after 44 epochs
+2025-02-25 11:52:47,656 - trainer.autoencoder_ld256 - INFO - Training finished after 7222.78 seconds
+2025-02-25 11:52:49,330 - train_autoencoder - INFO - Evaluating model...
+2025-02-25 11:53:11,337 - train_autoencoder - INFO - Test results: MSE=0.042553 (±0.045796), SSIM=0.697074 (±0.060727)
+2025-02-25 11:53:11,337 - train_autoencoder - INFO - Generating visualizations...
+2025-02-25 11:53:14,386 - main - INFO - Training completed! Best validation loss: 0.047619
+2025-02-25 11:53:14,386 - main - INFO - Test results: MSE=0.042553, SSIM=0.697074
+2025-02-25 17:06:07,416 - main - INFO - Training pure_autoencoder with configuration:
+2025-02-25 17:06:07,416 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "pure_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  },
+  "reconstruction_loss": "combined"
+}
+2025-02-25 17:06:07,479 - train_pure_autoencoder - INFO - Using device: cuda
+2025-02-25 17:06:09,549 - main - ERROR - Error during training: 'NoneType' object has no attribute 'fill_'
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 375, in main
+    results, eval_results = train_pure_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 171, in train_pure_autoencoder
+    model = PureAutoencoder(
+            ^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\models\pure_autoencoder.py", line 198, in __init__
+    self._initialize_weights()
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\models\base.py", line 148, in _initialize_weights
+    nn.init.constant_(m.bias, 0)
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\init.py", line 242, in constant_
+    return _no_grad_fill_(tensor, val)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\init.py", line 64, in _no_grad_fill_
+    return tensor.fill_(val)
+           ^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'fill_'
+2025-02-25 17:08:11,201 - main - INFO - Training pure_autoencoder with configuration:
+2025-02-25 17:08:11,201 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "pure_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  },
+  "reconstruction_loss": "combined"
+}
+2025-02-25 17:08:11,230 - train_pure_autoencoder - INFO - Using device: cuda
+2025-02-25 17:08:15,643 - train_pure_autoencoder - INFO - Created pure_autoencoder model with 576,322,257 parameters
+2025-02-25 17:08:15,786 - train_pure_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 17:08:16,978 - main - ERROR - Error during training: shape '[1, 1, 11, 11, 11]' is invalid for input of size 121
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 375, in main
+    results, eval_results = train_pure_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 192, in train_pure_autoencoder
+    criterion = CombinedLoss(mse_weight=0.7, ssim_weight=0.3, focal_weight=0.0)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\losses.py", line 96, in __init__
+    self.ssim_loss = SSIM3DLoss()
+                     ^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\losses.py", line 39, in __init__
+    self.register_buffer('window', self._create_window(window_size))
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\losses.py", line 51, in _create_window
+    window = _3D_window.view(1, 1, window_size, window_size, window_size)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: shape '[1, 1, 11, 11, 11]' is invalid for input of size 121
+2025-02-25 17:29:30,304 - main - INFO - Training pure_autoencoder with configuration:
+2025-02-25 17:29:30,304 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "pure_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  },
+  "reconstruction_loss": "combined"
+}
+2025-02-25 17:29:30,344 - train_pure_autoencoder - INFO - Using device: cuda
+2025-02-25 17:29:34,874 - train_pure_autoencoder - INFO - Created pure_autoencoder model with 576,322,257 parameters
+2025-02-25 17:29:34,939 - train_pure_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 17:29:35,724 - train_pure_autoencoder - INFO - Using combined loss (MSE + SSIM)
+2025-02-25 17:29:35,726 - trainer.pure_autoencoder - INFO - Configuration saved to trained_models\pure_autoencoder\config.json
+2025-02-25 17:29:35,726 - trainer.pure_autoencoder - INFO - No checkpoint found, starting from scratch
+2025-02-25 17:29:35,726 - train_pure_autoencoder - INFO - Starting training...
+2025-02-25 17:29:35,726 - trainer.pure_autoencoder - INFO - Starting training from epoch 0 to 200
+2025-02-25 17:29:35,727 - trainer.pure_autoencoder - INFO - Training on device: cuda
+2025-02-25 17:29:50,510 - trainer.pure_autoencoder - ERROR - Training error: Input type (torch.cuda.FloatTensor) and weight type (torch.FloatTensor) should be the same
+2025-02-25 17:29:50,511 - main - ERROR - Error during training: Input type (torch.cuda.FloatTensor) and weight type (torch.FloatTensor) should be the same
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 375, in main
+    results, eval_results = train_pure_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_revised.py", line 211, in train_pure_autoencoder
+    results = trainer.train(config['training']['num_epochs'])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 188, in train
+    train_loss = self.train_epoch(epoch)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\ae_trainer.py", line 32, in train_epoch
+    loss = self.criterion(reconstruction, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\losses.py", line 113, in forward
+    ssim = self.ssim_loss(pred, target)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\losses.py", line 69, in forward
+    mu1 = F.conv3d(pred, window, padding=self.window_size//2, groups=self.channel)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Input type (torch.cuda.FloatTensor) and weight type (torch.FloatTensor) should be the same
+2025-02-25 17:32:34,017 - main - INFO - Training pure_autoencoder with configuration:
+2025-02-25 17:32:34,018 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "pure_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 17:32:34,052 - train_pure_autoencoder - INFO - Using device: cuda
+2025-02-25 17:32:38,494 - train_pure_autoencoder - INFO - Created pure_autoencoder model with 576,322,257 parameters
+2025-02-25 17:32:38,566 - train_pure_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 17:32:39,337 - train_pure_autoencoder - INFO - Using MSE loss
+2025-02-25 17:32:39,339 - trainer.pure_autoencoder - INFO - Configuration saved to trained_models\pure_autoencoder\config.json
+2025-02-25 17:32:39,339 - trainer.pure_autoencoder - INFO - No checkpoint found, starting from scratch
+2025-02-25 17:32:39,349 - train_pure_autoencoder - INFO - Starting training...
+2025-02-25 17:32:39,349 - trainer.pure_autoencoder - INFO - Starting training from epoch 0 to 200
+2025-02-25 17:32:39,349 - trainer.pure_autoencoder - INFO - Training on device: cuda
+2025-02-25 17:39:10,499 - trainer.pure_autoencoder - INFO - Training interrupted
+2025-02-25 17:39:19,766 - model.pure_autoencoder - INFO - Model saved to trained_models\pure_autoencoder\checkpoints\pure_autoencoder_epoch.pt
+2025-02-25 17:39:19,766 - trainer.pure_autoencoder - INFO - Checkpoint saved: trained_models\pure_autoencoder\checkpoints\pure_autoencoder_epoch.pt
+2025-02-25 17:39:19,768 - train_pure_autoencoder - INFO - Evaluating model...
+2025-02-25 17:39:55,745 - main - INFO - Training interrupted by user
+2025-02-25 17:41:22,546 - main - INFO - Training efficient autoencoder with configuration:
+2025-02-25 17:41:22,547 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "efficient_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 17:41:22,601 - train_efficient_autoencoder - INFO - Using device: cuda
+2025-02-25 17:41:22,885 - train_efficient_autoencoder - INFO - Created efficient_autoencoder model with 7,296,081 parameters
+2025-02-25 17:41:23,041 - train_efficient_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 17:41:24,058 - train_efficient_autoencoder - INFO - Using MSE loss
+2025-02-25 17:41:24,060 - trainer.efficient_autoencoder - INFO - Configuration saved to trained_models\efficient_autoencoder\config.json
+2025-02-25 17:41:24,060 - trainer.efficient_autoencoder - INFO - No checkpoint found, starting from scratch
+2025-02-25 17:41:24,060 - train_efficient_autoencoder - INFO - Starting training...
+2025-02-25 17:41:24,060 - trainer.efficient_autoencoder - INFO - Starting training from epoch 0 to 200
+2025-02-25 17:41:24,061 - trainer.efficient_autoencoder - INFO - Training on device: cuda
+2025-02-25 17:41:38,430 - trainer.efficient_autoencoder - ERROR - Training error: The size of tensor a (16) must match the size of tensor b (128) at non-singleton dimension 4
+2025-02-25 17:41:38,430 - main - ERROR - Error during training: The size of tensor a (16) must match the size of tensor b (128) at non-singleton dimension 4
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_efficient.py", line 239, in main
+    results, eval_results = train_efficient_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_efficient.py", line 167, in train_efficient_autoencoder
+    results = trainer.train(config['training']['num_epochs'])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 188, in train
+    train_loss = self.train_epoch(epoch)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\ae_trainer.py", line 32, in train_epoch
+    loss = self.criterion(reconstruction, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\loss.py", line 608, in forward
+    return F.mse_loss(input, target, reduction=self.reduction)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\functional.py", line 3791, in mse_loss
+    expanded_input, expanded_target = torch.broadcast_tensors(input, target)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\functional.py", line 76, in broadcast_tensors
+    return _VF.broadcast_tensors(tensors)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: The size of tensor a (16) must match the size of tensor b (128) at non-singleton dimension 4
+2025-02-25 17:45:24,061 - main - INFO - Training efficient autoencoder with configuration:
+2025-02-25 17:45:24,061 - main - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data/data_cache"
+  },
+  "model": {
+    "name": "efficient_autoencoder",
+    "latent_dim": 128
+  },
+  "training": {
+    "num_epochs": 200,
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 25
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 8,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 17:45:24,096 - train_efficient_autoencoder - INFO - Using device: cuda
+2025-02-25 17:45:24,468 - train_efficient_autoencoder - INFO - Created efficient_autoencoder model with 7,309,609 parameters
+2025-02-25 17:45:24,529 - train_efficient_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 17:45:25,315 - train_efficient_autoencoder - INFO - Using MSE loss
+2025-02-25 17:45:25,316 - trainer.efficient_autoencoder - INFO - Configuration saved to trained_models\efficient_autoencoder\config.json
+2025-02-25 17:45:25,316 - trainer.efficient_autoencoder - INFO - No checkpoint found, starting from scratch
+2025-02-25 17:45:25,318 - train_efficient_autoencoder - INFO - Starting training...
+2025-02-25 17:45:25,318 - trainer.efficient_autoencoder - INFO - Starting training from epoch 0 to 200
+2025-02-25 17:45:25,318 - trainer.efficient_autoencoder - INFO - Training on device: cuda
+2025-02-25 17:45:40,722 - trainer.efficient_autoencoder - ERROR - Training error: The size of tensor a (65) must match the size of tensor b (64) at non-singleton dimension 2
+2025-02-25 17:45:40,722 - main - ERROR - Error during training: The size of tensor a (65) must match the size of tensor b (64) at non-singleton dimension 2
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_efficient.py", line 239, in main
+    results, eval_results = train_efficient_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train_efficient.py", line 167, in train_efficient_autoencoder
+    results = trainer.train(config['training']['num_epochs'])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 188, in train
+    train_loss = self.train_epoch(epoch)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\ae_trainer.py", line 32, in train_epoch
+    loss = self.criterion(reconstruction, data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\loss.py", line 608, in forward
+    return F.mse_loss(input, target, reduction=self.reduction)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\functional.py", line 3791, in mse_loss
+    expanded_input, expanded_target = torch.broadcast_tensors(input, target)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\functional.py", line 76, in broadcast_tensors
+    return _VF.broadcast_tensors(tensors)  # type: ignore[attr-defined]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: The size of tensor a (65) must match the size of tensor b (64) at non-singleton dimension 2
+2025-02-25 18:19:06,445 - main - INFO - Training autoencoder with configuration:
+2025-02-25 18:19:06,445 - main - INFO - {
+  "data": {
+    "batch_size": 8,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data_cache"
+  },
+  "model": {
+    "name": "autoencoder",
+    "latent_dim": 512
+  },
+  "training": {
+    "num_epochs": 150,
+    "learning_rate": 5e-05,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 10,
+    "loss_type": "combined",
+    "mse_weight": 0.7
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 5,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 18:19:06,481 - train_autoencoder - INFO - Using device: cuda
+2025-02-25 18:19:08,785 - train_autoencoder - INFO - Created autoencoder model with 291,823,809 parameters
+2025-02-25 18:19:08,932 - train_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 18:19:09,787 - trainer.autoencoder - INFO - Configuration saved to trained_models\autoencoder\config.json
+2025-02-25 18:19:09,798 - model.autoencoder - INFO - Loading checkpoint from trained_models\autoencoder\checkpoints\autoencoder_best.pt
+2025-02-25 18:19:12,161 - main - ERROR - Error during training: Error(s) in loading state_dict for Autoencoder:
+	size mismatch for encoder.fc.2.weight: copying a param with shape torch.Size([128, 1024]) from checkpoint, the shape in current model is torch.Size([512, 1024]).
+	size mismatch for encoder.fc.2.bias: copying a param with shape torch.Size([128]) from checkpoint, the shape in current model is torch.Size([512]).
+	size mismatch for decoder.fc.0.weight: copying a param with shape torch.Size([1024, 128]) from checkpoint, the shape in current model is torch.Size([1024, 512]).
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train.py", line 218, in main
+    results, eval_results = train_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train.py", line 120, in train_autoencoder
+    trainer = AutoencoderTrainer(
+              ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 102, in __init__
+    self.load_checkpoint()
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 128, in load_checkpoint
+    checkpoint = self.model.load(checkpoint_path, self.optimizer, self.scheduler)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\models\base.py", line 91, in load
+    self.load_state_dict(checkpoint['model_state_dict'])
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\nn\modules\module.py", line 2584, in load_state_dict
+    raise RuntimeError(
+RuntimeError: Error(s) in loading state_dict for Autoencoder:
+	size mismatch for encoder.fc.2.weight: copying a param with shape torch.Size([128, 1024]) from checkpoint, the shape in current model is torch.Size([512, 1024]).
+	size mismatch for encoder.fc.2.bias: copying a param with shape torch.Size([128]) from checkpoint, the shape in current model is torch.Size([512]).
+	size mismatch for decoder.fc.0.weight: copying a param with shape torch.Size([1024, 128]) from checkpoint, the shape in current model is torch.Size([1024, 512]).
+2025-02-25 18:23:57,884 - main - INFO - Training autoencoder with configuration:
+2025-02-25 18:23:57,884 - main - INFO - {
+  "data": {
+    "batch_size": 8,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data_cache"
+  },
+  "model": {
+    "name": "enhanced_autoencoder_512",
+    "latent_dim": 512
+  },
+  "training": {
+    "num_epochs": 150,
+    "learning_rate": 5e-05,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 10,
+    "loss_type": "combined",
+    "mse_weight": 0.7
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 5,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models/enhanced_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 18:23:57,913 - train_autoencoder - INFO - Using device: cuda
+2025-02-25 18:24:00,218 - train_autoencoder - INFO - Created enhanced_autoencoder_512 model with 291,823,809 parameters
+2025-02-25 18:24:00,328 - train_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 18:24:01,105 - trainer.enhanced_autoencoder_512 - INFO - Configuration saved to trained_models\enhanced_autoencoder_512\config.json
+2025-02-25 18:24:01,106 - trainer.enhanced_autoencoder_512 - INFO - No checkpoint found, starting from scratch
+2025-02-25 18:24:01,106 - train_autoencoder - INFO - Starting training...
+2025-02-25 18:24:01,106 - trainer.enhanced_autoencoder_512 - INFO - Starting training from epoch 0 to 150
+2025-02-25 18:24:01,106 - trainer.enhanced_autoencoder_512 - INFO - Training on device: cuda
+2025-02-25 18:26:18,318 - trainer.enhanced_autoencoder_512 - INFO - Training interrupted
+2025-02-25 18:26:24,377 - model.enhanced_autoencoder_512 - INFO - Model saved to trained_models\enhanced_autoencoder_512\checkpoints\enhanced_autoencoder_512_epoch.pt
+2025-02-25 18:26:24,377 - trainer.enhanced_autoencoder_512 - INFO - Checkpoint saved: trained_models\enhanced_autoencoder_512\checkpoints\enhanced_autoencoder_512_epoch.pt
+2025-02-25 18:26:24,378 - train_autoencoder - INFO - Evaluating model...
+2025-02-25 18:28:12,985 - main - INFO - Training autoencoder with configuration:
+2025-02-25 18:28:12,986 - main - INFO - {
+  "data": {
+    "batch_size": 6,
+    "num_workers": 6,
+    "pin_memory": true,
+    "train_split": 0.7,
+    "val_split": 0.15,
+    "test_split": 0.15,
+    "preload": false,
+    "cache_dir": "data_cache"
+  },
+  "model": {
+    "name": "balanced_autoencoder_256",
+    "latent_dim": 256
+  },
+  "training": {
+    "num_epochs": 150,
+    "learning_rate": 5e-05,
+    "weight_decay": 1e-06,
+    "grad_clip": 1.0,
+    "early_stop_patience": 10,
+    "loss_type": "mse"
+  },
+  "scheduler": {
+    "type": "reduce_lr",
+    "factor": 0.5,
+    "patience": 5,
+    "min_lr": 1e-07
+  },
+  "directories": {
+    "output_dir": "trained_models/balanced_models",
+    "data_dir": "data"
+  },
+  "device": "cuda",
+  "logging": {
+    "log_interval": 10,
+    "save_interval": 1,
+    "tensorboard": true
+  }
+}
+2025-02-25 18:28:13,031 - train_autoencoder - INFO - Using device: cuda
+2025-02-25 18:28:16,229 - train_autoencoder - INFO - Created balanced_autoencoder_256 model with 291,299,265 parameters
+2025-02-25 18:28:16,338 - train_autoencoder - INFO - Data loaded. Train: 2090, Val: 447, Test: 449
+2025-02-25 18:28:17,217 - trainer.balanced_autoencoder_256 - INFO - Configuration saved to trained_models\balanced_autoencoder_256\config.json
+2025-02-25 18:28:17,217 - trainer.balanced_autoencoder_256 - INFO - No checkpoint found, starting from scratch
+2025-02-25 18:28:17,217 - train_autoencoder - INFO - Starting training...
+2025-02-25 18:28:17,217 - trainer.balanced_autoencoder_256 - INFO - Starting training from epoch 0 to 150
+2025-02-25 18:28:17,218 - trainer.balanced_autoencoder_256 - INFO - Training on device: cuda
+2025-02-25 18:29:39,293 - trainer.balanced_autoencoder_256 - INFO - Training interrupted
+2025-02-25 18:29:40,773 - main - ERROR - Error during training: [enforce fail at inline_container.cc:603] . unexpected pos 125617408 vs 125617296
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 188, in train
+    train_loss = self.train_epoch(epoch)
+                 ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\ae_trainer.py", line 106, in train_epoch
+    loss.backward()
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\_tensor.py", line 581, in backward
+    torch.autograd.backward(
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\autograd\__init__.py", line 347, in backward
+    _engine_run_backward(
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\autograd\graph.py", line 825, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\serialization.py", line 850, in save
+    _save(
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\serialization.py", line 1114, in _save
+    zip_file.write_record(name, storage, num_bytes)
+RuntimeError: [enforce fail at inline_container.cc:783] . PytorchStreamWriter failed writing file data/290: file write failed
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train.py", line 218, in main
+    results, eval_results = train_autoencoder(config)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\train.py", line 132, in train_autoencoder
+    results = trainer.train(config['training']['num_epochs'])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 243, in train
+    self.save_checkpoint(self.current_epoch)
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\trainers\base_trainer.py", line 153, in save_checkpoint
+    checkpoint_path = self.model.save(
+                      ^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\models\base.py", line 65, in save
+    torch.save(checkpoint, save_path)
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\serialization.py", line 849, in save
+    with _open_zipfile_writer(f) as opened_zipfile:
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\serialization.py", line 690, in __exit__
+    self.file_like.write_end_of_file()
+RuntimeError: [enforce fail at inline_container.cc:603] . unexpected pos 125617408 vs 125617296
+2025-02-26 13:13:49,833 - __main__ - INFO - Random seed set to 42
+2025-02-26 13:13:49,834 - __main__ - INFO - Configuration:
+2025-02-26 13:13:49,834 - __main__ - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 4,
+    "preload": false,
+    "cache_dir": "data/cache",
+    "val_split": 0.2,
+    "data_dir": "Images"
+  },
+  "model": {
+    "name": "autoencoder",
+    "input_shape": [
+      1,
+      64,
+      128,
+      128
+    ],
+    "base_channels": 16,
+    "latent_dim": 128
+  },
+  "training": {
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 100,
+    "scheduler": "reduce_on_plateau",
+    "patience": 5,
+    "factor": 0.5,
+    "early_stop_patience": 15,
+    "clip_grad": true,
+    "clip_value": 1.0,
+    "gc_interval": 5,
+    "viz_interval": 5,
+    "save_interval": 5,
+    "w_recon": 1.0,
+    "w_perceptual": 0.1,
+    "striatum_weight": 5.0,
+    "roi_early_stopping": true,
+    "use_progressive": true,
+    "prog_epochs": [
+      0,
+      30,
+      60
+    ],
+    "prog_sizes": [
+      [
+        32,
+        64,
+        64
+      ],
+      [
+        48,
+        96,
+        96
+      ],
+      [
+        64,
+        128,
+        128
+      ]
+    ]
+  },
+  "device": "cuda",
+  "seed": 42,
+  "output_dir": "trained_models"
+}
+2025-02-26 13:18:49,582 - __main__ - INFO - Random seed set to 42
+2025-02-26 13:18:49,582 - __main__ - INFO - Configuration:
+2025-02-26 13:18:49,582 - __main__ - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 4,
+    "preload": false,
+    "cache_dir": "data/cache",
+    "val_split": 0.2,
+    "data_dir": "Images"
+  },
+  "model": {
+    "name": "autoencoder",
+    "input_shape": [
+      1,
+      64,
+      128,
+      128
+    ],
+    "base_channels": 16,
+    "latent_dim": 128
+  },
+  "training": {
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 100,
+    "scheduler": "reduce_on_plateau",
+    "patience": 5,
+    "factor": 0.5,
+    "early_stop_patience": 15,
+    "clip_grad": true,
+    "clip_value": 1.0,
+    "gc_interval": 5,
+    "viz_interval": 5,
+    "save_interval": 5,
+    "w_recon": 1.0,
+    "w_perceptual": 0.1,
+    "striatum_weight": 5.0,
+    "roi_early_stopping": true,
+    "use_progressive": true,
+    "prog_epochs": [
+      0,
+      30,
+      60
+    ],
+    "prog_sizes": [
+      [
+        32,
+        64,
+        64
+      ],
+      [
+        48,
+        96,
+        96
+      ],
+      [
+        64,
+        128,
+        128
+      ]
+    ]
+  },
+  "device": "cuda",
+  "seed": 42,
+  "output_dir": "trained_models"
+}
+2025-02-26 13:18:49,584 - __main__ - INFO - No existing checkpoints found. Starting training from scratch.
+2025-02-26 13:18:49,584 - __main__ - INFO - Starting autoencoder training
+2025-02-26 13:18:49,660 - __main__ - INFO - Using device: cuda
+2025-02-26 13:18:49,661 - __main__ - INFO - Loading validated file paths from validated_file_paths.csv
+2025-02-26 13:18:49,686 - dataset - INFO - Training set: 2389 samples
+2025-02-26 13:18:49,686 - dataset - INFO - Validation set: 597 samples
+2025-02-26 13:18:49,687 - __main__ - INFO - Created data loaders with batch size 4
+2025-02-26 13:18:50,087 - __main__ - INFO - Created autoencoder model with 3,086,913 parameters
+2025-02-26 13:18:51,316 - trainers.base_trainer - INFO - Starting training for 100 epochs
+2025-02-26 13:18:51,316 - models.base - INFO - Loading checkpoint from 'trained_models\autoencoder\checkpoints\autoencoder_epoch.pt'
+2025-02-26 13:18:52,890 - trainers.base_trainer - ERROR - Error during training: Error(s) in loading state_dict for Autoencoder:
+	Missing key(s) in state_dict: "encoder.0.conv.weight", "encoder.0.conv.bias", "encoder.0.bn.weight", "encoder.0.bn.bias", "encoder.0.bn.running_mean", "encoder.0.bn.running_var", "encoder.1.conv.weight", "encoder.1.conv.bias", "encoder.1.bn.weight", "encoder.1.bn.bias", "encoder.1.bn.running_mean", "encoder.1.bn.running_var", "encoder.2.conv.weight", "encoder.2.conv.bias", "encoder.2.bn.weight", "encoder.2.bn.bias", "encoder.2.bn.running_mean", "encoder.2.bn.running_var", "encoder.2.attention.conv1.weight", "encoder.2.attention.conv1.bias", "encoder.2.attention.conv2.weight", "encoder.2.attention.conv2.bias", "encoder.3.conv.weight", "encoder.3.conv.bias", "encoder.3.bn.weight", "encoder.3.bn.bias", "encoder.3.bn.running_mean", "encoder.3.bn.running_var", "fc_encode.weight", "fc_encode.bias", "fc_decode.weight", "fc_decode.bias", "decoder.0.upsample.weight", "decoder.0.upsample.bias", "decoder.0.bn.weight", "decoder.0.bn.bias", "decoder.0.bn.running_mean", "decoder.0.bn.running_var", "decoder.0.residual.conv1.weight", "decoder.0.residual.conv1.bias", "decoder.0.residual.bn1.weight", "decoder.0.residual.bn1.bias", "decoder.0.residual.bn1.running_mean", "decoder.0.residual.bn1.running_var", "decoder.0.residual.conv2.weight", "decoder.0.residual.conv2.bias", "decoder.0.residual.bn2.weight", "decoder.0.residual.bn2.bias", "decoder.0.residual.bn2.running_mean", "decoder.0.residual.bn2.running_var", "decoder.1.upsample.weight", "decoder.1.upsample.bias", "decoder.1.bn.weight", "decoder.1.bn.bias", "decoder.1.bn.running_mean", "decoder.1.bn.running_var", "decoder.1.residual.conv1.weight", "decoder.1.residual.conv1.bias", "decoder.1.residual.bn1.weight", "decoder.1.residual.bn1.bias", "decoder.1.residual.bn1.running_mean", "decoder.1.residual.bn1.running_var", "decoder.1.residual.conv2.weight", "decoder.1.residual.conv2.bias", "decoder.1.residual.bn2.weight", "decoder.1.residual.bn2.bias", "decoder.1.residual.bn2.running_mean", "decoder.1.residual.bn2.running_var", "decoder.2.upsample.weight", "decoder.2.upsample.bias", "decoder.2.bn.weight", "decoder.2.bn.bias", "decoder.2.bn.running_mean", "decoder.2.bn.running_var", "decoder.2.residual.conv1.weight", "decoder.2.residual.conv1.bias", "decoder.2.residual.bn1.weight", "decoder.2.residual.bn1.bias", "decoder.2.residual.bn1.running_mean", "decoder.2.residual.bn1.running_var", "decoder.2.residual.conv2.weight", "decoder.2.residual.conv2.bias", "decoder.2.residual.bn2.weight", "decoder.2.residual.bn2.bias", "decoder.2.residual.bn2.running_mean", "decoder.2.residual.bn2.running_var", "decoder.3.upsample.weight", "decoder.3.upsample.bias", "decoder.3.bn.weight", "decoder.3.bn.bias", "decoder.3.bn.running_mean", "decoder.3.bn.running_var", "output_activation.weight". 
+	Unexpected key(s) in state_dict: "encoder.initial.0.weight", "encoder.initial.0.bias", "encoder.initial.1.weight", "encoder.initial.1.bias", "encoder.initial.1.running_mean", "encoder.initial.1.running_var", "encoder.initial.1.num_batches_tracked", "encoder.res1.conv1.weight", "encoder.res1.bn1.weight", "encoder.res1.bn1.bias", "encoder.res1.bn1.running_mean", "encoder.res1.bn1.running_var", "encoder.res1.bn1.num_batches_tracked", "encoder.res1.conv2.weight", "encoder.res1.bn2.weight", "encoder.res1.bn2.bias", "encoder.res1.bn2.running_mean", "encoder.res1.bn2.running_var", "encoder.res1.bn2.num_batches_tracked", "encoder.res1.shortcut.0.weight", "encoder.res1.shortcut.1.weight", "encoder.res1.shortcut.1.bias", "encoder.res1.shortcut.1.running_mean", "encoder.res1.shortcut.1.running_var", "encoder.res1.shortcut.1.num_batches_tracked", "encoder.res2.conv1.weight", "encoder.res2.bn1.weight", "encoder.res2.bn1.bias", "encoder.res2.bn1.running_mean", "encoder.res2.bn1.running_var", "encoder.res2.bn1.num_batches_tracked", "encoder.res2.conv2.weight", "encoder.res2.bn2.weight", "encoder.res2.bn2.bias", "encoder.res2.bn2.running_mean", "encoder.res2.bn2.running_var", "encoder.res2.bn2.num_batches_tracked", "encoder.res2.shortcut.0.weight", "encoder.res2.shortcut.1.weight", "encoder.res2.shortcut.1.bias", "encoder.res2.shortcut.1.running_mean", "encoder.res2.shortcut.1.running_var", "encoder.res2.shortcut.1.num_batches_tracked", "encoder.res3.conv1.weight", "encoder.res3.bn1.weight", "encoder.res3.bn1.bias", "encoder.res3.bn1.running_mean", "encoder.res3.bn1.running_var", "encoder.res3.bn1.num_batches_tracked", "encoder.res3.conv2.weight", "encoder.res3.bn2.weight", "encoder.res3.bn2.bias", "encoder.res3.bn2.running_mean", "encoder.res3.bn2.running_var", "encoder.res3.bn2.num_batches_tracked", "encoder.res3.shortcut.0.weight", "encoder.res3.shortcut.1.weight", "encoder.res3.shortcut.1.bias", "encoder.res3.shortcut.1.running_mean", "encoder.res3.shortcut.1.running_var", "encoder.res3.shortcut.1.num_batches_tracked", "encoder.res4.conv1.weight", "encoder.res4.bn1.weight", "encoder.res4.bn1.bias", "encoder.res4.bn1.running_mean", "encoder.res4.bn1.running_var", "encoder.res4.bn1.num_batches_tracked", "encoder.res4.conv2.weight", "encoder.res4.bn2.weight", "encoder.res4.bn2.bias", "encoder.res4.bn2.running_mean", "encoder.res4.bn2.running_var", "encoder.res4.bn2.num_batches_tracked", "encoder.res4.shortcut.0.weight", "encoder.res4.shortcut.1.weight", "encoder.res4.shortcut.1.bias", "encoder.res4.shortcut.1.running_mean", "encoder.res4.shortcut.1.running_var", "encoder.res4.shortcut.1.num_batches_tracked", "encoder.fc.0.weight", "encoder.fc.0.bias", "encoder.fc.2.weight", "encoder.fc.2.bias", "decoder.fc.0.weight", "decoder.fc.0.bias", "decoder.fc.2.weight", "decoder.fc.2.bias", "decoder.res1.conv1.weight", "decoder.res1.bn1.weight", "decoder.res1.bn1.bias", "decoder.res1.bn1.running_mean", "decoder.res1.bn1.running_var", "decoder.res1.bn1.num_batches_tracked", "decoder.res1.conv2.weight", "decoder.res1.bn2.weight", "decoder.res1.bn2.bias", "decoder.res1.bn2.running_mean", "decoder.res1.bn2.running_var", "decoder.res1.bn2.num_batches_tracked", "decoder.res1.shortcut.0.weight", "decoder.res1.shortcut.1.weight", "decoder.res1.shortcut.1.bias", "decoder.res1.shortcut.1.running_mean", "decoder.res1.shortcut.1.running_var", "decoder.res1.shortcut.1.num_batches_tracked", "decoder.up1.weight", "decoder.up1.bias", "decoder.res2.conv1.weight", "decoder.res2.bn1.weight", "decoder.res2.bn1.bias", "decoder.res2.bn1.running_mean", "decoder.res2.bn1.running_var", "decoder.res2.bn1.num_batches_tracked", "decoder.res2.conv2.weight", "decoder.res2.bn2.weight", "decoder.res2.bn2.bias", "decoder.res2.bn2.running_mean", "decoder.res2.bn2.running_var", "decoder.res2.bn2.num_batches_tracked", "decoder.res2.shortcut.0.weight", "decoder.res2.shortcut.1.weight", "decoder.res2.shortcut.1.bias", "decoder.res2.shortcut.1.running_mean", "decoder.res2.shortcut.1.running_var", "decoder.res2.shortcut.1.num_batches_tracked", "decoder.up2.weight", "decoder.up2.bias", "decoder.res3.conv1.weight", "decoder.res3.bn1.weight", "decoder.res3.bn1.bias", "decoder.res3.bn1.running_mean", "decoder.res3.bn1.running_var", "decoder.res3.bn1.num_batches_tracked", "decoder.res3.conv2.weight", "decoder.res3.bn2.weight", "decoder.res3.bn2.bias", "decoder.res3.bn2.running_mean", "decoder.res3.bn2.running_var", "decoder.res3.bn2.num_batches_tracked", "decoder.res3.shortcut.0.weight", "decoder.res3.shortcut.1.weight", "decoder.res3.shortcut.1.bias", "decoder.res3.shortcut.1.running_mean", "decoder.res3.shortcut.1.running_var", "decoder.res3.shortcut.1.num_batches_tracked", "decoder.up3.weight", "decoder.up3.bias", "decoder.res4.conv1.weight", "decoder.res4.bn1.weight", "decoder.res4.bn1.bias", "decoder.res4.bn1.running_mean", "decoder.res4.bn1.running_var", "decoder.res4.bn1.num_batches_tracked", "decoder.res4.conv2.weight", "decoder.res4.bn2.weight", "decoder.res4.bn2.bias", "decoder.res4.bn2.running_mean", "decoder.res4.bn2.running_var", "decoder.res4.bn2.num_batches_tracked", "decoder.res4.shortcut.0.weight", "decoder.res4.shortcut.1.weight", "decoder.res4.shortcut.1.bias", "decoder.res4.shortcut.1.running_mean", "decoder.res4.shortcut.1.running_var", "decoder.res4.shortcut.1.num_batches_tracked", "decoder.up4.weight", "decoder.up4.bias", "decoder.final.weight", "decoder.final.bias". 
+2025-02-26 13:18:54,469 - trainers.base_trainer - INFO - Training history saved to trained_models\autoencoder\logs
+2025-02-26 13:19:04,573 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2012-06-06_14_43_34.0/I355250/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20130116130913721_1_S170184_I355250.dcm
+2025-02-26 13:19:04,573 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2013-09-18_15_15_16.0/I419285/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20140408101423288_1_S215560_I419285.dcm
+2025-02-26 13:19:04,573 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2017-03-29_14_45_21.0/I912227/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20170929122337908_1_S613452_I912227.dcm
+2025-02-26 13:19:04,574 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2017-06-21_15_53_39.0/I995754/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20180510083117439_1_S677423_I995754.dcm
+2025-02-26 13:19:04,603 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:04,603 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:04,603 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:04,604 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:04,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:04,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:04,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:04,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:05,949 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2015-01-28_16_32_46.0/I505040/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20150813065635504_1_S267922_I505040.dcm
+2025-02-26 13:19:05,955 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2016-11-15_15_45_01.0/I846209/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20170502101914003_1_S549940_I846209.dcm
+2025-02-26 13:19:05,961 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:05,963 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:05,964 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2016-12-01_13_55_41.0/I1332511/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20200902114306403_1_S954405_I1332511.dcm
+2025-02-26 13:19:05,964 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2013-08-28_15_46_16.0/I418717/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20140403144951634_1_S202959_I418717.dcm
+2025-02-26 13:19:05,965 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:05,967 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:05,978 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:05,979 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:05,979 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:05,981 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,016 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2017-03-29_14_05_54.0/I912228/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20170929122408406_1_S613454_I912228.dcm
+2025-02-26 13:19:06,020 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2021-03-30_14_33_29.0/I1474415/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20210727214205447_1_S1046798_I1474415.dcm
+2025-02-26 13:19:06,028 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,028 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,029 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,030 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2014-10-30_13_34_57.0/I468291/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20150112152742109_1_S244237_I468291.dcm
+2025-02-26 13:19:06,030 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,046 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,047 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2017-11-08_13_27_55.0/I1129415/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20190211114005762_1_S740876_I1129415.dcm
+2025-02-26 13:19:06,047 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,062 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,064 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,094 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2012-07-26_14_43_12.0/I354350/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20130109114727114_1_S168167_I354350.dcm
+2025-02-26 13:19:06,100 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2015-05-12_14_41_28.0/I504420/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20150807104941776_1_S267921_I504420.dcm
+2025-02-26 13:19:06,101 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2012-08-08_14_59_11.0/I388595/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20130909140847823_1_S168168_I388595.dcm
+2025-02-26 13:19:06,105 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,106 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,111 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,111 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,112 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,113 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,122 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2015-01-28_15_51_05.0/I505039/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20150813065623002_1_S267919_I505039.dcm
+2025-02-26 13:19:06,132 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,134 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,183 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2013-12-04_12_50_22.0/I419600/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20140409151130304_1_S215698_I419600.dcm
+2025-02-26 13:19:06,183 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2012-09-11_14_54_01.0/I355252/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20130116130954110_1_S170185_I355252.dcm
+2025-02-26 13:19:06,188 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2013-12-11_16_47_29.0/I419598/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20140409151104112_1_S215561_I419598.dcm
+2025-02-26 13:19:06,195 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,196 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,197 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,198 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,199 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:19:06,201 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:19:06,218 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4075/Reconstructed_DaTSCAN/2012-08-22_14_32_39.0/I355251/PPMI_4075_NM_Reconstructed_DaTSCAN_Br_20130116130932106_1_S168169_I355251.dcm
+2025-02-26 13:19:06,220 - __main__ - ERROR - Error during training: Caught RuntimeError in pin memory thread for device 0.
+Original Traceback (most recent call last):
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\utils\data\_utils\pin_memory.py", line 41, in do_one_step
+    data = pin_memory(data, device)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\utils\data\_utils\pin_memory.py", line 98, in pin_memory
+    clone[i] = pin_memory(item, device)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\alexc\GitHubRepos\ParkinsonThesis\.venv\Lib\site-packages\torch\utils\data\_utils\pin_memory.py", line 64, in pin_memory
+    return data.pin_memory(device)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: cannot pin 'torch.cuda.FloatTensor' only dense CPU tensors can be pinned
+
+2025-02-26 13:34:26,985 - __main__ - INFO - Random seed set to 42
+2025-02-26 13:34:26,985 - __main__ - INFO - Configuration:
+2025-02-26 13:34:26,986 - __main__ - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 4,
+    "preload": false,
+    "cache_dir": "data/cache",
+    "val_split": 0.2,
+    "data_dir": "Images"
+  },
+  "model": {
+    "name": "autoencoder",
+    "input_shape": [
+      1,
+      64,
+      128,
+      128
+    ],
+    "base_channels": 16,
+    "latent_dim": 128
+  },
+  "training": {
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 100,
+    "scheduler": "reduce_on_plateau",
+    "patience": 5,
+    "factor": 0.5,
+    "early_stop_patience": 15,
+    "clip_grad": true,
+    "clip_value": 1.0,
+    "gc_interval": 5,
+    "viz_interval": 5,
+    "save_interval": 5,
+    "w_recon": 1.0,
+    "w_perceptual": 0.1,
+    "striatum_weight": 5.0,
+    "roi_early_stopping": true,
+    "use_progressive": true,
+    "prog_epochs": [
+      0,
+      30,
+      60
+    ],
+    "prog_sizes": [
+      [
+        32,
+        64,
+        64
+      ],
+      [
+        48,
+        96,
+        96
+      ],
+      [
+        64,
+        128,
+        128
+      ]
+    ]
+  },
+  "device": "cuda",
+  "seed": 42,
+  "output_dir": "trained_models"
+}
+2025-02-26 13:34:26,986 - __main__ - INFO - No existing checkpoints found. Starting training from scratch.
+2025-02-26 13:34:26,986 - __main__ - INFO - Starting autoencoder training
+2025-02-26 13:34:27,018 - __main__ - INFO - Using device: cuda
+2025-02-26 13:34:27,019 - __main__ - INFO - Loading validated file paths from validated_file_paths.csv
+2025-02-26 13:34:27,031 - dataset - INFO - Training set: 2389 samples
+2025-02-26 13:34:27,031 - dataset - INFO - Validation set: 597 samples
+2025-02-26 13:34:27,032 - __main__ - INFO - Created data loaders with batch size 4
+2025-02-26 13:34:27,574 - __main__ - INFO - Created autoencoder model with 3,086,913 parameters
+2025-02-26 13:34:28,379 - trainers.base_trainer - INFO - Starting training for 100 epochs
+2025-02-26 13:34:28,379 - models.base - INFO - No checkpoint found. Starting from scratch.
+2025-02-26 13:34:37,674 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3230/Reconstructed_DaTSCAN/2013-07-25_14_15_00.0/I418665/PPMI_3230_NM_Reconstructed_DaTSCAN_Br_20140403143828929_1_S202911_I418665.dcm
+2025-02-26 13:34:37,674 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4035/Reconstructed_DaTSCAN/2013-02-07_07_29_45.0/I388587/PPMI_4035_NM_Reconstructed_DaTSCAN_Br_20130909140709028_1_S199560_I388587.dcm
+2025-02-26 13:34:37,674 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3660/Reconstructed_DaTSCAN/2016-03-15_14_16_28.0/I767603/PPMI_3660_NM_Reconstructed_DaTSCAN_Br_20160818121924120_1_S490938_I767603.dcm
+2025-02-26 13:34:37,674 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3461/Reconstructed_DaTSCAN/2013-06-20_15_34_22.0/I419668/PPMI_3461_NM_Reconstructed_DaTSCAN_Br_20140410130540226_1_S215860_I419668.dcm
+2025-02-26 13:34:37,685 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,686 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,688 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,689 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,689 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,690 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,691 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,691 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,737 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/102366/Reconstructed_DaTSCAN/2021-07-21_16_11_13.0/I1509707/PPMI_102366_NM_Reconstructed_DaTSCAN_Br_20211028140012816_1_S1076743_I1509707.dcm
+2025-02-26 13:34:37,746 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,747 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,750 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/100905/Reconstructed_DaTSCAN/2021-02-26_11_59_34.0/I1461556/PPMI_100905_NM_Reconstructed_DaTSCAN_Br_20210628214517375_1_S1038362_I1461556.dcm
+2025-02-26 13:34:37,757 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2012-09-11_15_15_52.0/I418360/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140401163139187_1_S175605_I418360.dcm
+2025-02-26 13:34:37,758 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3422/Reconstructed_DaTSCAN/2011-07-13_14_57_01.0/I389230/PPMI_3422_NM_Reconstructed_DaTSCAN_Br_20130910161038995_1_S117624_I389230.dcm
+2025-02-26 13:34:37,764 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,765 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,773 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,774 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,775 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,775 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,799 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2013-09-17_15_33_02.0/I419669/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140410130553584_1_S215861_I419669.dcm
+2025-02-26 13:34:37,815 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,815 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3321/Reconstructed_DaTSCAN/2014-08-07_14_40_16.0/I449017/PPMI_3321_NM_Reconstructed_DaTSCAN_Br_20141021160451808_1_S234163_I449017.dcm
+2025-02-26 13:34:37,815 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,829 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,831 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,831 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/207894/Reconstructed_DaTSCAN/2023-02-09_12_36_31.0/I1682347/PPMI_207894_NM_Reconstructed_DaTSCAN_Br_20230324105321387_1_S1207837_I1682347.dcm
+2025-02-26 13:34:37,840 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3907/Reconstructed_DaTSCAN/2012-10-04_13_35_48.0/I388556/PPMI_3907_NM_Reconstructed_DaTSCAN_Br_20130909140131084_1_S175501_I388556.dcm
+2025-02-26 13:34:37,844 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,846 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,851 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,852 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,867 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40553/Reconstructed_DaTSCAN/2016-05-23_17_16_37.0/I1275300/PPMI_40553_NM_Reconstructed_DaTSCAN_Br_20200114130220459_1_S910450_I1275300.dcm
+2025-02-26 13:34:37,876 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,877 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,880 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3585/Reconstructed_DaTSCAN/2014-07-08_12_23_09.0/I449026/PPMI_3585_NM_Reconstructed_DaTSCAN_Br_20141021160652868_1_S234178_I449026.dcm
+2025-02-26 13:34:37,890 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,892 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,897 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/131120/Reconstructed_DaTSCAN/2022-10-25_14_59_15.0/I1644653/PPMI_131120_NM_Reconstructed_DaTSCAN_Br_20221123111732899_1_S1177772_I1644653.dcm
+2025-02-26 13:34:37,898 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/121619/Reconstructed_DaTSCAN/2021-12-07_12_59_35.0/I1537503/PPMI_121619_NM_Reconstructed_DaTSCAN_Br_20220125173908075_1_S1099192_I1537503.dcm
+2025-02-26 13:34:37,908 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,909 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,910 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,911 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,922 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3457/Reconstructed_DaTSCAN/2011-08-11_15_22_55.0/I339928/PPMI_3457_NM_Reconstructed_DaTSCAN_Br_20121015090207683_1_S120191_I339928.dcm
+2025-02-26 13:34:37,931 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,932 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,953 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3088/Reconstructed_DaTSCAN/2013-02-27_15_11_44.0/I388473/PPMI_3088_NM_Reconstructed_DaTSCAN_Br_20130909134309901_1_S199532_I388473.dcm
+2025-02-26 13:34:37,965 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/145939/Reconstructed_DaTSCAN/2022-03-31_16_01_11.0/I1574647/PPMI_145939_NM_Reconstructed_DaTSCAN_Br_20220428101913732_1_S1128625_I1574647.dcm
+2025-02-26 13:34:37,965 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,966 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,980 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,981 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3172/Reconstructed_DaTSCAN/2011-12-20_13_51_45.0/I341034/PPMI_3172_NM_Reconstructed_DaTSCAN_Br_20121018133531512_1_S139073_I341034.dcm
+2025-02-26 13:34:37,982 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,984 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/118352/Reconstructed_DaTSCAN/2023-02-15_09_58_22.0/I1707467/PPMI_118352_NM_Reconstructed_DaTSCAN_Br_20230526093154580_1_S1228031_I1707467.dcm
+2025-02-26 13:34:37,995 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,996 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:37,996 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:37,998 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,014 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3822/Reconstructed_DaTSCAN/2013-05-28_13_09_26.0/I419271/PPMI_3822_NM_Reconstructed_DaTSCAN_Br_20140408101101854_1_S215443_I419271.dcm
+2025-02-26 13:34:38,024 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,025 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,040 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/127741/Reconstructed_DaTSCAN/2021-11-16_13_59_03.0/I1537507/PPMI_127741_NM_Reconstructed_DaTSCAN_Br_20220125174035610_1_S1099196_I1537507.dcm
+2025-02-26 13:34:38,041 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2011-07-20_12_29_25.0/I340420/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20121016150822105_1_S117557_I340420.dcm
+2025-02-26 13:34:38,049 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/182727/Reconstructed_DaTSCAN/2023-01-11_15_55_07.0/I1665857/PPMI_182727_NM_Reconstructed_DaTSCAN_Br_20230213205359607_1_S1194102_I1665857.dcm
+2025-02-26 13:34:38,049 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,051 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,052 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,052 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,062 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,064 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,066 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/149116/Reconstructed_DaTSCAN/2022-04-08_14_08_14.0/I1574654/PPMI_149116_NM_Reconstructed_DaTSCAN_Br_20220428102133389_1_S1128631_I1574654.dcm
+2025-02-26 13:34:38,077 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,078 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,094 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/101146/Reconstructed_DaTSCAN/2021-04-16_15_12_04.0/I1474413/PPMI_101146_NM_Reconstructed_DaTSCAN_Br_20210727211737259_1_S1046139_I1474413.dcm
+2025-02-26 13:34:38,104 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,105 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3068/Reconstructed_DaTSCAN/2011-10-04_14_12_56.0/I389186/PPMI_3068_NM_Reconstructed_DaTSCAN_Br_20130910160230922_1_S127541_I389186.dcm
+2025-02-26 13:34:38,106 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,115 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,117 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3059/Reconstructed_DaTSCAN/2012-02-28_14_42_59.0/I358116/PPMI_3059_NM_Reconstructed_DaTSCAN_Br_20130206130255421_1_S146366_I358116.dcm
+2025-02-26 13:34:38,117 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,128 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,130 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,161 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3185/Reconstructed_DaTSCAN/2017-04-12_12_53_46.0/I913181/PPMI_3185_NM_Reconstructed_DaTSCAN_Br_20171002092236055_1_S614401_I913181.dcm
+2025-02-26 13:34:38,172 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2016-04-05_13_38_35.0/I770243/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20160829161427801_1_S494457_I770243.dcm
+2025-02-26 13:34:38,172 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,174 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,197 - preprocessing - INFO - Initial pixel array shape: (360, 128, 128)
+2025-02-26 13:34:38,203 - preprocessing - INFO - Final tensor shape: torch.Size([360, 128, 128])
+2025-02-26 13:34:38,249 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3910/Reconstructed_DaTSCAN/2014-01-21_13_51_58.0/I419590/PPMI_3910_NM_Reconstructed_DaTSCAN_Br_20140409150918830_1_S215550_I419590.dcm
+2025-02-26 13:34:38,259 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,260 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,309 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3386/Reconstructed_DaTSCAN/2014-02-19_14_50_54.0/I436862/PPMI_3386_NM_Reconstructed_DaTSCAN_Br_20140725131032446_1_S215521_I436862.dcm
+2025-02-26 13:34:38,318 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,320 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,366 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/110543/Reconstructed_DaTSCAN/2021-09-17_15_53_56.0/I1537498/PPMI_110543_NM_Reconstructed_DaTSCAN_Br_20220125173706270_1_S1099185_I1537498.dcm
+2025-02-26 13:34:38,382 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,382 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:38,433 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3711/Reconstructed_DaTSCAN/2014-06-11_15_58_33.0/I442976/PPMI_3711_NM_Reconstructed_DaTSCAN_Br_20140908135605650_1_S225370_I442976.dcm
+2025-02-26 13:34:38,444 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:38,445 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:39,024 - trainers.base_trainer - ERROR - Error during training: mat1 and mat2 shapes cannot be multiplied (4x4096 and 8192x128)
+2025-02-26 13:34:39,260 - trainers.base_trainer - INFO - Training history saved to trained_models\autoencoder\logs
+2025-02-26 13:34:48,270 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2012-06-06_14_43_34.0/I355250/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20130116130913721_1_S170184_I355250.dcm
+2025-02-26 13:34:48,271 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2013-09-18_15_15_16.0/I419285/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20140408101423288_1_S215560_I419285.dcm
+2025-02-26 13:34:48,274 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,276 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,277 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,277 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2017-03-29_14_45_21.0/I912227/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20170929122337908_1_S613452_I912227.dcm
+2025-02-26 13:34:48,278 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,282 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,286 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,309 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2017-06-21_15_53_39.0/I995754/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20180510083117439_1_S677423_I995754.dcm
+2025-02-26 13:34:48,313 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,314 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,334 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2016-12-01_13_55_41.0/I1332511/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20200902114306403_1_S954405_I1332511.dcm
+2025-02-26 13:34:48,334 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2013-08-28_15_46_16.0/I418717/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20140403144951634_1_S202959_I418717.dcm
+2025-02-26 13:34:48,339 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,339 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,339 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,340 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,341 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2015-01-28_16_32_46.0/I505040/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20150813065635504_1_S267922_I505040.dcm
+2025-02-26 13:34:48,344 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,346 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,368 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2016-11-15_15_45_01.0/I846209/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20170502101914003_1_S549940_I846209.dcm
+2025-02-26 13:34:48,373 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,374 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,393 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2014-10-30_13_34_57.0/I468291/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20150112152742109_1_S244237_I468291.dcm
+2025-02-26 13:34:48,393 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2017-11-08_13_27_55.0/I1129415/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20190211114005762_1_S740876_I1129415.dcm
+2025-02-26 13:34:48,396 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,397 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,397 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,398 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,408 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2017-03-29_14_05_54.0/I912228/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20170929122408406_1_S613454_I912228.dcm
+2025-02-26 13:34:48,412 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,413 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,438 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2021-03-30_14_33_29.0/I1474415/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20210727214205447_1_S1046798_I1474415.dcm
+2025-02-26 13:34:48,442 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,445 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,461 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2015-01-28_15_51_05.0/I505039/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20150813065623002_1_S267919_I505039.dcm
+2025-02-26 13:34:48,464 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,465 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2015-05-12_14_41_28.0/I504420/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20150807104941776_1_S267921_I504420.dcm
+2025-02-26 13:34:48,465 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,467 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2012-07-26_14_43_12.0/I354350/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20130109114727114_1_S168167_I354350.dcm
+2025-02-26 13:34:48,468 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,469 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,470 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,472 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,493 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2012-08-08_14_59_11.0/I388595/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20130909140847823_1_S168168_I388595.dcm
+2025-02-26 13:34:48,496 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,498 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,526 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2012-09-11_14_54_01.0/I355252/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20130116130954110_1_S170185_I355252.dcm
+2025-02-26 13:34:48,527 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4075/Reconstructed_DaTSCAN/2012-08-22_14_32_39.0/I355251/PPMI_4075_NM_Reconstructed_DaTSCAN_Br_20130116130932106_1_S168169_I355251.dcm
+2025-02-26 13:34:48,531 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,532 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,532 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,535 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,535 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2013-12-11_16_47_29.0/I419598/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20140409151104112_1_S215561_I419598.dcm
+2025-02-26 13:34:48,541 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,542 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:34:48,554 - __main__ - ERROR - Error during training: mat1 and mat2 shapes cannot be multiplied (4x4096 and 8192x128)
+2025-02-26 13:34:48,556 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2013-12-04_12_50_22.0/I419600/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20140409151130304_1_S215698_I419600.dcm
+2025-02-26 13:34:48,559 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:34:48,560 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:41:55,564 - __main__ - INFO - Random seed set to 42
+2025-02-26 13:41:55,564 - __main__ - INFO - Configuration:
+2025-02-26 13:41:55,564 - __main__ - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 4,
+    "preload": false,
+    "cache_dir": "data/cache",
+    "val_split": 0.2,
+    "data_dir": "Images"
+  },
+  "model": {
+    "name": "autoencoder",
+    "input_shape": [
+      1,
+      64,
+      128,
+      128
+    ],
+    "base_channels": 16,
+    "latent_dim": 128
+  },
+  "training": {
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 100,
+    "scheduler": "reduce_on_plateau",
+    "patience": 5,
+    "factor": 0.5,
+    "early_stop_patience": 15,
+    "clip_grad": true,
+    "clip_value": 1.0,
+    "gc_interval": 5,
+    "viz_interval": 5,
+    "save_interval": 5,
+    "w_recon": 1.0,
+    "w_perceptual": 0.1,
+    "striatum_weight": 5.0,
+    "roi_early_stopping": true,
+    "use_progressive": true,
+    "prog_epochs": [
+      0,
+      30,
+      60
+    ],
+    "prog_sizes": [
+      [
+        32,
+        64,
+        64
+      ],
+      [
+        48,
+        96,
+        96
+      ],
+      [
+        64,
+        128,
+        128
+      ]
+    ]
+  },
+  "device": "cuda",
+  "seed": 42,
+  "output_dir": "trained_models"
+}
+2025-02-26 13:41:55,565 - __main__ - INFO - No existing checkpoints found. Starting training from scratch.
+2025-02-26 13:41:55,565 - __main__ - INFO - Starting autoencoder training
+2025-02-26 13:41:55,597 - __main__ - INFO - Using device: cuda
+2025-02-26 13:41:55,597 - __main__ - INFO - Loading validated file paths from validated_file_paths.csv
+2025-02-26 13:41:55,605 - dataset - INFO - Training set: 2389 samples
+2025-02-26 13:41:55,605 - dataset - INFO - Validation set: 597 samples
+2025-02-26 13:41:55,606 - __main__ - INFO - Created data loaders with batch size 4
+2025-02-26 13:41:56,015 - __main__ - INFO - Created autoencoder model with 3,086,913 parameters
+2025-02-26 13:41:56,782 - trainers.base_trainer - INFO - Starting training for 100 epochs
+2025-02-26 13:41:56,782 - models.base - INFO - No checkpoint found. Starting from scratch.
+2025-02-26 13:42:05,600 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3230/Reconstructed_DaTSCAN/2013-07-25_14_15_00.0/I418665/PPMI_3230_NM_Reconstructed_DaTSCAN_Br_20140403143828929_1_S202911_I418665.dcm
+2025-02-26 13:42:05,600 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4035/Reconstructed_DaTSCAN/2013-02-07_07_29_45.0/I388587/PPMI_4035_NM_Reconstructed_DaTSCAN_Br_20130909140709028_1_S199560_I388587.dcm
+2025-02-26 13:42:05,600 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3660/Reconstructed_DaTSCAN/2016-03-15_14_16_28.0/I767603/PPMI_3660_NM_Reconstructed_DaTSCAN_Br_20160818121924120_1_S490938_I767603.dcm
+2025-02-26 13:42:05,600 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3461/Reconstructed_DaTSCAN/2013-06-20_15_34_22.0/I419668/PPMI_3461_NM_Reconstructed_DaTSCAN_Br_20140410130540226_1_S215860_I419668.dcm
+2025-02-26 13:42:05,603 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,604 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,604 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,604 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,605 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,606 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,609 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,656 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3422/Reconstructed_DaTSCAN/2011-07-13_14_57_01.0/I389230/PPMI_3422_NM_Reconstructed_DaTSCAN_Br_20130910161038995_1_S117624_I389230.dcm
+2025-02-26 13:42:05,658 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/100905/Reconstructed_DaTSCAN/2021-02-26_11_59_34.0/I1461556/PPMI_100905_NM_Reconstructed_DaTSCAN_Br_20210628214517375_1_S1038362_I1461556.dcm
+2025-02-26 13:42:05,659 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,661 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,662 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,662 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2012-09-11_15_15_52.0/I418360/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140401163139187_1_S175605_I418360.dcm
+2025-02-26 13:42:05,663 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,668 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,669 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,673 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/102366/Reconstructed_DaTSCAN/2021-07-21_16_11_13.0/I1509707/PPMI_102366_NM_Reconstructed_DaTSCAN_Br_20211028140012816_1_S1076743_I1509707.dcm
+2025-02-26 13:42:05,677 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,678 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,714 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3321/Reconstructed_DaTSCAN/2014-08-07_14_40_16.0/I449017/PPMI_3321_NM_Reconstructed_DaTSCAN_Br_20141021160451808_1_S234163_I449017.dcm
+2025-02-26 13:42:05,717 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,719 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,719 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3907/Reconstructed_DaTSCAN/2012-10-04_13_35_48.0/I388556/PPMI_3907_NM_Reconstructed_DaTSCAN_Br_20130909140131084_1_S175501_I388556.dcm
+2025-02-26 13:42:05,723 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,724 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,727 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/207894/Reconstructed_DaTSCAN/2023-02-09_12_36_31.0/I1682347/PPMI_207894_NM_Reconstructed_DaTSCAN_Br_20230324105321387_1_S1207837_I1682347.dcm
+2025-02-26 13:42:05,731 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,732 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,734 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2013-09-17_15_33_02.0/I419669/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140410130553584_1_S215861_I419669.dcm
+2025-02-26 13:42:05,739 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,740 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,778 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3413/Reconstructed_DaTSCAN/2010-12-09_14_15_29.0/I340353/PPMI_3413_NM_Reconstructed_DaTSCAN_Br_20121016144758225_1_S117618_I340353.dcm
+2025-02-26 13:42:05,784 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3585/Reconstructed_DaTSCAN/2014-07-08_12_23_09.0/I449026/PPMI_3585_NM_Reconstructed_DaTSCAN_Br_20141021160652868_1_S234178_I449026.dcm
+2025-02-26 13:42:05,787 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,789 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,791 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40553/Reconstructed_DaTSCAN/2016-05-23_17_16_37.0/I1275300/PPMI_40553_NM_Reconstructed_DaTSCAN_Br_20200114130220459_1_S910450_I1275300.dcm
+2025-02-26 13:42:05,793 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,795 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,799 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/131120/Reconstructed_DaTSCAN/2022-10-25_14_59_15.0/I1644653/PPMI_131120_NM_Reconstructed_DaTSCAN_Br_20221123111732899_1_S1177772_I1644653.dcm
+2025-02-26 13:42:05,800 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,801 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,803 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,804 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,843 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/145939/Reconstructed_DaTSCAN/2022-03-31_16_01_11.0/I1574647/PPMI_145939_NM_Reconstructed_DaTSCAN_Br_20220428101913732_1_S1128625_I1574647.dcm
+2025-02-26 13:42:05,848 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,850 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,851 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3457/Reconstructed_DaTSCAN/2011-08-11_15_22_55.0/I339928/PPMI_3457_NM_Reconstructed_DaTSCAN_Br_20121015090207683_1_S120191_I339928.dcm
+2025-02-26 13:42:05,855 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,856 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,861 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/121619/Reconstructed_DaTSCAN/2021-12-07_12_59_35.0/I1537503/PPMI_121619_NM_Reconstructed_DaTSCAN_Br_20220125173908075_1_S1099192_I1537503.dcm
+2025-02-26 13:42:05,865 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,866 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,874 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/118352/Reconstructed_DaTSCAN/2023-02-15_09_58_22.0/I1707467/PPMI_118352_NM_Reconstructed_DaTSCAN_Br_20230526093154580_1_S1228031_I1707467.dcm
+2025-02-26 13:42:05,880 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,881 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,907 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3172/Reconstructed_DaTSCAN/2011-12-20_13_51_45.0/I341034/PPMI_3172_NM_Reconstructed_DaTSCAN_Br_20121018133531512_1_S139073_I341034.dcm
+2025-02-26 13:42:05,911 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,911 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2011-07-20_12_29_25.0/I340420/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20121016150822105_1_S117557_I340420.dcm
+2025-02-26 13:42:05,912 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,914 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,914 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,926 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3088/Reconstructed_DaTSCAN/2013-02-27_15_11_44.0/I388473/PPMI_3088_NM_Reconstructed_DaTSCAN_Br_20130909134309901_1_S199532_I388473.dcm
+2025-02-26 13:42:05,928 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,930 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,959 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/182727/Reconstructed_DaTSCAN/2023-01-11_15_55_07.0/I1665857/PPMI_182727_NM_Reconstructed_DaTSCAN_Br_20230213205359607_1_S1194102_I1665857.dcm
+2025-02-26 13:42:05,963 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,963 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,968 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/127741/Reconstructed_DaTSCAN/2021-11-16_13_59_03.0/I1537507/PPMI_127741_NM_Reconstructed_DaTSCAN_Br_20220125174035610_1_S1099196_I1537507.dcm
+2025-02-26 13:42:05,971 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,972 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,978 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3822/Reconstructed_DaTSCAN/2013-05-28_13_09_26.0/I419271/PPMI_3822_NM_Reconstructed_DaTSCAN_Br_20140408101101854_1_S215443_I419271.dcm
+2025-02-26 13:42:05,978 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3068/Reconstructed_DaTSCAN/2011-10-04_14_12_56.0/I389186/PPMI_3068_NM_Reconstructed_DaTSCAN_Br_20130910160230922_1_S127541_I389186.dcm
+2025-02-26 13:42:05,981 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,981 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:05,982 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:05,982 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:06,024 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3059/Reconstructed_DaTSCAN/2012-02-28_14_42_59.0/I358116/PPMI_3059_NM_Reconstructed_DaTSCAN_Br_20130206130255421_1_S146366_I358116.dcm
+2025-02-26 13:42:06,028 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:06,029 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:06,033 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3185/Reconstructed_DaTSCAN/2017-04-12_12_53_46.0/I913181/PPMI_3185_NM_Reconstructed_DaTSCAN_Br_20171002092236055_1_S614401_I913181.dcm
+2025-02-26 13:42:06,033 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/149116/Reconstructed_DaTSCAN/2022-04-08_14_08_14.0/I1574654/PPMI_149116_NM_Reconstructed_DaTSCAN_Br_20220428102133389_1_S1128631_I1574654.dcm
+2025-02-26 13:42:06,036 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/101146/Reconstructed_DaTSCAN/2021-04-16_15_12_04.0/I1474413/PPMI_101146_NM_Reconstructed_DaTSCAN_Br_20210727211737259_1_S1046139_I1474413.dcm
+2025-02-26 13:42:06,037 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:06,037 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:06,038 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:06,039 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:06,041 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:06,042 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:06,088 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2016-04-05_13_38_35.0/I770243/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20160829161427801_1_S494457_I770243.dcm
+2025-02-26 13:42:06,100 - preprocessing - INFO - Initial pixel array shape: (360, 128, 128)
+2025-02-26 13:42:06,109 - preprocessing - INFO - Final tensor shape: torch.Size([360, 128, 128])
+2025-02-26 13:42:06,599 - trainers.base_trainer - ERROR - Error during training: shape '[4, 256, 1, 1, 1]' is invalid for input of size 16384
+2025-02-26 13:42:06,835 - trainers.base_trainer - INFO - Training history saved to trained_models\autoencoder\logs
+2025-02-26 13:42:15,813 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2012-06-06_14_43_34.0/I355250/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20130116130913721_1_S170184_I355250.dcm
+2025-02-26 13:42:15,814 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2013-09-18_15_15_16.0/I419285/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20140408101423288_1_S215560_I419285.dcm
+2025-02-26 13:42:15,815 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2017-03-29_14_45_21.0/I912227/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20170929122337908_1_S613452_I912227.dcm
+2025-02-26 13:42:15,819 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,819 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,819 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,820 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,820 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,820 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,865 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2017-06-21_15_53_39.0/I995754/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20180510083117439_1_S677423_I995754.dcm
+2025-02-26 13:42:15,870 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,872 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,882 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2013-08-28_15_46_16.0/I418717/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20140403144951634_1_S202959_I418717.dcm
+2025-02-26 13:42:15,885 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2016-12-01_13_55_41.0/I1332511/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20200902114306403_1_S954405_I1332511.dcm
+2025-02-26 13:42:15,887 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,888 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,890 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,891 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2015-01-28_16_32_46.0/I505040/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20150813065635504_1_S267922_I505040.dcm
+2025-02-26 13:42:15,892 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,898 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,899 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,930 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2016-11-15_15_45_01.0/I846209/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20170502101914003_1_S549940_I846209.dcm
+2025-02-26 13:42:15,933 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,935 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,942 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2017-11-08_13_27_55.0/I1129415/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20190211114005762_1_S740876_I1129415.dcm
+2025-02-26 13:42:15,945 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,946 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,950 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2014-10-30_13_34_57.0/I468291/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20150112152742109_1_S244237_I468291.dcm
+2025-02-26 13:42:15,953 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,954 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,961 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2017-03-29_14_05_54.0/I912228/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20170929122408406_1_S613454_I912228.dcm
+2025-02-26 13:42:15,964 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,965 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:15,991 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2021-03-30_14_33_29.0/I1474415/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20210727214205447_1_S1046798_I1474415.dcm
+2025-02-26 13:42:15,995 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:15,997 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,002 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2015-01-28_15_51_05.0/I505039/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20150813065623002_1_S267919_I505039.dcm
+2025-02-26 13:42:16,005 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2012-07-26_14_43_12.0/I354350/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20130109114727114_1_S168167_I354350.dcm
+2025-02-26 13:42:16,008 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,009 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,009 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,010 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,019 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2015-05-12_14_41_28.0/I504420/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20150807104941776_1_S267921_I504420.dcm
+2025-02-26 13:42:16,023 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,025 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,054 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2012-08-08_14_59_11.0/I388595/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20130909140847823_1_S168168_I388595.dcm
+2025-02-26 13:42:16,058 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,059 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,072 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2013-12-11_16_47_29.0/I419598/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20140409151104112_1_S215561_I419598.dcm
+2025-02-26 13:42:16,072 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4075/Reconstructed_DaTSCAN/2012-08-22_14_32_39.0/I355251/PPMI_4075_NM_Reconstructed_DaTSCAN_Br_20130116130932106_1_S168169_I355251.dcm
+2025-02-26 13:42:16,076 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,077 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,078 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,079 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,085 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2012-09-11_14_54_01.0/I355252/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20130116130954110_1_S170185_I355252.dcm
+2025-02-26 13:42:16,090 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,091 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,115 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2013-12-04_12_50_22.0/I419600/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20140409151130304_1_S215698_I419600.dcm
+2025-02-26 13:42:16,120 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2014-12-18_14_14_58.0/I504469/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20150807125228729_1_S256508_I504469.dcm
+2025-02-26 13:42:16,120 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,121 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,123 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40754/Reconstructed_DaTSCAN/2014-06-17_16_50_32.0/I453727/PPMI_40754_NM_Reconstructed_DaTSCAN_Br_20141114162844011_1_S235033_I453727.dcm
+2025-02-26 13:42:16,131 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,133 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,133 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,136 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,146 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2013-11-20_14_55_24.0/I419599/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20140409151117242_1_S215697_I419599.dcm
+2025-02-26 13:42:16,156 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,157 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,165 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2014-11-12_14_51_10.0/I468292/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20150112152755954_1_S244238_I468292.dcm
+2025-02-26 13:42:16,177 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40754/Reconstructed_DaTSCAN/2016-10-13_14_19_09.0/I846799/PPMI_40754_NM_Reconstructed_DaTSCAN_Br_20170503120458449_1_S561045_I846799.dcm
+2025-02-26 13:42:16,178 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,178 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,187 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40744/Reconstructed_DaTSCAN/2019-11-26_16_45_42.0/I1333537/PPMI_40744_NM_Reconstructed_DaTSCAN_Br_20200904141927401_1_S955502_I1333537.dcm
+2025-02-26 13:42:16,190 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,191 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:42:16,193 - __main__ - ERROR - Error during training: shape '[4, 256, 1, 1, 1]' is invalid for input of size 16384
+2025-02-26 13:42:16,198 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:42:16,199 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:10,855 - __main__ - INFO - Random seed set to 42
+2025-02-26 13:49:10,855 - __main__ - INFO - Configuration:
+2025-02-26 13:49:10,855 - __main__ - INFO - {
+  "data": {
+    "batch_size": 4,
+    "num_workers": 4,
+    "preload": false,
+    "cache_dir": "data/cache",
+    "val_split": 0.2,
+    "data_dir": "Images"
+  },
+  "model": {
+    "name": "autoencoder",
+    "input_shape": [
+      1,
+      64,
+      128,
+      128
+    ],
+    "base_channels": 16,
+    "latent_dim": 128
+  },
+  "training": {
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-05,
+    "num_epochs": 100,
+    "scheduler": "reduce_on_plateau",
+    "patience": 5,
+    "factor": 0.5,
+    "early_stop_patience": 15,
+    "clip_grad": true,
+    "clip_value": 1.0,
+    "gc_interval": 5,
+    "viz_interval": 5,
+    "save_interval": 5,
+    "w_recon": 1.0,
+    "w_perceptual": 0.1,
+    "striatum_weight": 5.0,
+    "roi_early_stopping": true,
+    "use_progressive": true,
+    "prog_epochs": [
+      0,
+      30,
+      60
+    ],
+    "prog_sizes": [
+      [
+        32,
+        64,
+        64
+      ],
+      [
+        48,
+        96,
+        96
+      ],
+      [
+        64,
+        128,
+        128
+      ]
+    ]
+  },
+  "device": "cuda",
+  "seed": 42,
+  "output_dir": "trained_models"
+}
+2025-02-26 13:49:10,856 - __main__ - INFO - No existing checkpoints found. Starting training from scratch.
+2025-02-26 13:49:10,856 - __main__ - INFO - Starting autoencoder training
+2025-02-26 13:49:10,902 - __main__ - INFO - Using device: cuda
+2025-02-26 13:49:10,903 - __main__ - INFO - Loading validated file paths from validated_file_paths.csv
+2025-02-26 13:49:10,911 - dataset - INFO - Training set: 2389 samples
+2025-02-26 13:49:10,911 - dataset - INFO - Validation set: 597 samples
+2025-02-26 13:49:10,912 - __main__ - INFO - Created data loaders with batch size 4
+2025-02-26 13:49:11,236 - __main__ - INFO - Created autoencoder model with 3,086,913 parameters
+2025-02-26 13:49:12,011 - trainers.base_trainer - INFO - Starting training for 100 epochs
+2025-02-26 13:49:12,012 - models.base - INFO - No checkpoint found. Starting from scratch.
+2025-02-26 13:49:20,985 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3230/Reconstructed_DaTSCAN/2013-07-25_14_15_00.0/I418665/PPMI_3230_NM_Reconstructed_DaTSCAN_Br_20140403143828929_1_S202911_I418665.dcm
+2025-02-26 13:49:20,989 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4035/Reconstructed_DaTSCAN/2013-02-07_07_29_45.0/I388587/PPMI_4035_NM_Reconstructed_DaTSCAN_Br_20130909140709028_1_S199560_I388587.dcm
+2025-02-26 13:49:20,989 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3660/Reconstructed_DaTSCAN/2016-03-15_14_16_28.0/I767603/PPMI_3660_NM_Reconstructed_DaTSCAN_Br_20160818121924120_1_S490938_I767603.dcm
+2025-02-26 13:49:20,991 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:20,991 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3461/Reconstructed_DaTSCAN/2013-06-20_15_34_22.0/I419668/PPMI_3461_NM_Reconstructed_DaTSCAN_Br_20140410130540226_1_S215860_I419668.dcm
+2025-02-26 13:49:20,993 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:20,995 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:20,996 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:20,996 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:20,997 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:20,998 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,002 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,058 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/100905/Reconstructed_DaTSCAN/2021-02-26_11_59_34.0/I1461556/PPMI_100905_NM_Reconstructed_DaTSCAN_Br_20210628214517375_1_S1038362_I1461556.dcm
+2025-02-26 13:49:21,059 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2012-09-11_15_15_52.0/I418360/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140401163139187_1_S175605_I418360.dcm
+2025-02-26 13:49:21,061 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/102366/Reconstructed_DaTSCAN/2021-07-21_16_11_13.0/I1509707/PPMI_102366_NM_Reconstructed_DaTSCAN_Br_20211028140012816_1_S1076743_I1509707.dcm
+2025-02-26 13:49:21,062 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,064 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,065 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,066 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,066 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3422/Reconstructed_DaTSCAN/2011-07-13_14_57_01.0/I389230/PPMI_3422_NM_Reconstructed_DaTSCAN_Br_20130910161038995_1_S117624_I389230.dcm
+2025-02-26 13:49:21,071 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,071 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,073 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,073 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,111 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3462/Reconstructed_DaTSCAN/2013-09-17_15_33_02.0/I419669/PPMI_3462_NM_Reconstructed_DaTSCAN_Br_20140410130553584_1_S215861_I419669.dcm
+2025-02-26 13:49:21,114 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,115 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,115 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/207894/Reconstructed_DaTSCAN/2023-02-09_12_36_31.0/I1682347/PPMI_207894_NM_Reconstructed_DaTSCAN_Br_20230324105321387_1_S1207837_I1682347.dcm
+2025-02-26 13:49:21,118 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,119 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,129 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3321/Reconstructed_DaTSCAN/2014-08-07_14_40_16.0/I449017/PPMI_3321_NM_Reconstructed_DaTSCAN_Br_20141021160451808_1_S234163_I449017.dcm
+2025-02-26 13:49:21,131 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,132 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,141 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3907/Reconstructed_DaTSCAN/2012-10-04_13_35_48.0/I388556/PPMI_3907_NM_Reconstructed_DaTSCAN_Br_20130909140131084_1_S175501_I388556.dcm
+2025-02-26 13:49:21,146 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,149 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,165 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40553/Reconstructed_DaTSCAN/2016-05-23_17_16_37.0/I1275300/PPMI_40553_NM_Reconstructed_DaTSCAN_Br_20200114130220459_1_S910450_I1275300.dcm
+2025-02-26 13:49:21,168 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/131120/Reconstructed_DaTSCAN/2022-10-25_14_59_15.0/I1644653/PPMI_131120_NM_Reconstructed_DaTSCAN_Br_20221123111732899_1_S1177772_I1644653.dcm
+2025-02-26 13:49:21,168 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,169 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,171 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,173 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,192 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3585/Reconstructed_DaTSCAN/2014-07-08_12_23_09.0/I449026/PPMI_3585_NM_Reconstructed_DaTSCAN_Br_20141021160652868_1_S234178_I449026.dcm
+2025-02-26 13:49:21,195 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,196 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,203 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3413/Reconstructed_DaTSCAN/2010-12-09_14_15_29.0/I340353/PPMI_3413_NM_Reconstructed_DaTSCAN_Br_20121016144758225_1_S117618_I340353.dcm
+2025-02-26 13:49:21,208 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,208 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,215 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3457/Reconstructed_DaTSCAN/2011-08-11_15_22_55.0/I339928/PPMI_3457_NM_Reconstructed_DaTSCAN_Br_20121015090207683_1_S120191_I339928.dcm
+2025-02-26 13:49:21,224 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,225 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,230 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/118352/Reconstructed_DaTSCAN/2023-02-15_09_58_22.0/I1707467/PPMI_118352_NM_Reconstructed_DaTSCAN_Br_20230526093154580_1_S1228031_I1707467.dcm
+2025-02-26 13:49:21,234 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,236 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,253 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/145939/Reconstructed_DaTSCAN/2022-03-31_16_01_11.0/I1574647/PPMI_145939_NM_Reconstructed_DaTSCAN_Br_20220428101913732_1_S1128625_I1574647.dcm
+2025-02-26 13:49:21,258 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,259 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,278 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/121619/Reconstructed_DaTSCAN/2021-12-07_12_59_35.0/I1537503/PPMI_121619_NM_Reconstructed_DaTSCAN_Br_20220125173908075_1_S1099192_I1537503.dcm
+2025-02-26 13:49:21,282 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,282 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_Cont/3172/Reconstructed_DaTSCAN/2011-12-20_13_51_45.0/I341034/PPMI_3172_NM_Reconstructed_DaTSCAN_Br_20121018133531512_1_S139073_I341034.dcm
+2025-02-26 13:49:21,282 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,286 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,288 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,293 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/182727/Reconstructed_DaTSCAN/2023-01-11_15_55_07.0/I1665857/PPMI_182727_NM_Reconstructed_DaTSCAN_Br_20230213205359607_1_S1194102_I1665857.dcm
+2025-02-26 13:49:21,296 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,298 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,321 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2011-07-20_12_29_25.0/I340420/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20121016150822105_1_S117557_I340420.dcm
+2025-02-26 13:49:21,325 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,326 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,347 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/127741/Reconstructed_DaTSCAN/2021-11-16_13_59_03.0/I1537507/PPMI_127741_NM_Reconstructed_DaTSCAN_Br_20220125174035610_1_S1099196_I1537507.dcm
+2025-02-26 13:49:21,348 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3088/Reconstructed_DaTSCAN/2013-02-27_15_11_44.0/I388473/PPMI_3088_NM_Reconstructed_DaTSCAN_Br_20130909134309901_1_S199532_I388473.dcm
+2025-02-26 13:49:21,349 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,351 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,351 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,352 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,357 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3059/Reconstructed_DaTSCAN/2012-02-28_14_42_59.0/I358116/PPMI_3059_NM_Reconstructed_DaTSCAN_Br_20130206130255421_1_S146366_I358116.dcm
+2025-02-26 13:49:21,360 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,361 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,375 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3068/Reconstructed_DaTSCAN/2011-10-04_14_12_56.0/I389186/PPMI_3068_NM_Reconstructed_DaTSCAN_Br_20130910160230922_1_S127541_I389186.dcm
+2025-02-26 13:49:21,378 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,379 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,407 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/101146/Reconstructed_DaTSCAN/2021-04-16_15_12_04.0/I1474413/PPMI_101146_NM_Reconstructed_DaTSCAN_Br_20210727211737259_1_S1046139_I1474413.dcm
+2025-02-26 13:49:21,410 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,411 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,411 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3107/Reconstructed_DaTSCAN/2016-04-05_13_38_35.0/I770243/PPMI_3107_NM_Reconstructed_DaTSCAN_Br_20160829161427801_1_S494457_I770243.dcm
+2025-02-26 13:49:21,413 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3822/Reconstructed_DaTSCAN/2013-05-28_13_09_26.0/I419271/PPMI_3822_NM_Reconstructed_DaTSCAN_Br_20140408101101854_1_S215443_I419271.dcm
+2025-02-26 13:49:21,416 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,418 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,423 - preprocessing - INFO - Initial pixel array shape: (360, 128, 128)
+2025-02-26 13:49:21,425 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3185/Reconstructed_DaTSCAN/2017-04-12_12_53_46.0/I913181/PPMI_3185_NM_Reconstructed_DaTSCAN_Br_20171002092236055_1_S614401_I913181.dcm
+2025-02-26 13:49:21,428 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,431 - preprocessing - INFO - Final tensor shape: torch.Size([360, 128, 128])
+2025-02-26 13:49:21,431 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,477 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3386/Reconstructed_DaTSCAN/2014-02-19_14_50_54.0/I436862/PPMI_3386_NM_Reconstructed_DaTSCAN_Br_20140725131032446_1_S215521_I436862.dcm
+2025-02-26 13:49:21,479 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,480 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,483 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/149116/Reconstructed_DaTSCAN/2022-04-08_14_08_14.0/I1574654/PPMI_149116_NM_Reconstructed_DaTSCAN_Br_20220428102133389_1_S1128631_I1574654.dcm
+2025-02-26 13:49:21,486 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,487 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,522 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/110543/Reconstructed_DaTSCAN/2021-09-17_15_53_56.0/I1537498/PPMI_110543_NM_Reconstructed_DaTSCAN_Br_20220125173706270_1_S1099185_I1537498.dcm
+2025-02-26 13:49:21,525 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,526 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:21,570 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/3711/Reconstructed_DaTSCAN/2014-06-11_15_58_33.0/I442976/PPMI_3711_NM_Reconstructed_DaTSCAN_Br_20140908135605650_1_S225370_I442976.dcm
+2025-02-26 13:49:21,572 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:21,573 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:22,142 - trainers.base_trainer - ERROR - Error during training: The size of tensor a (16) must match the size of tensor b (64) at non-singleton dimension 4
+2025-02-26 13:49:22,380 - trainers.base_trainer - INFO - Training history saved to trained_models\autoencoder\logs
+2025-02-26 13:49:31,594 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2012-06-06_14_43_34.0/I355250/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20130116130913721_1_S170184_I355250.dcm
+2025-02-26 13:49:31,598 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,609 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2013-09-18_15_15_16.0/I419285/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20140408101423288_1_S215560_I419285.dcm
+2025-02-26 13:49:31,612 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,614 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2017-03-29_14_45_21.0/I912227/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20170929122337908_1_S613452_I912227.dcm
+2025-02-26 13:49:31,614 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,616 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,618 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,626 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,646 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2017-06-21_15_53_39.0/I995754/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20180510083117439_1_S677423_I995754.dcm
+2025-02-26 13:49:31,650 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,651 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,678 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4072/Reconstructed_DaTSCAN/2014-10-30_13_34_57.0/I468291/PPMI_4072_NM_Reconstructed_DaTSCAN_Br_20150112152742109_1_S244237_I468291.dcm
+2025-02-26 13:49:31,682 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,684 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,688 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2016-12-01_13_55_41.0/I1332511/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20200902114306403_1_S954405_I1332511.dcm
+2025-02-26 13:49:31,690 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2015-01-28_16_32_46.0/I505040/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20150813065635504_1_S267922_I505040.dcm
+2025-02-26 13:49:31,693 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,693 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,696 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,698 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,710 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2016-11-15_15_45_01.0/I846209/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20170502101914003_1_S549940_I846209.dcm
+2025-02-26 13:49:31,714 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,715 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,734 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2012-07-26_14_43_12.0/I354350/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20130109114727114_1_S168167_I354350.dcm
+2025-02-26 13:49:31,737 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,739 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,751 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40731/Reconstructed_DaTSCAN/2017-03-29_14_05_54.0/I912228/PPMI_40731_NM_Reconstructed_DaTSCAN_Br_20170929122408406_1_S613454_I912228.dcm
+2025-02-26 13:49:31,755 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,756 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,765 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40735/Reconstructed_DaTSCAN/2021-03-30_14_33_29.0/I1474415/PPMI_40735_NM_Reconstructed_DaTSCAN_Br_20210727214205447_1_S1046798_I1474415.dcm
+2025-02-26 13:49:31,766 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4073/Reconstructed_DaTSCAN/2017-11-08_13_27_55.0/I1129415/PPMI_4073_NM_Reconstructed_DaTSCAN_Br_20190211114005762_1_S740876_I1129415.dcm
+2025-02-26 13:49:31,769 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,770 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,771 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,773 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,799 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2013-12-11_16_47_29.0/I419598/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20140409151104112_1_S215561_I419598.dcm
+2025-02-26 13:49:31,804 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,806 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,819 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40733/Reconstructed_DaTSCAN/2015-05-12_14_41_28.0/I504420/PPMI_40733_NM_Reconstructed_DaTSCAN_Br_20150807104941776_1_S267921_I504420.dcm
+2025-02-26 13:49:31,821 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2012-08-08_14_59_11.0/I388595/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20130909140847823_1_S168168_I388595.dcm
+2025-02-26 13:49:31,823 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,825 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,826 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,828 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,832 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40730/Reconstructed_DaTSCAN/2015-01-28_15_51_05.0/I505039/PPMI_40730_NM_Reconstructed_DaTSCAN_Br_20150813065623002_1_S267919_I505039.dcm
+2025-02-26 13:49:31,836 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,838 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,857 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4074/Reconstructed_DaTSCAN/2014-12-18_14_14_58.0/I504469/PPMI_4074_NM_Reconstructed_DaTSCAN_Br_20150807125228729_1_S256508_I504469.dcm
+2025-02-26 13:49:31,861 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,862 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,884 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2013-12-04_12_50_22.0/I419600/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20140409151130304_1_S215698_I419600.dcm
+2025-02-26 13:49:31,891 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,892 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,893 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4075/Reconstructed_DaTSCAN/2012-08-22_14_32_39.0/I355251/PPMI_4075_NM_Reconstructed_DaTSCAN_Br_20130116130932106_1_S168169_I355251.dcm
+2025-02-26 13:49:31,897 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2012-09-11_14_54_01.0/I355252/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20130116130954110_1_S170185_I355252.dcm
+2025-02-26 13:49:31,898 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,899 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,902 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,903 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,909 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40744/Reconstructed_DaTSCAN/2019-11-26_16_45_42.0/I1333537/PPMI_40744_NM_Reconstructed_DaTSCAN_Br_20200904141927401_1_S955502_I1333537.dcm
+2025-02-26 13:49:31,913 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,914 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,942 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2014-11-12_14_51_10.0/I468292/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20150112152755954_1_S244238_I468292.dcm
+2025-02-26 13:49:31,945 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40754/Reconstructed_DaTSCAN/2014-06-17_16_50_32.0/I453727/PPMI_40754_NM_Reconstructed_DaTSCAN_Br_20141114162844011_1_S235033_I453727.dcm
+2025-02-26 13:49:31,946 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,947 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,947 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,948 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,964 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2013-11-20_14_55_24.0/I419599/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20140409151117242_1_S215697_I419599.dcm
+2025-02-26 13:49:31,968 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,969 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:31,981 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40744/Reconstructed_DaTSCAN/2021-12-22_16_43_30.0/I1548469/PPMI_40744_NM_Reconstructed_DaTSCAN_Br_20220224141948715_1_S1107954_I1548469.dcm
+2025-02-26 13:49:31,996 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40754/Reconstructed_DaTSCAN/2016-10-13_14_19_09.0/I846799/PPMI_40754_NM_Reconstructed_DaTSCAN_Br_20170503120458449_1_S561045_I846799.dcm
+2025-02-26 13:49:31,998 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:31,999 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4077/Reconstructed_DaTSCAN/2017-02-08_13_11_42.0/I847162/PPMI_4077_NM_Reconstructed_DaTSCAN_Br_20170504143432013_1_S561105_I847162.dcm
+2025-02-26 13:49:32,000 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,003 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:32,004 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,011 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:32,012 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,023 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/4076/Reconstructed_DaTSCAN/2014-10-15_15_01_05.0/I504470/PPMI_4076_NM_Reconstructed_DaTSCAN_Br_20150807125241559_1_S257825_I504470.dcm
+2025-02-26 13:49:32,034 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:32,035 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,047 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40756/Reconstructed_DaTSCAN/2014-07-29_13_12_29.0/I453728/PPMI_40756_NM_Reconstructed_DaTSCAN_Br_20141114162855574_1_S235034_I453728.dcm
+2025-02-26 13:49:32,056 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40772/Reconstructed_DaTSCAN/2015-05-20_15_52_11.0/I505043/PPMI_40772_NM_Reconstructed_DaTSCAN_Br_20150813065710860_1_S267926_I505043.dcm
+2025-02-26 13:49:32,056 - __main__ - ERROR - Error during training: operands could not be broadcast together with shapes (64,64) (16,16) 
+2025-02-26 13:49:32,057 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:32,058 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,065 - preprocessing - INFO - Loading DICOM file: Images/PPMI_Images_PD/40771/Reconstructed_DaTSCAN/2015-06-03_15_24_28.0/I505042/PPMI_40771_NM_Reconstructed_DaTSCAN_Br_20150813065659203_1_S267925_I505042.dcm
+2025-02-26 13:49:32,069 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
+2025-02-26 13:49:32,070 - preprocessing - INFO - Final tensor shape: torch.Size([91, 109, 91])
+2025-02-26 13:49:32,078 - preprocessing - INFO - Initial pixel array shape: (91, 109, 91)
