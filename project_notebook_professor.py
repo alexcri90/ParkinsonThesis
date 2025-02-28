@@ -14,14 +14,6 @@ Original file is located at
 # %pip install scikit-learn scikit-image SimpleITK nibabel nilearn albumentations seaborn pandas numpy matplotlib tqdm pydicom scipy
 # %pip install umap-learn
 
-# CUDA verification
-import torch
-print(f"CUDA available: {torch.cuda.is_available()}")
-print(f"CUDA device count: {torch.cuda.device_count()}")
-if torch.cuda.is_available():
-    print(f"CUDA device name: {torch.cuda.get_device_name(0)}")
-    print(f"CUDA device capability: {torch.cuda.get_device_capability(0)}")
-
 # Cell 2: Import statements and environment setup
 import torch
 

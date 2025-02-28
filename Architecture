@@ -134,7 +134,7 @@
                 - Validate normalization ranges
             </intensity_normalization>
             <volume_processing>
-                - Target shape: (128, 128, 128)
+                - Target shape: (64, 128, 128)
                 - Preserve aspect ratio using zero-padding
                 - Apply symmetrical padding around brain
                 - Implement memory-efficient resizing
@@ -218,7 +218,7 @@
             </unsupervised_models>
             <model_architecture>
                 - Input Layer: 
-                    - Shape: (1, 128, 128, 128) for full brain volumes
+                    - Shape: (1, 64, 128, 128) for full brain volumes
                     - Single channel grayscale images
                     - Zero-padded to maintain aspect ratio
                 - Encoder:

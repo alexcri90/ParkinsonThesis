@@ -1,0 +1,5 @@
+version: '3'
+services:
+  jupyter:
+    command: /bin/sh -c "while sleep 1000; do :; done"
+    # This command keeps the container running but lets VS Code handle Jupyter

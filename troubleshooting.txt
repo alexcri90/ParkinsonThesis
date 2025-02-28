@@ -1,0 +1,71 @@
+# Troubleshooting Guide for Docker and Jupyter
+
+## 1. CUDA Not Available
+
+**Symptom:** 
+`torch.cuda.is_available()` returns False
+
+**Solutions:**
+- Verify NVIDIA drivers are installed: `nvidia-smi`
+- Ensure NVIDIA Container Toolkit is installed
+- Check Docker settings:
+  - In Docker Desktop, go to Settings > Resources > NVIDIA GPU and ensure it's enabled
+  - Restart Docker Desktop after changing settings
+
+## 2. Out of Memory Errors
+
+**Symptom:**
+"CUDA out of memory" errors during training
+
+**Solutions:**
+- Reduce batch size
+- Enable gradient accumulation
+- Use mixed precision training
+- Clear GPU memory between operations:
+  ```python
+  torch.cuda.empty_cache()
+  ```
+- Try running memory-intensive operations on CPU first, then transfer results to GPU
+
+## 3. Docker Container Won't Start
+
+**Symptom:**
+`docker-compose up` fails or container crashes immediately
+
+**Solutions:**
+- Check Docker logs: `docker-compose logs`
+- Ensure you have the latest NVIDIA drivers
+- Verify Windows WSL 2 backend is enabled for Docker Desktop
+- Try running with a more basic Dockerfile first to isolate the issue
+
+## 4. Data Loading Issues
+
+**Symptom:**
+FileNotFoundError or data doesn't load correctly
+
+**Solutions:**
+- Make sure your data is in the correct directory structure
+- Check that volumes are mounted correctly in docker-compose.yml
+- Use absolute paths or carefully verify relative paths
+- Print full debug information about file paths:
+  ```python
+  import os
+  print(os.getcwd())
+  print(os.listdir('.'))
+  ```
+
+## 5. Performance Issues
+
+**Symptom:**
+Training is unusually slow
+
+**Solutions:**
+- Set proper environment variables:
+  ```python
+  torch.backends.cudnn.benchmark = True
+  ```
+- Use DataLoader with proper settings:
+  ```python
+  DataLoader(dataset, batch_size=8, num_workers=4, pin_memory=True)
+  ```
+- Enable mixed precision training with automatic mixed precision

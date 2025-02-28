@@ -31,6 +31,7 @@ project_root/
     │   ├── config.json        # Training configuration
     │   └── evaluation_results.json # Test set metrics
     └── vae/                   # (Future) VAE model outputs
+
 ```
 
 ## Core Components

@@ -1,0 +1,27 @@
+version: '3'
+services:
+  jupyter:
+    build: .
+    image: parkinsons-dat:latest
+    container_name: parkinsons-dat
+    volumes:
+      - ./:/workspace
+    ports:
+      - "8888:8888"
+    # Add these lines for shared memory configuration
+    shm_size: '8gb'  # Increase shared memory
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - OMP_NUM_THREADS=8  # Limit OpenMP threads
+      - CUDA_DEVICE_ORDER=PCI_BUS_ID
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
