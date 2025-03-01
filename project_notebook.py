@@ -422,16 +422,16 @@ plt.colorbar()
 
 # !pip install ipywidgets
 
-# Cell 9: Dataset Implementation with Shape Validation
+# Cell 9: Dataset Implementation with GPU Memory Management
 import torch
 from torch.utils.data import Dataset, DataLoader
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import gc
 import numpy as np
 import os
 import psutil
+import time
 from sklearn.model_selection import train_test_split
-
 
 def print_memory_stats():
     """Print memory usage statistics"""
@@ -441,57 +441,163 @@ def print_memory_stats():
         print(f"Cached: {torch.cuda.memory_reserved() / 1024**2:.2f} MB")
     print(f"CPU Memory Usage: {psutil.Process().memory_info().rss / 1024**2:.2f} MB")
 
-"""### LP Ram Loader"""
-
-class LPRamDataset(Dataset):
+class OnDemandDataset(Dataset):
+    """
+    Memory-efficient dataset that loads volumes on demand rather than all at once
+    """
     def __init__(self, dataframe, transform=None):
         self.df = dataframe
         self.transform = transform
-        maskH = nib.load('rmask_ICV.nii')
-        mask = maskH.get_fdata()>0.5
-        mask = np.transpose(mask,[2, 1, 0])
-        mask = np.flip(mask,axis=1)
-        self.npArr = np.zeros((len(dataframe),1,64,128,128),dtype=np.float32)
 
-        counter=0
-        for _, row in dataframe.iterrows():
-            try:
-                file_path = row["file_path"]
+        # Load mask once
+        try:
+            maskH = nib.load('rmask_ICV.nii')
+            self.mask = maskH.get_fdata() > 0.5
+            self.mask = np.transpose(self.mask, [2, 1, 0])
+            self.mask = np.flip(self.mask, axis=1)
+            print("✅ Brain mask loaded successfully")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not load brain mask: {e}")
+            print("⚠️ Creating a dummy mask instead")
+            self.mask = np.ones((128, 128, 128), dtype=bool)
 
-            # Load DICOM
-                volume, _ = load_dicom(file_path)
-                volume -= volume.min()
-         #       print(counter)
-         #       print(volume.shape)
-        #        print(mask.shape)
-                volume *= mask
-                norm_vol, _, masked_vol = process_volume(volume[9:73,:,:], target_shape=(64, 128, 128))
-                self.npArr[counter,0,:,:,:]=norm_vol
-                counter +=1
-           #     delete volume, norm_vol, masked_vol
-            except Exception as e:
-                print(f"Error processing file {row['file_path']}: {e}")
-        self.npArr = self.npArr[:counter,:,:,:,:]
- #       self.immArr = torch.from_numpy(self.npArr).float().to("cuda")
-  #      delete volume, masked_vol, mask
-        gc.collect()
+        # Verify all paths exist
+        missing_files = []
+        for idx, row in dataframe.iterrows():
+            if not os.path.exists(row["file_path"]):
+                missing_files.append(row["file_path"])
+
+        if missing_files:
+            print(f"⚠️ Warning: {len(missing_files)} files not found!")
+            print(f"First few missing files: {missing_files[:3]}")
+        else:
+            print(f"✅ All {len(dataframe)} file paths are valid")
 
     def __len__(self):
         """Return the total number of samples in the dataset"""
         return len(self.df)
 
     def __getitem__(self, idx):
-      #      print(self.immArr.shape)
- #           print(idx)
-            volume_tensor = torch.from_numpy(self.npArr[idx, :, :, :, :])
+        """Load a single volume on demand"""
+        try:
+            # Get file path
+            file_path = self.df.iloc[idx]["file_path"]
+
+            # Load and process volume
+            volume, _ = load_dicom(file_path)
+
+            # Apply mask
+            volume -= volume.min()
+            volume = volume * self.mask
+
+            # Apply processing
+            norm_vol, _, _ = process_volume(volume[9:73, :, :], target_shape=(64, 128, 128))
+
+            # Convert to tensor
+            volume_tensor = torch.from_numpy(np.expand_dims(norm_vol, axis=0)).float()
+
             return {
                 "volume": volume_tensor,
                 "label": self.df.iloc[idx]["label"],
-                "path":self.df.iloc[idx]["file_path"]
+                "path": self.df.iloc[idx]["file_path"]
+            }
+        except Exception as e:
+            print(f"Error processing file {self.df.iloc[idx]['file_path']}: {e}")
+            # Return a zero tensor as fallback
+            return {
+                "volume": torch.zeros((1, 64, 128, 128), dtype=torch.float32),
+                "label": self.df.iloc[idx]["label"],
+                "path": self.df.iloc[idx]["file_path"]
             }
 
+class BatchLoadDataset(Dataset):
+    """
+    Memory-efficient dataset that processes data in small batches
+    and caches the processed results
+    """
+    def __init__(self, dataframe, batch_size=32, transform=None):
+        self.df = dataframe
+        self.transform = transform
+        self.data_cache = {}  # Cache for processed data
 
-def create_dataloaders(df, batch_size=4, train_split=0.8):
+        # Load mask once
+        try:
+            maskH = nib.load('rmask_ICV.nii')
+            self.mask = maskH.get_fdata() > 0.5
+            self.mask = np.transpose(self.mask, [2, 1, 0])
+            self.mask = np.flip(self.mask, axis=1)
+            print("✅ Brain mask loaded successfully")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not load brain mask: {e}")
+            print("⚠️ Creating a dummy mask instead")
+            self.mask = np.ones((128, 128, 128), dtype=bool)
+
+        # Pre-process data in batches to avoid memory issues
+        total_batches = (len(dataframe) + batch_size - 1) // batch_size
+        print(f"Pre-processing {len(dataframe)} samples in {total_batches} batches...")
+
+        for batch_idx in tqdm(range(total_batches)):
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(dataframe))
+
+            for idx in range(start_idx, end_idx):
+                try:
+                    file_path = dataframe.iloc[idx]["file_path"]
+
+                    # Load DICOM
+                    volume, _ = load_dicom(file_path)
+                    volume -= volume.min()
+                    volume = volume * self.mask
+
+                    # Process volume
+                    norm_vol, _, _ = process_volume(volume[9:73, :, :], target_shape=(64, 128, 128))
+
+                    # Store in cache (using index as key)
+                    self.data_cache[idx] = norm_vol
+
+                except Exception as e:
+                    print(f"Error processing file {dataframe.iloc[idx]['file_path']}: {e}")
+                    self.data_cache[idx] = np.zeros((64, 128, 128), dtype=np.float32)
+
+            # Force garbage collection after each batch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Print memory stats every few batches
+            if batch_idx % 5 == 0:
+                print_memory_stats()
+
+        print("✅ Data pre-processing complete")
+
+    def __len__(self):
+        """Return the total number of samples in the dataset"""
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        """Get a cached pre-processed volume"""
+        try:
+            # Get the pre-processed volume from cache
+            norm_vol = self.data_cache[idx]
+
+            # Convert to tensor
+            volume_tensor = torch.from_numpy(np.expand_dims(norm_vol, axis=0)).float()
+
+            return {
+                "volume": volume_tensor,
+                "label": self.df.iloc[idx]["label"],
+                "path": self.df.iloc[idx]["file_path"]
+            }
+        except Exception as e:
+            print(f"Error retrieving item {idx}: {e}")
+            # Return a zero tensor as fallback
+            return {
+                "volume": torch.zeros((1, 64, 128, 128), dtype=torch.float32),
+                "label": self.df.iloc[idx]["label"],
+                "path": self.df.iloc[idx]["file_path"]
+            }
+
+def create_dataloaders(df, batch_size=4, train_split=0.8, on_demand=True):
     """Create train and validation dataloaders with stratified split"""
     # Stratified split to maintain group distributions
     train_df, val_df = train_test_split(
@@ -506,124 +612,261 @@ def create_dataloaders(df, batch_size=4, train_split=0.8):
     print("\nValidation set distribution:")
     print(val_df['label'].value_counts())
 
-    # Create datasets
+    # Create datasets with appropriate strategy
+    if on_demand:
+        print("Using on-demand data loading strategy (lighter on memory but slower)")
+        train_dataset = OnDemandDataset(train_df)
+        val_dataset = OnDemandDataset(val_df)
+    else:
+        print("Using batch pre-processing strategy (faster but more memory intensive)")
+        train_dataset = BatchLoadDataset(train_df)
+        val_dataset = BatchLoadDataset(val_df)
 
-    # Create dataloaders
+    # Create dataloaders with optimized settings
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,  # No multiprocessing for debugging
-        pin_memory=True
+        num_workers=2,  # Reduced from 6 to prevent hanging
+        pin_memory=True,
+        persistent_workers=False  # Changed from True to avoid memory issues
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,  # No multiprocessing for debugging
-        pin_memory=True
+        num_workers=2,  # Reduced from 6 to prevent hanging
+        pin_memory=True,
+        persistent_workers=False  # Changed from True to avoid memory issues
     )
 
     return train_loader, val_loader
+
+# Test the dataloader with a small batch
+if __name__ == "__main__":
+    print("Testing dataloader with small batch...")
+    start_time = time.time()
+
+    # Create dataloaders with a smaller batch size for testing
+    train_loader, val_loader = create_dataloaders(df, batch_size=2, on_demand=True)
+
+    # Try to load a single batch
+    print("Fetching a single batch...")
+    for batch in train_loader:
+        print(f"Batch loaded successfully!")
+        print(f"Batch shape: {batch['volume'].shape}")
+        print(f"Labels: {batch['label']}")
+        break
+
+    print(f"Dataloader test completed in {time.time() - start_time:.2f} seconds")
+    print_memory_stats()
+
+"""### LP Ram Loader"""
+
+# class LPRamDataset(Dataset):
+#     def __init__(self, dataframe, transform=None):
+#         self.df = dataframe
+#         self.transform = transform
+#         maskH = nib.load('rmask_ICV.nii')
+#         mask = maskH.get_fdata()>0.5
+#         mask = np.transpose(mask,[2, 1, 0])
+#         mask = np.flip(mask,axis=1)
+#         self.npArr = np.zeros((len(dataframe),1,64,128,128),dtype=np.float32)
+
+#         counter=0
+#         for _, row in dataframe.iterrows():
+#             try:
+#                 file_path = row["file_path"]
+
+#             # Load DICOM
+#                 volume, _ = load_dicom(file_path)
+#                 volume -= volume.min()
+#          #       print(counter)
+#          #       print(volume.shape)
+#         #        print(mask.shape)
+#                 volume *= mask
+#                 norm_vol, _, masked_vol = process_volume(volume[9:73,:,:], target_shape=(64, 128, 128))
+#                 self.npArr[counter,0,:,:,:]=norm_vol
+#                 counter +=1
+#            #     delete volume, norm_vol, masked_vol
+#             except Exception as e:
+#                 print(f"Error processing file {row['file_path']}: {e}")
+#         self.npArr = self.npArr[:counter,:,:,:,:]
+#  #       self.immArr = torch.from_numpy(self.npArr).float().to("cuda")
+#   #      delete volume, masked_vol, mask
+#         gc.collect()
+
+#     def __len__(self):
+#         """Return the total number of samples in the dataset"""
+#         return len(self.df)
+
+#     def __getitem__(self, idx):
+#       #      print(self.immArr.shape)
+#  #           print(idx)
+#             volume_tensor = torch.from_numpy(self.npArr[idx, :, :, :, :])
+#             return {
+#                 "volume": volume_tensor,
+#                 "label": self.df.iloc[idx]["label"],
+#                 "path":self.df.iloc[idx]["file_path"]
+#             }
+
+
+# def create_dataloaders(df, batch_size=4, train_split=0.8):
+#     """Create train and validation dataloaders with stratified split"""
+#     # Stratified split to maintain group distributions
+#     train_df, val_df = train_test_split(
+#         df,
+#         test_size=1-train_split,
+#         stratify=df['label'],
+#         random_state=42
+#     )
+
+#     print("\nTraining set distribution:")
+#     print(train_df['label'].value_counts())
+#     print("\nValidation set distribution:")
+#     print(val_df['label'].value_counts())
+
+#     # Create datasets
+
+#     # Create dataloaders
+#     train_loader = DataLoader(
+#         train_dataset,
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=0,  # No multiprocessing for debugging
+#         pin_memory=True
+#     )
+
+#     val_loader = DataLoader(
+#         val_dataset,
+#         batch_size=batch_size,
+#         shuffle=False,
+#         num_workers=0,  # No multiprocessing for debugging
+#         pin_memory=True
+#     )
+
+#     return train_loader, val_loader
 
 """# Exploratory Data Analysis (EDA)"""
 
 # !pip install seaborn
 
-# Cell 10: Comprehensive EDA Implementation with Stratified Split
+# Cell 10: Optimized EDA Implementation with Stratified Sampling
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 from collections import defaultdict
-from sklearn.model_selection import train_test_split
+import torch
+import time
+import gc
+import random
 
-# First, let's implement proper stratified splitting
-def create_stratified_dataloaders(df, batch_size=2, train_split=0.8):
+def create_memory_efficient_dataloaders(df, batch_size=2, train_split=0.8):
     """
-    Create train and validation dataloaders with stratified splitting to maintain class distributions
+    Create train and validation dataloaders with optimized memory usage
     """
-    # Perform stratified split
-    train_df, val_df = train_test_split(
-        df,
-        test_size=1-train_split,
-        stratify=df['label'],
-        random_state=42
-    )
+    # Reuse the create_dataloaders function from Cell 9
+    return create_dataloaders(df, batch_size=batch_size, train_split=train_split, on_demand=True)
 
-    print("\nDataset split statistics:")
-    print("Training set distribution:")
-    print(train_df['label'].value_counts())
-    print("\nValidation set distribution:")
-    print(val_df['label'].value_counts())
-
-    # Create datasets
-    train_dataset = LPRamDataset(train_df)
-    val_dataset = LPRamDataset(val_df)
-
-    # Create dataloaders
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=6,
-        prefetch_factor=6,
-        pin_memory=True
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=6,
-        prefetch_factor=6,
-        pin_memory=True
-    )
-
-    return train_loader, val_loader
-
-def analyze_dataset_statistics(dataloader, num_batches=None):
+def analyze_dataset_statistics_efficiently(dataloader, max_samples=100, min_samples_per_group=15):
     """
-    Analyzes dataset statistics with memory-efficient batch processing
-    Returns: Dictionary of statistical measures
+    Analyzes dataset statistics with improved memory efficiency and ensures
+    stratified sampling across all patient groups.
+
+    Args:
+        dataloader: The dataloader to sample from
+        max_samples: Maximum total samples to process
+        min_samples_per_group: Minimum samples to collect per group
+
+    Returns:
+        Dictionary of statistical measures with proper group representation
     """
-    print("Analyzing dataset statistics...")
+    print("Analyzing dataset statistics (stratified, memory-efficient version)...")
     stats = defaultdict(list)
+    samples_by_group = defaultdict(int)
+
+    # First pass: Count occurrences of each group
+    group_counts = {}
+    print("Scanning dataset to count groups...")
+    for batch in tqdm(dataloader, desc="Counting groups"):
+        labels = batch['label']
+        for label in labels:
+            if label not in group_counts:
+                group_counts[label] = 0
+            group_counts[label] += 1
+
+    print(f"Found groups: {group_counts}")
+
+    # Second pass: Collect samples with stratification
+    all_samples = []
+    all_labels = []
+    all_paths = []
 
     try:
-        for i, batch in enumerate(tqdm(dataloader, desc="Computing statistics")):
-            if num_batches and i >= num_batches:
-                break
-
+        print("Collecting stratified samples...")
+        for batch in tqdm(dataloader, desc="Collecting samples"):
             volumes = batch['volume']
             labels = batch['label']
-            path = batch['path']
+            paths = batch['path']
 
-            # Per-volume statistics
-            for vol_idx, (volume, label) in enumerate(zip(volumes, labels)):
-                vol_data = volume.numpy().flatten()
+            # Process each volume in the batch
+            for vol_idx, (volume, label, path) in enumerate(zip(volumes, labels, paths)):
+                # If we have enough samples from this group, skip unless we need more total samples
+                if (samples_by_group[label] >= min_samples_per_group and
+                    sum(samples_by_group.values()) >= max_samples):
+                    continue
 
-                stats['mean'].append(np.mean(vol_data))
-                stats['std'].append(np.std(vol_data))
-                stats['median'].append(np.median(vol_data))
-                stats['min'].append(np.min(vol_data))
-                stats['max'].append(np.max(vol_data))
-                stats['label'].append(label)
-                stats['path'].append(path[vol_idx])
+                # Add this sample
+                all_samples.append(volume)
+                all_labels.append(label)
+                all_paths.append(path)
+                samples_by_group[label] += 1
 
-            # Memory cleanup
-            del volumes, labels
-            gc.collect()
-            torch.cuda.empty_cache()
+            # Memory cleanup after each batch
+            del volumes, labels, paths
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            # Check if we've collected enough samples from each group
+            if all(samples_by_group[group] >= min_samples_per_group for group in group_counts):
+                if sum(samples_by_group.values()) >= max_samples:
+                    print(f"Collected sufficient samples from all groups")
+                    break
 
     except Exception as e:
-        print(f"Error during statistical analysis: {str(e)}")
+        print(f"Error during sample collection: {str(e)}")
         import traceback
         traceback.print_exc()
 
-    return pd.DataFrame(stats)
+    # Process collected samples
+    print(f"Processing {len(all_samples)} collected samples...")
+    print(f"Samples per group: {dict(samples_by_group)}")
+
+    for volume, label, path in zip(all_samples, all_labels, all_paths):
+        # Extract statistics
+        vol_data = volume.numpy().flatten()
+
+        # Compute statistics
+        stats['mean'].append(float(np.mean(vol_data)))
+        stats['std'].append(float(np.std(vol_data)))
+        stats['min'].append(float(np.min(vol_data)))
+        stats['max'].append(float(np.max(vol_data)))
+        stats['label'].append(label)
+        stats['path'].append(path)
+
+    # Convert to DataFrame for easier analysis
+    stats_df = pd.DataFrame(stats)
+    print(f"Successfully analyzed {len(stats_df)} samples")
+
+    # Verify group representation
+    group_dist = stats_df['label'].value_counts()
+    print("Group distribution in analyzed samples:")
+    print(group_dist)
+
+    return stats_df
 
 def plot_intensity_distributions(stats_df):
     """
@@ -651,19 +894,20 @@ def plot_intensity_distributions(stats_df):
 
 def plot_group_statistics(stats_df):
     """
-    Plots statistical summaries by group
+    Plots statistical summaries by group using lightweight operations
     """
     plt.figure(figsize=(15, 5))
 
     # Group counts
     plt.subplot(1, 3, 1)
-    sns.countplot(data=stats_df, x='label', palette='viridis')
+    group_counts = stats_df['label'].value_counts()
+    sns.barplot(x=group_counts.index, y=group_counts.values, palette='viridis')
     plt.title('Sample Count by Group')
     plt.xlabel('Group')
     plt.ylabel('Count')
     plt.xticks(rotation=45)
 
-    # Box plots
+    # Box plots - more memory efficient than complex plots
     plt.subplot(1, 3, 2)
     sns.boxplot(data=stats_df, x='label', y='mean', palette='viridis')
     plt.title('Mean Intensity Distribution')
@@ -671,109 +915,136 @@ def plot_group_statistics(stats_df):
     plt.ylabel('Mean Intensity')
     plt.xticks(rotation=45)
 
-    # Violin plots for variance
+    # Simple boxplot instead of violin plot
     plt.subplot(1, 3, 3)
-    sns.violinplot(data=stats_df, x='label', y='std', palette='viridis')
+    sns.boxplot(data=stats_df, x='label', y='std', palette='viridis')
     plt.title('Intensity Variance Distribution')
     plt.xlabel('Group')
     plt.ylabel('Standard Deviation')
     plt.xticks(rotation=45)
+
     plt.tight_layout()
     plt.show()
 
-def analyze_spatial_patterns(dataloader, num_samples_per_group=2):
+def visualize_sample_slices(stats_df, dataloader, samples_per_group=1):
     """
-    Analyzes spatial patterns in the volumes, ensuring samples from each group
+    Visualizes a limited number of samples from each group
+    with efficient memory handling, selecting from the pre-processed samples
     """
-    # Collect samples per group
-    samples = defaultdict(list)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    print("Collecting samples for spatial analysis...")
+    # Get unique groups
+    groups = stats_df['label'].unique()
+
+    # Dictionary to hold samples for each group
+    samples_data = {}
+
+    # Select paths from stats_df, stratified by group
+    selected_paths = {}
+    for group in groups:
+        group_paths = stats_df[stats_df['label'] == group]['path'].values
+        if len(group_paths) > 0:
+            selected_paths[group] = random.sample(list(group_paths),
+                                                min(samples_per_group, len(group_paths)))
+
+    # Find these samples in the dataloader
     for batch in dataloader:
         volumes = batch['volume']
+        paths = batch['path']
         labels = batch['label']
 
+        for i, (vol, path, label) in enumerate(zip(volumes, paths, labels)):
+            # Check if this path is in our selected paths
+            for group, group_paths in selected_paths.items():
+                if path in group_paths:
+                    # Store the sample
+                    key = f"{group}_{len(samples_data)}"
+                    samples_data[key] = vol.cpu().numpy()
+                    # Remove from selected_paths to avoid duplicates
+                    selected_paths[group].remove(path)
 
-        for volume, label in zip(volumes, labels):
-            if len(samples[label]) < num_samples_per_group:
-                samples[label].append(volume)
-
-        # Check if we have enough samples from each group
-        if all(len(v) >= num_samples_per_group for v in samples.values()):
+        # Check if we have all samples
+        if all(len(paths) == 0 for paths in selected_paths.values()):
             break
 
-    # Plot samples
-    total_samples = len(samples) * num_samples_per_group
-    plt.figure(figsize=(15, 5 * total_samples))
+    # Visualize the samples
+    num_groups = len(groups)
+    plt.figure(figsize=(15, 5 * num_groups))
 
-    plot_idx = 1
-    for label in samples:
-        for volume in samples[label]:
-            # Get middle slices
-            vol_data = volume.squeeze().numpy()
-            axial = vol_data[vol_data.shape[0]//2, :, :]
-            sagittal = vol_data[:, :, vol_data.shape[2]//2]
-            coronal = vol_data[:, vol_data.shape[1]//2, :]
+    for i, (key, vol) in enumerate(samples_data.items()):
+        # Extract label
+        label = key.split('_')[0]
 
-            # Plot
-            plt.subplot(total_samples, 3, plot_idx)
-            plt.imshow(axial, cmap='gray')
-            plt.title(f'{label} - Axial')
-            plt.axis('off')
+        # Get middle slices
+        vol = vol.squeeze()  # Remove channel dimension
+        axial_slice = vol[vol.shape[0]//2, :, :]
+        sagittal_slice = vol[:, vol.shape[1]//2, :]
+        coronal_slice = vol[:, :, vol.shape[2]//2]
 
-            plt.subplot(total_samples, 3, plot_idx + 1)
-            plt.imshow(sagittal, cmap='gray')
-            plt.title(f'{label} - Sagittal')
-            plt.axis('off')
+        # Plot slices
+        plt.subplot(len(samples_data), 3, i*3 + 1)
+        plt.imshow(axial_slice, cmap='gray')
+        plt.title(f'{label} - Axial')
+        plt.axis('off')
 
-            plt.subplot(total_samples, 3, plot_idx + 2)
-            plt.imshow(coronal, cmap='gray')
-            plt.title(f'{label} - Coronal')
-            plt.axis('off')
+        plt.subplot(len(samples_data), 3, i*3 + 2)
+        plt.imshow(sagittal_slice, cmap='gray')
+        plt.title(f'{label} - Sagittal')
+        plt.axis('off')
 
-            plot_idx += 3
+        plt.subplot(len(samples_data), 3, i*3 + 3)
+        plt.imshow(coronal_slice, cmap='gray')
+        plt.title(f'{label} - Coronal')
+        plt.axis('off')
 
     plt.tight_layout()
     plt.show()
 
-# Create new stratified dataloaders
-print("Creating stratified dataloaders...")
-train_loader, val_loader = create_stratified_dataloaders(df, batch_size=16)
+# Run optimized EDA
+if __name__ == "__main__":
+    start_time = time.time()
+    print("Starting Memory-Efficient EDA with Stratified Sampling...")
 
-# Run the EDA
-print("Starting Exploratory Data Analysis...")
+    # Create dataloaders with small batch size
+    print("\nCreating memory-efficient dataloaders...")
+    train_loader, val_loader = create_memory_efficient_dataloaders(df, batch_size=2)
 
-# Analyze training dataset statistics
-print("\nAnalyzing training dataset...")
-train_stats = analyze_dataset_statistics(train_loader, num_batches=50)
+    # Analyze with stratified sampling and more samples
+    print("\nAnalyzing training dataset (with stratification)...")
+    train_stats = analyze_dataset_statistics_efficiently(
+        train_loader,
+        max_samples=100,  # Increased from 50 to 100
+        min_samples_per_group=15  # Ensure at least 15 samples per group
+    )
 
-# Plot distributions
-print("\nPlotting intensity distributions...")
-plot_intensity_distributions(train_stats)
+    # Plot distributions and statistics
+    print("\nPlotting intensity distributions...")
+    plot_intensity_distributions(train_stats)
 
-# Plot group statistics
-print("\nPlotting group statistics...")
-plot_group_statistics(train_stats)
+    print("\nPlotting group statistics...")
+    plot_group_statistics(train_stats)
 
-# Analyze spatial patterns
-print("\nAnalyzing spatial patterns...")
-analyze_spatial_patterns(train_loader, num_samples_per_group=2)
+    # Visualize a few examples
+    print("\nVisualizing example slices...")
+    visualize_sample_slices(train_stats, train_loader, samples_per_group=1)
 
-# Print summary statistics
-print("\nSummary Statistics by Group:")
-summary_stats = train_stats.groupby('label').agg({
-    'mean': ['mean', 'std'],
-    'std': ['mean', 'std'],
-    'median': ['mean', 'std'],
-    'min': ['mean', 'std'],
-    'max': ['mean', 'std']
-}).round(3)
-print(summary_stats)
+    # Print summary statistics by group
+    print("\nSummary Statistics by Group:")
+    summary_stats = train_stats.groupby('label').agg({
+        'mean': ['mean', 'std'],
+        'std': ['mean', 'std'],
+        'min': ['mean', 'std'],
+        'max': ['mean', 'std']
+    }).round(3)
+    print(summary_stats)
 
-# Memory cleanup
-gc.collect()
-torch.cuda.empty_cache()
-print("\nEDA completed!")
+    # Memory cleanup
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    print(f"\nEDA completed in {time.time() - start_time:.2f} seconds!")
+    print_memory_stats()
 
 """### Slice Intensity Variance Analysis"""
 
@@ -875,136 +1146,18 @@ if avg_variances is not None:
     print("\nPlotting slice-wise variance analysis...")
     plot_slice_variances(avg_variances)
 
-"""# Model Phase"""
+"""# Model Phase
 
-# Memory and Batch Size Optimization test control
-
-def test_batch_memory_limits(data_loader, start_size=8, max_size=48, step=8):
-    """
-    Tests different batch sizes to find the optimal one that maximizes GPU utilization
-    while avoiding out-of-memory errors.
-    """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    memory_stats = {}
-    optimal_batch_size = start_size
-
-    print("Starting batch size optimization test...")
-    print(f"Testing batch sizes from {start_size} to {max_size} in steps of {step}")
-    print("\nYour GPU: NVIDIA RTX 4070 Ti (12GB)")
-    print("Current test will estimate memory headroom for both training and inference\n")
-
-    # Get a single batch from the data loader to understand the data shape
-    sample_batch = next(iter(data_loader))
-    sample_volume = sample_batch['volume']
-    volume_shape = sample_volume.shape[1:]
-    print(f"Volume shape (excluding batch dimension): {volume_shape}")
-
-    for batch_size in range(start_size, max_size + step, step):
-        try:
-            print(f"\nTesting batch size: {batch_size}")
-
-            # Create a dummy batch with gradient tracking
-            dummy_data = torch.randn(batch_size, *volume_shape, device=device, requires_grad=True)
-
-            # Simulate model operations (more intensive to better represent real usage)
-            conv_weight1 = torch.randn(32, 1, 3, 3, 3, device=device, requires_grad=True)
-            conv_weight2 = torch.randn(64, 32, 3, 3, 3, device=device, requires_grad=True)
-
-            # Forward operations (more complex to better simulate real model)
-            conv1 = torch.nn.functional.conv3d(dummy_data, conv_weight1, padding=1)
-            act1 = torch.nn.functional.relu(conv1)
-            pool1 = torch.nn.functional.max_pool3d(act1, kernel_size=2)
-
-            conv2 = torch.nn.functional.conv3d(pool1, conv_weight2, padding=1)
-            act2 = torch.nn.functional.relu(conv2)
-            pool2 = torch.nn.functional.max_pool3d(act2, kernel_size=2)
-
-            loss = pool2.mean()
-            loss.backward()
-
-            # Get memory statistics
-            allocated = torch.cuda.memory_allocated() / (1024 ** 2)  # MB
-            reserved = torch.cuda.memory_reserved() / (1024 ** 2)    # MB
-            max_memory = 20 * 1024  # 12GB for RTX 4070 Ti
-            memory_usage_percent = (reserved / max_memory) * 100
-
-            memory_stats[batch_size] = {
-                'allocated': allocated,
-                'reserved': reserved,
-                'usage_percent': memory_usage_percent
-            }
-
-            print(f"GPU Memory Allocated: {allocated:.2f} MB")
-            print(f"GPU Memory Reserved: {reserved:.2f} MB")
-            print(f"Total GPU Memory Usage: {memory_usage_percent:.1f}%")
-
-            # Estimate training headroom
-            headroom = max_memory - reserved
-            print(f"Estimated memory headroom: {headroom:.2f} MB")
-
-            # Update optimal batch size
-            optimal_batch_size = batch_size
-
-            # Clean up
-            del dummy_data, conv_weight1, conv_weight2, conv1, conv2, act1, act2, pool1, pool2, loss
-            torch.cuda.empty_cache()
-
-            # If we're using more than 70% of GPU memory, stop testing
-            if memory_usage_percent > 70:
-                print("\nReaching high memory usage, stopping tests for safety")
-                break
-
-        except RuntimeError as e:
-            if "out of memory" in str(e):
-                print(f"\nOut of memory at batch size {batch_size}")
-                print(f"Last successful batch size was {optimal_batch_size}")
-                break
-            else:
-                print(f"Unexpected error: {str(e)}")
-                break
-
-    # Calculate recommended values based on memory usage pattern
-    recommended_batch_size = int(optimal_batch_size * 0.8)  # 80% of max for safety
-    recommended_accum_steps = 2 if recommended_batch_size >= 16 else 4
-
-    print("\nBatch Size Optimization Results:")
-    print(f"Maximum tested batch size: {optimal_batch_size}")
-    print(f"Recommended batch size for training: {recommended_batch_size}")
-    print(f"Recommended accumulation steps: {recommended_accum_steps}")
-    print("\nRecommended training configuration:")
-    print(f"config = TrainingConfig(")
-    print(f"    batch_size={recommended_batch_size},")
-    print(f"    accumulation_steps={recommended_accum_steps},")
-    print(f"    use_mixed_precision=True,")
-    print(f"    num_workers=4,")
-    print(f"    pin_memory=True")
-    print(f")")
-
-    return recommended_batch_size, memory_stats
-
-# Example usage
-if __name__ == "__main__":
-    try:
-        print("\nTesting optimal batch size configuration...")
-        optimal_batch_size, memory_stats = test_batch_memory_limits(train_loader)
-    except Exception as e:
-        print(f"Error during batch size testing: {str(e)}")
-        print("Using default conservative values:")
-        print("batch_size = 8")
-        print("accumulation_steps = 4")
-
-"""## 1. Autoencoder
+## 1. Autoencoder
 
 ### Model Setup
 """
 
-# Cell 11: Base Autoencoder Implementation with Memory Optimization
+# Cell 11: Optimized Autoencoder with Memory Management
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import OrderedDict
-
-import torch.cuda.amp as amp
 
 class ConvBlock(nn.Module):
     """Memory-efficient convolutional block with batch normalization and ReLU activation."""
@@ -1020,43 +1173,39 @@ class ConvBlock(nn.Module):
         return self.block(x)
 
 class Encoder(nn.Module):
-    """3D Encoder network optimized for 128³ input volumes."""
+    """3D Encoder network optimized for 64×128×128 input volumes."""
     def __init__(self, latent_dim=256):
         super().__init__()
 
         # Initial feature extraction
-        self.init_conv = ConvBlock(1, 16)  # 128 -> 128
+        self.init_conv = ConvBlock(1, 16)  # (1, 64, 128, 128) -> (16, 64, 128, 128)
 
         # Downsampling path with progressive channel increase
         self.down1 = nn.Sequential(
-            ConvBlock(16, 32, stride=2),    # 128 -> 64
-            ConvBlock(32, 32)
+            ConvBlock(16, 32, stride=2),    # -> (32, 32, 64, 64)
+            ConvBlock(32, 32)               # -> (32, 32, 64, 64)
         )
 
         self.down2 = nn.Sequential(
-            ConvBlock(32, 64, stride=2),    # 64 -> 32
-            ConvBlock(64, 64)
+            ConvBlock(32, 64, stride=2),    # -> (64, 16, 32, 32)
+            ConvBlock(64, 64)               # -> (64, 16, 32, 32)
         )
 
         self.down3 = nn.Sequential(
-            ConvBlock(64, 128, stride=2),   # 32 -> 16
-            ConvBlock(128, 128)
+            ConvBlock(64, 128, stride=2),   # -> (128, 8, 16, 16)
+            ConvBlock(128, 128)             # -> (128, 8, 16, 16)
         )
 
         self.down4 = nn.Sequential(
-            ConvBlock(128, 256, stride=2),  # 16 -> 8
-            ConvBlock(256, 256)
+            ConvBlock(128, 256, stride=2),  # -> (256, 4, 8, 8)
+            ConvBlock(256, 256)             # -> (256, 4, 8, 8)
         )
 
         # Project to latent space
-        self.flatten_size = 256 * 8 * 8 * 4
+        self.flatten_size = 256 * 4 * 8 * 8
         self.fc = nn.Linear(self.flatten_size, latent_dim)
 
     def forward(self, x):
-        # Track shapes for debugging
-      #  if self.training:
-      #      print(f"Input shape: {x.shape}")
-
         x = self.init_conv(x)
         d1 = self.down1(x)
         d2 = self.down2(d1)
@@ -1067,206 +1216,222 @@ class Encoder(nn.Module):
         flat = torch.flatten(d4, start_dim=1)
         z = self.fc(flat)
 
-    #    if self.training:
-    #        print(f"Latent shape: {z.shape}")
-
-        return z #(d1, d2, d3, d4)
+        return z
 
 class Decoder(nn.Module):
-    """3D Decoder network optimized for 128³ output volumes."""
+    """3D Decoder network optimized for 64×128×128 output volumes."""
     def __init__(self, latent_dim=256):
         super().__init__()
 
-        self.flatten_size = 256 * 8 * 8 * 4
+        self.flatten_size = 256 * 4 * 8 * 8
         self.fc = nn.Linear(latent_dim, self.flatten_size)
 
-        # Upsampling path with skip connections
+        # Upsampling path
         self.up1 = nn.Sequential(
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(256,128),
-          #  nn.ConvTranspose3d(128, 64, kernel_size=2, stride=2),  # 8 -> 16
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(256, 128),
             ConvBlock(128, 128)
         )
 
         self.up2 = nn.Sequential(
-            #nn.ConvTranspose3d(64, 32, kernel_size=2, stride=2),   # 16 -> 32
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(128,64),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(128, 64),
             ConvBlock(64, 64)
         )
 
         self.up3 = nn.Sequential(
-           # nn.ConvTranspose3d(32, 16, kernel_size=2, stride=2),    # 32 -> 64
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(64,32),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(64, 32),
             ConvBlock(32, 32)
         )
 
         self.up4 = nn.Sequential(
-            #nn.ConvTranspose3d(16, 16, kernel_size=2, stride=2),    # 64 -> 128
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(32,16),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(32, 16),
             ConvBlock(16, 16)
         )
 
         # Final convolution
         self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
 
-    def forward(self, z): #, skip_connections):
-    #    if self.training:
-      #      print(f"Decoder input shape: {z.shape}")
-
+    def forward(self, z):
         # Reshape from latent space
         x = self.fc(z)
         x = x.view(-1, 256, 4, 8, 8)
 
-        # Unpack skip connections
-    #    d1, d2, d3, d4 = skip_connections
+        # Upsampling
+        x = self.up1(x)
+        x = self.up2(x)
+        x = self.up3(x)
+        x = self.up4(x)
 
-        # Upsampling with skip connections
-        x = self.up1(x) #+ d4)
-        x = self.up2(x) #+ d3)
-        x = self.up3(x) #+ d2)
-        x = self.up4(x) #+ d1)
-
-        # Final convolution with sigmoid activation
-        x = (self.final_conv(x))
-
-   #     if self.training:
-#            print(f"Output shape: {x.shape}")
+        # Final convolution
+        x = self.final_conv(x)
 
         return x
 
 class BaseAutoencoder(nn.Module):
-    """Memory-optimized 3D Autoencoder for 128³ medical volumes."""
+    """Memory-optimized 3D Autoencoder for 64×128×128 medical volumes."""
     def __init__(self, latent_dim=256):
         super().__init__()
         self.encoder = Encoder(latent_dim)
         self.decoder = Decoder(latent_dim)
 
     def forward(self, x):
-        #z, skip_connections = self.encoder(x)
         z = self.encoder(x)
-        reconstruction = self.decoder(z) #, skip_connections)
+        reconstruction = self.decoder(z)
         return reconstruction
 
     def encode(self, x):
         """Encode input to latent space"""
-        #z, _ = self.encoder(x)
         z = self.encoder(x)
         return z
 
     def decode(self, z):
         """Decode from latent space (for generation)"""
-        batch_size = z.size(0)
-        device = z.device
-        dummy_skips = (
-            torch.zeros(batch_size, 32, 64, 64, 64, device=device),
-            torch.zeros(batch_size, 64, 32, 32, 32, device=device),
-            torch.zeros(batch_size, 128, 16, 16, 16, device=device),
-            torch.zeros(batch_size, 256, 8, 8, 8, device=device)
-        )
-        return self.decoder(z, dummy_skips)
+        return self.decoder(z)
 
-def test_autoencoder(batch_size=4):
+# Memory and GPU test function
+def test_autoencoder(batch_size=2):
     """Test the autoencoder with dummy data and verify memory usage."""
     print("\nTesting Autoencoder Architecture...")
 
     try:
         # Create model and move to GPU
-        model = BaseAutoencoder()
+        model = BaseAutoencoder(latent_dim=256)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = model.to(device)
 
         # Print model summary
-        print("\nModel Architecture:")
-        print(model)
+        num_params = sum(p.numel() for p in model.parameters())
+        print(f"\nModel Parameters: {num_params:,}")
 
-        # Create dummy input (128³ volume)
+        # Create dummy input (64x128x128 volume)
         dummy_input = torch.randn(batch_size, 1, 64, 128, 128, device=device)
 
         # Print initial memory usage
         print("\nInitial GPU Memory Usage:")
-        print_gpu_memory_stats()
+        print_memory_stats()
 
-        # Test forward pass
+        # Test encoding
+        print("\nTesting encoder...")
+        with torch.no_grad():
+            latent = model.encode(dummy_input)
+        print(f"Input shape: {dummy_input.shape}")
+        print(f"Latent shape: {latent.shape}")
+
+        # Test full forward pass
         print("\nTesting forward pass...")
-        encOut = model.encode(dummy_input)
-        print(f"\nencoder shape: {encOut.shape}")
         with torch.no_grad():
             output = model(dummy_input)
 
         # Print output shape and final memory usage
-        print(f"\nOutput shape: {output.shape}")
+        print(f"Output shape: {output.shape}")
         print("\nFinal GPU Memory Usage:")
-        print_gpu_memory_stats()
+        print_memory_stats()
 
         # Verify shapes
         assert output.shape == dummy_input.shape, f"Shape mismatch: {output.shape} vs {dummy_input.shape}"
 
         # Clean up
-        del model, dummy_input, output
+        del model, dummy_input, output, latent
         torch.cuda.empty_cache()
 
         print("\nAutoencoder test completed successfully!")
+        return True
 
     except Exception as e:
         print(f"Error testing autoencoder: {str(e)}")
         import traceback
         traceback.print_exc()
+        return False
 
 # Run test if this cell is executed
 if __name__ == "__main__":
-    test_autoencoder()
+    test_autoencoder(batch_size=2)
 
-# Cell 12: Training Utilities and Configuration
+# Cell 12: Training Configuration and Utilities
 import os
 import json
 import time
 from pathlib import Path
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.cuda.amp as amp
+import math
 
 class TrainingConfig:
     """Training configuration optimized for NVIDIA 4070Ti"""
     def __init__(self, **kwargs):
+        # Model parameters
+        self.latent_dim = kwargs.get('latent_dim', 256)
+
+        # Training parameters
         self.learning_rate = kwargs.get('learning_rate', 1e-4)
-        self.batch_size = kwargs.get('batch_size', 8)  # Increased from 2 to 8
-        self.accumulation_steps = kwargs.get('accumulation_steps', 4)  # New: gradient accumulation
+        self.batch_size = kwargs.get('batch_size', 4)
+        self.accumulation_steps = kwargs.get('accumulation_steps', 4)
         self.epochs = kwargs.get('epochs', 100)
         self.early_stopping_patience = kwargs.get('early_stopping_patience', 10)
+
+        # Optimization
+        self.use_mixed_precision = kwargs.get('use_mixed_precision', True)
+        self.weight_decay = kwargs.get('weight_decay', 1e-5)
+        self.gradient_clip = kwargs.get('gradient_clip', 1.0)
+
+        # Dataloader parameters
+        self.num_workers = kwargs.get('num_workers', 2)
+        self.pin_memory = kwargs.get('pin_memory', True)
+
+        # Checkpoint parameters
         self.checkpoint_dir = kwargs.get('checkpoint_dir', 'checkpoints')
         self.model_name = kwargs.get('model_name', 'autoencoder')
-        self.use_mixed_precision = kwargs.get('use_mixed_precision', True)  # Enable by default
-        self.num_workers = kwargs.get('num_workers', 4)  # Optimize data loading
-        self.pin_memory = kwargs.get('pin_memory', True)  # Faster data transfer to GPU
+        self.save_interval = kwargs.get('save_interval', 5)
 
         # Create checkpoint directory
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
+        # Print configuration summary
+        print(f"\n{'='*50}")
+        print(f"TRAINING CONFIGURATION")
+        print(f"{'='*50}")
+        print(f"Model: {self.model_name} with latent dim {self.latent_dim}")
+        print(f"Batch size: {self.batch_size} × {self.accumulation_steps} steps = {self.batch_size * self.accumulation_steps} effective")
+        print(f"Learning rate: {self.learning_rate}")
+        print(f"Mixed precision: {'Enabled' if self.use_mixed_precision else 'Disabled'}")
+        print(f"Epochs: {self.epochs} with patience {self.early_stopping_patience}")
+        print(f"Dataloader workers: {self.num_workers}")
+        print(f"Checkpoints saved to: {self.checkpoint_dir}")
+        print(f"{'='*50}\n")
+
 class EarlyStopping:
     """Early stopping handler with patience"""
-    def __init__(self, patience=10, min_delta=0):
+    def __init__(self, patience=10, min_delta=0, verbose=True):
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
-        self.best_loss = None
-        self.should_stop = False
+        self.best_loss = float('inf')
+        self.early_stop = False
+        self.verbose = verbose
+        self.best_epoch = 0
 
-    def __call__(self, val_loss):
-        if self.best_loss is None:
-            self.best_loss = val_loss
-            return False
-
-        if val_loss > self.best_loss - self.min_delta:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.should_stop = True
-        else:
+    def __call__(self, val_loss, epoch):
+        if val_loss < self.best_loss - self.min_delta:
+            if self.verbose:
+                improvement = self.best_loss - val_loss
+                print(f"Validation loss improved by {improvement:.6f}")
             self.best_loss = val_loss
             self.counter = 0
-
-        return self.should_stop
+            self.best_epoch = epoch
+            return True  # Model improved
+        else:
+            self.counter += 1
+            if self.verbose:
+                print(f"Early stopping counter: {self.counter}/{self.patience}")
+            if self.counter >= self.patience:
+                self.early_stop = True
+                if self.verbose:
+                    print(f"Early stopping triggered. Best epoch was {self.best_epoch}.")
+            return False  # Model didn't improve
 
 class CheckpointHandler:
     """Handles saving and loading of model checkpoints"""
@@ -1274,9 +1439,13 @@ class CheckpointHandler:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.model_name = model_name
         self.checkpoint_path = self.checkpoint_dir / f"{model_name}_checkpoint.pth"
+        self.best_model_path = self.checkpoint_dir / f"{model_name}_best.pth"
         self.metadata_path = self.checkpoint_dir / f"{model_name}_metadata.json"
 
-    def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses):
+        # Ensure directory exists
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses, is_best=False):
         """Save model checkpoint and training metadata"""
         # Save model checkpoint
         checkpoint = {
@@ -1287,7 +1456,14 @@ class CheckpointHandler:
             'train_losses': train_losses,
             'val_losses': val_losses
         }
+
+        # Always save latest checkpoint
         torch.save(checkpoint, self.checkpoint_path)
+
+        # Save best model separately if this is the best model
+        if is_best:
+            torch.save(model.state_dict(), self.best_model_path)
+            print(f"Saved best model to {self.best_model_path}")
 
         # Save metadata
         metadata = {
@@ -1299,16 +1475,29 @@ class CheckpointHandler:
         with open(self.metadata_path, 'w') as f:
             json.dump(metadata, f, indent=4)
 
-    def load(self, model, optimizer, scheduler):
+    def load(self, model, optimizer=None, scheduler=None, device=None):
         """Load model checkpoint and return training metadata"""
         if not self.checkpoint_path.exists():
+            print(f"No checkpoint found at {self.checkpoint_path}")
             return None
 
-        checkpoint = torch.load(self.checkpoint_path)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Load checkpoint
+        checkpoint = torch.load(self.checkpoint_path, map_location=device)
+
+        # Load model state
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if scheduler and checkpoint['scheduler_state_dict']:
+
+        # Optionally load optimizer and scheduler states
+        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        if scheduler is not None and checkpoint['scheduler_state_dict'] is not None:
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
 
         return {
             'epoch': checkpoint['epoch'],
@@ -1316,66 +1505,142 @@ class CheckpointHandler:
             'val_losses': checkpoint['val_losses']
         }
 
-def print_gpu_memory_stats():
-    """Print current GPU memory usage"""
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / (1024 ** 2)
-        reserved = torch.cuda.memory_reserved() / (1024 ** 2)
-        print(f"GPU Memory Allocated: {allocated:.2f} MB")
-        print(f"GPU Memory Reserved: {reserved:.2f} MB")
+def create_optimizer(model, config):
+    """Create optimizer with weight decay and parameter grouping"""
+    # Separate parameters that should have weight decay from those that shouldn't
+    decay_params = []
+    no_decay_params = []
+
+    for name, param in model.named_parameters():
+        if 'bias' in name or 'bn' in name:
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    # Create parameter groups
+    param_groups = [
+        {'params': decay_params, 'weight_decay': config.weight_decay},
+        {'params': no_decay_params, 'weight_decay': 0.0}
+    ]
+
+    # Create optimizer
+    optimizer = optim.AdamW(param_groups, lr=config.learning_rate)
+
+    return optimizer
+
+def create_scheduler(optimizer, config):
+    """Create learning rate scheduler"""
+    return ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=5,
+        verbose=True,
+        min_lr=1e-6
+    )
+
+def get_cosine_schedule_with_warmup(optimizer, num_warmup_steps, num_training_steps, min_lr=0.0, last_epoch=-1):
+    """Create a cosine learning rate schedule with warmup"""
+    def lr_lambda(current_step):
+        # Warmup
+        if current_step < num_warmup_steps:
+            return float(current_step) / float(max(1, num_warmup_steps))
+
+        # Cosine decay
+        progress = float(current_step - num_warmup_steps) / float(max(1, num_training_steps - num_warmup_steps))
+        factor = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return max(min_lr, factor)
+
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch)
+
+# Test configuration if this cell is executed
+if __name__ == "__main__":
+    config = TrainingConfig(
+        latent_dim=256,
+        batch_size=2,
+        accumulation_steps=8,
+        learning_rate=1e-4,
+        epochs=100,
+        model_name="autoencoder_test"
+    )
+
+    model = BaseAutoencoder(config.latent_dim)
+    optimizer = create_optimizer(model, config)
+    scheduler = create_scheduler(optimizer, config)
+
+    print("Configuration and utilities loaded successfully!")
 
 # Cell 13: Training Loop Implementation
+import torch
 import torch.nn as nn
-from tqdm.notebook import tqdm
+from tqdm import tqdm
 import matplotlib.pyplot as plt
+import numpy as np
+import gc
+import time
 
 def train_autoencoder(model, train_loader, val_loader, config=None):
-    """GPU-optimized training loop with mixed precision and gradient accumulation"""
+    """Optimized training loop with GPU memory management and progress tracking"""
     if config is None:
         config = TrainingConfig()
 
+    # Set up device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    # Initialize training components
+    # Initialize components
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=config.learning_rate)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, verbose=True)
+    optimizer = create_optimizer(model, config)
+    scheduler = create_scheduler(optimizer, config)
     early_stopping = EarlyStopping(patience=config.early_stopping_patience)
     checkpoint_handler = CheckpointHandler(config.checkpoint_dir, config.model_name)
 
     # Mixed precision setup
     scaler = amp.GradScaler(enabled=config.use_mixed_precision)
 
-    # Load checkpoint if available
-    start_epoch = 0
+    # Training tracking variables
     train_losses = []
     val_losses = []
-    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
+    best_val_loss = float('inf')
+    start_time = time.time()
+
+    # Load checkpoint if available
+    start_epoch = 0
+    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler, device)
     if checkpoint_data:
         start_epoch = checkpoint_data['epoch'] + 1
         train_losses = checkpoint_data['train_losses']
         val_losses = checkpoint_data['val_losses']
         print(f"Resuming training from epoch {start_epoch}")
 
+    # Calculate total steps for progress tracking
+    total_steps = len(train_loader) * config.epochs
+
+    # Training loop
     try:
+        # Create progress bar for total training
+        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0)
+        total_pbar.update(start_epoch * len(train_loader))
+
         for epoch in range(start_epoch, config.epochs):
+            # Training phase
             model.train()
             epoch_loss = 0
             optimizer.zero_grad()  # Zero gradients at epoch start
 
-            train_pbar = tqdm(train_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Train]')
+            train_pbar = tqdm(train_loader,
+                            desc=f'Epoch {epoch+1}/{config.epochs} [Train]',
+                            leave=False,
+                            position=1)
 
             for batch_idx, batch in enumerate(train_pbar):
-          #      print (batch_idx)
                 try:
+                    # Move data to device
                     volumes = batch['volume'].to(device, non_blocking=True)
 
-           #         print(volumes.shape)
                     # Mixed precision forward pass
                     with amp.autocast(enabled=config.use_mixed_precision):
                         reconstructed = model(volumes)
-            #            print(reconstructed.shape)
                         loss = criterion(reconstructed, volumes)
                         # Scale loss by accumulation steps
                         loss = loss / config.accumulation_steps
@@ -1384,32 +1649,50 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                     scaler.scale(loss).backward()
 
                     # Gradient accumulation
-                    if (batch_idx + 1) % config.accumulation_steps == 0:
+                    if (batch_idx + 1) % config.accumulation_steps == 0 or (batch_idx + 1 == len(train_loader)):
+                        # Clip gradients to prevent exploding gradients
+                        if config.gradient_clip > 0:
+                            scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip)
+
+                        # Update weights
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad()
 
-                    epoch_loss += loss.item() * config.accumulation_steps
-                    train_pbar.set_postfix({'loss': loss.item() * config.accumulation_steps})
+                    # Track loss (using the non-scaled loss for reporting)
+                    batch_loss = loss.item() * config.accumulation_steps
+                    epoch_loss += batch_loss
+
+                    # Update progress bars
+                    train_pbar.set_postfix({'loss': f"{batch_loss:.6f}"})
+                    total_pbar.update(1)
+
+                    # Memory cleanup
+                    del volumes, reconstructed, loss
+                    torch.cuda.empty_cache()
 
                 except RuntimeError as e:
                     if "out of memory" in str(e):
-                        print(f"\nOOM in batch {batch_idx}. Adjusting batch size...")
+                        print(f"\nOOM in batch {batch_idx}. Cleaning up...")
                         torch.cuda.empty_cache()
+                        gc.collect()
+                        # Skip this batch and continue
                         continue
                     raise e
 
-                # Clean up
-                del volumes, reconstructed, loss
-                torch.cuda.empty_cache()
-
+            # Calculate average training loss
             avg_train_loss = epoch_loss / len(train_loader)
             train_losses.append(avg_train_loss)
 
             # Validation phase
             model.eval()
             val_loss = 0
-            val_pbar = tqdm(val_loader, desc=f'Epoch {epoch+1}/{config.epochs} [Val]')
+
+            val_pbar = tqdm(val_loader,
+                          desc=f'Epoch {epoch+1}/{config.epochs} [Val]',
+                          leave=False,
+                          position=1)
 
             with torch.no_grad():
                 for batch in val_pbar:
@@ -1419,228 +1702,1011 @@ def train_autoencoder(model, train_loader, val_loader, config=None):
                         loss = criterion(reconstructed, volumes)
                         val_loss += loss.item()
 
+                        val_pbar.set_postfix({'loss': f"{loss.item():.6f}"})
+
+                        # Memory cleanup
+                        del volumes, reconstructed, loss
+                        torch.cuda.empty_cache()
+
                     except RuntimeError as e:
                         if "out of memory" in str(e):
                             print("\nOOM during validation. Cleaning up...")
-                            if 'volumes' in locals():
-                                del volumes
-                            if 'reconstructed' in locals():
-                                del reconstructed
-                            if 'loss' in locals():
-                                del loss
                             torch.cuda.empty_cache()
+                            gc.collect()
                             continue
-                        else:
-                            raise e
+                        raise e
 
-                    # Clean up
-                    del volumes, reconstructed, loss
-                    torch.cuda.empty_cache()
-
+            # Calculate average validation loss
             avg_val_loss = val_loss / len(val_loader)
             val_losses.append(avg_val_loss)
 
             # Update learning rate
             scheduler.step(avg_val_loss)
 
+            # Check if this is the best model
+            is_best = avg_val_loss < best_val_loss
+            if is_best:
+                best_val_loss = avg_val_loss
+
             # Save checkpoint
-            checkpoint_handler.save(
-                model, optimizer, scheduler,
-                epoch, train_losses, val_losses
-            )
+            if (epoch + 1) % config.save_interval == 0 or is_best or (epoch + 1 == config.epochs):
+                checkpoint_handler.save(
+                    model, optimizer, scheduler,
+                    epoch, train_losses, val_losses,
+                    is_best=is_best
+                )
 
             # Print epoch summary
-            print(f"\nEpoch {epoch+1}/{config.epochs}")
-            print(f"Train Loss: {avg_train_loss:.6f}")
-            print(f"Val Loss: {avg_val_loss:.6f}")
-            print_gpu_memory_stats()
+            elapsed_time = time.time() - start_time
+            time_per_epoch = elapsed_time / (epoch - start_epoch + 1) if epoch >= start_epoch else 0
+            est_time_left = time_per_epoch * (config.epochs - epoch - 1)
+
+            print(f"\nEpoch {epoch+1}/{config.epochs} completed in {time_per_epoch:.2f}s")
+            print(f"Train Loss: {avg_train_loss:.6f} | Val Loss: {avg_val_loss:.6f}")
+            print(f"Learning rate: {optimizer.param_groups[0]['lr']:.8f}")
+            print(f"Est. time remaining: {est_time_left/60:.2f} minutes")
+            print_memory_stats()
 
             # Early stopping check
-            if early_stopping(avg_val_loss):
-                print("\nEarly stopping triggered!")
-                break
+            if early_stopping(avg_val_loss, epoch):
+                if early_stopping.early_stop:
+                    print("\nEarly stopping triggered!")
+                    break
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user!")
+        # Still save the model
+        checkpoint_handler.save(
+            model, optimizer, scheduler,
+            epoch, train_losses, val_losses,
+            is_best=False
+        )
 
     finally:
+        # Close progress bars
+        if 'total_pbar' in locals():
+            total_pbar.close()
+
         # Plot training history
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(12, 5))
+
+        # Plot full history
+        plt.subplot(1, 2, 1)
         plt.plot(train_losses, label='Train Loss')
         plt.plot(val_losses, label='Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
+        plt.title('Full Training History')
         plt.legend()
         plt.grid(True)
+
+        # Plot recent history (last 30 epochs or full history if < 30 epochs)
+        plt.subplot(1, 2, 2)
+        recent = min(30, len(train_losses))
+        if recent > 5:  # Only plot recent if we have enough epochs
+            plt.plot(train_losses[-recent:], label='Train Loss')
+            plt.plot(val_losses[-recent:], label='Validation Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Loss')
+            plt.title(f'Last {recent} Epochs')
+            plt.legend()
+            plt.grid(True)
+
+        plt.tight_layout()
         plt.savefig(os.path.join(config.checkpoint_dir, f"{config.model_name}_training_history.png"))
         plt.show()
 
-        return train_losses, val_losses
+        # Print final training summary
+        total_time = time.time() - start_time
+        print(f"\nTraining completed in {total_time/60:.2f} minutes")
+        print(f"Best validation loss: {best_val_loss:.6f}")
+
+        return train_losses, val_losses, model
 
 """### Training"""
 
-# TRAINING
+# Run training if this cell is executed
 if __name__ == "__main__":
-    try:
-        model = BaseAutoencoder(latent_dim=256)
-        config = TrainingConfig(
-            learning_rate=1e-4,
-            batch_size=64,  # Increased batch size
-            accumulation_steps=1,  # Gradient accumulation
-            epochs=300,
-            use_mixed_precision=True,
-            num_workers=8,
-            prefetch_factor=6,
-            pin_memory=True
-        )
 
-        train_losses, val_losses = train_autoencoder(model, train_loader, val_loader, config)
+    # Initialize model
+    model = BaseAutoencoder(latent_dim=256)
 
-    except Exception as e:
-        print(f"Error during training: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    # Create configuration
+    config = TrainingConfig(
+    latent_dim=256,
+    batch_size=8,              # Increased from 2 to 8
+    accumulation_steps=8,      # Increased from 4 to 8 (effective batch size = 64)
+    learning_rate=1e-4,
+    epochs=200,
+    early_stopping_patience=10,
+    use_mixed_precision=True,
+    num_workers=4,             # Increased from 2 to 4
+    model_name="autoencoder_v1"
+)
+
+    # Train model
+    print("\nStarting training...")
+    train_losses, val_losses, trained_model = train_autoencoder(
+        model, train_loader, val_loader, config
+    )
 
 """### Evaluation and Result Visualization"""
 
 # Cell 14: Model Evaluation and Visualization
+import torch
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import json
 from pathlib import Path
+import json
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+import seaborn as sns
+from tqdm import tqdm
 
-def load_checkpoint_for_evaluation(checkpoint_dir, model_name):
-    """Load model and training history for evaluation"""
-    checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
+def load_trained_model(checkpoint_dir, model_name, latent_dim=256):
+    """Load best trained model for evaluation"""
+    model_path = Path(checkpoint_dir) / f"{model_name}_best.pth"
     metadata_path = Path(checkpoint_dir) / f"{model_name}_metadata.json"
 
-    # Load model
-    model = BaseAutoencoder()
-    checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+    if not model_path.exists():
+        # Try loading checkpoint if best model doesn't exist
+        model_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
+        if not model_path.exists():
+            raise FileNotFoundError(f"No model found at {model_path}")
+
+        # Load from checkpoint
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = BaseAutoencoder(latent_dim=latent_dim)
+        checkpoint = torch.load(model_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        # Load best model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = BaseAutoencoder(latent_dim=latent_dim)
+        model.load_state_dict(torch.load(model_path, map_location=device))
 
     # Load training history
-    with open(metadata_path, 'r') as f:
-        metadata = json.load(f)
+    if metadata_path.exists():
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+    else:
+        metadata = {"train_losses": [], "val_losses": []}
+
+    model.eval()
+    model.to(device)
 
     return model, metadata
 
 def plot_training_history(metadata):
-    """Plot training and validation losses"""
+    """Plot training and validation loss history"""
     plt.figure(figsize=(12, 5))
 
+    train_losses = metadata["train_losses"]
+    val_losses = metadata["val_losses"]
+
+    # Plot full history
     plt.subplot(1, 2, 1)
-    plt.plot(metadata['train_losses'], label='Train Loss')
-    plt.plot(metadata['val_losses'], label='Validation Loss')
+    plt.plot(train_losses, label='Train Loss')
+    plt.plot(val_losses, label='Validation Loss')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
-    plt.title('Training History')
+    plt.title('Full Training History')
     plt.legend()
     plt.grid(True)
 
-    # Plot recent epochs in detail
-    recent_epochs = 20
-    if len(metadata['train_losses']) > recent_epochs:
-        plt.subplot(1, 2, 2)
-        plt.plot(metadata['train_losses'][-recent_epochs:], label='Train Loss')
-        plt.plot(metadata['val_losses'][-recent_epochs:], label='Validation Loss')
+    # Plot recent history (last 30 epochs or all if < 30)
+    plt.subplot(1, 2, 2)
+    recent = min(30, len(train_losses))
+    if recent > 5:  # Only plot recent history if we have enough epochs
+        plt.plot(train_losses[-recent:], label='Train Loss')
+        plt.plot(val_losses[-recent:], label='Validation Loss')
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
-        plt.title(f'Last {recent_epochs} Epochs')
+        plt.title(f'Last {recent} Epochs')
         plt.legend()
         plt.grid(True)
 
     plt.tight_layout()
     plt.show()
 
-def visualize_reconstructions(model, val_loader, num_samples=3):
-    """Visualize original vs reconstructed volumes"""
+def visualize_reconstruction_samples(model, dataloader, num_samples=3):
+    """Visualize original vs reconstructed volumes for samples from the dataset"""
     device = next(model.parameters()).device
 
+    # Get samples from dataloader
+    samples = []
+    labels = []
+
+    for batch in dataloader:
+        volumes = batch['volume']
+        batch_labels = batch['label']
+
+        for i in range(min(len(volumes), num_samples - len(samples))):
+            samples.append(volumes[i:i+1])
+            labels.append(batch_labels[i])
+
+        if len(samples) >= num_samples:
+            break
+
+    # Visualize each sample
     with torch.no_grad():
-        for batch in val_loader:
-            volumes = batch['volume'].to(device)
-            reconstructed = model(volumes)
+        for idx, (sample, label) in enumerate(zip(samples, labels)):
+            # Get original volume
+            orig_vol = sample.to(device)
 
-            # Process num_samples samples
-            for idx in range(min(num_samples, volumes.shape[0])):
-                fig = plt.figure(figsize=(15, 5))
+            # Generate reconstruction
+            reconstructed = model(orig_vol)
 
-                # Get middle slices
-                orig_vol = volumes[idx, 0].cpu().numpy()
-                recon_vol = reconstructed[idx, 0].cpu().numpy()
+            # Move to CPU for visualization
+            orig_vol = orig_vol.cpu().squeeze().numpy()
+            recon_vol = reconstructed.cpu().squeeze().numpy()
 
-                # Plot axial, sagittal, and coronal views
-                views = ['Axial', 'Sagittal', 'Coronal']
-                slices_orig = [
-                    orig_vol[34, :, :],
-                    orig_vol[:, 50, :],
-                    orig_vol[:, :, 75]
-                ]
-                slices_recon = [
-                    recon_vol[34, :, :],
-                    recon_vol[:,50, :],
-                    recon_vol[:, :, 75]
-                ]
+            # Create figure for this sample
+            fig = plt.figure(figsize=(15, 10))
+            plt.suptitle(f"Sample {idx+1} - Group: {label}", fontsize=16)
 
-                for i, (view, orig_slice, recon_slice) in enumerate(zip(views, slices_orig, slices_recon)):
-                    # Original
-                    plt.subplot(2, 3, i+1)
-                    plt.imshow(orig_slice, cmap='gray',vmin=0,vmax=4)
-                    plt.title(f'Original {view}')
-                    plt.axis('off')
+            # Define slice indices (midpoint by default)
+            z_slice = orig_vol.shape[0] // 2
+            y_slice = orig_vol.shape[1] // 2
+            x_slice = orig_vol.shape[2] // 2
 
-                    # Reconstructed
-                    plt.subplot(2, 3, i+4)
-                    plt.imshow(recon_slice, cmap='gray',vmin=0,vmax=4)
-                    plt.title(f'Reconstructed {view}')
-                    plt.axis('off')
+            # Plot original slices
+            plt.subplot(2, 3, 1)
+            plt.imshow(orig_vol[z_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Axial")
+            plt.axis('off')
 
-                plt.suptitle(f'Sample {idx+1} - Original vs Reconstructed', y=1.02)
-                plt.tight_layout()
-                plt.show()
+            plt.subplot(2, 3, 2)
+            plt.imshow(orig_vol[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Coronal")
+            plt.axis('off')
 
-            break  # Only process first batch
+            plt.subplot(2, 3, 3)
+            plt.imshow(orig_vol[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Sagittal")
+            plt.axis('off')
 
-def compute_metrics(model, val_loader):
-    """Compute quantitative metrics on validation set"""
+            # Plot reconstructed slices
+            plt.subplot(2, 3, 4)
+            plt.imshow(recon_vol[z_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Reconstructed - Axial")
+            plt.axis('off')
+
+            plt.subplot(2, 3, 5)
+            plt.imshow(recon_vol[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+            plt.title("Reconstructed - Coronal")
+            plt.axis('off')
+
+            plt.subplot(2, 3, 6)
+            plt.imshow(recon_vol[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Reconstructed - Sagittal")
+            plt.axis('off')
+
+            plt.tight_layout()
+            plt.show()
+
+def compute_reconstruction_error(model, dataloader):
+    """Compute detailed reconstruction error metrics on validation set"""
     device = next(model.parameters()).device
-    mse_criterion = nn.MSELoss()
+    criterion = nn.MSELoss(reduction='none')
 
     total_mse = 0
     total_samples = 0
+    error_by_label = {}
 
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Computing metrics"):
+        for batch in tqdm(dataloader, desc="Computing metrics"):
             volumes = batch['volume'].to(device)
+            labels = batch['label']
+
+            # Get reconstructions
             reconstructed = model(volumes)
 
-            mse = mse_criterion(reconstructed, volumes).item()
-            total_mse += mse * volumes.shape[0]
+            # Compute MSE loss per sample
+            mse = criterion(reconstructed, volumes)
+
+            # Average over dimensions
+            mse = mse.mean(dim=(1, 2, 3, 4)).cpu().numpy()
+
+            # Track overall error
+            total_mse += mse.sum()
             total_samples += volumes.shape[0]
 
-    avg_mse = total_mse / total_samples
-    print(f"\nValidation Metrics:")
-    print(f"Average MSE: {avg_mse:.6f}")
-    print(f"RMSE: {np.sqrt(avg_mse):.6f}")
+            # Track error by label
+            for i, label in enumerate(labels):
+                if label not in error_by_label:
+                    error_by_label[label] = []
+                error_by_label[label].append(mse[i])
 
-# Example usage
+    # Calculate overall metrics
+    avg_mse = total_mse / total_samples
+    rmse = np.sqrt(avg_mse)
+
+    print("\nReconstruction Error Metrics:")
+    print(f"Overall MSE: {avg_mse:.6f}")
+    print(f"Overall RMSE: {rmse:.6f}")
+
+    # Calculate metrics by group
+    print("\nReconstruction Error by Group:")
+    for label, errors in error_by_label.items():
+        group_mse = np.mean(errors)
+        group_rmse = np.sqrt(group_mse)
+        group_std = np.std(errors)
+        print(f"{label}:")
+        print(f"  MSE: {group_mse:.6f} ± {group_std:.6f}")
+        print(f"  RMSE: {group_rmse:.6f}")
+
+    # Plot error distribution by group
+    plt.figure(figsize=(10, 6))
+    for label, errors in error_by_label.items():
+        plt.hist(errors, alpha=0.5, label=label, bins=20)
+
+    plt.title("Reconstruction Error Distribution by Group")
+    plt.xlabel("Mean Squared Error")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+    return avg_mse, error_by_label
+
+def extract_latent_vectors(model, dataloader, max_samples=None):
+    """Extract latent vectors from all samples in the dataloader"""
+    device = next(model.parameters()).device
+
+    latent_vectors = []
+    labels = []
+    paths = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Extracting latent vectors"):
+            volumes = batch['volume'].to(device)
+            batch_labels = batch['label']
+            batch_paths = batch['path']
+
+            # Extract latent vectors
+            z = model.encode(volumes)
+
+            # Store results
+            latent_vectors.append(z.cpu().numpy())
+            labels.extend(batch_labels)
+            paths.extend(batch_paths)
+
+            # Check if we have enough samples
+            if max_samples and len(labels) >= max_samples:
+                latent_vectors = np.vstack(latent_vectors)
+                latent_vectors = latent_vectors[:max_samples]
+                labels = labels[:max_samples]
+                paths = paths[:max_samples]
+                break
+
+    # Stack all latent vectors if we didn't break early
+    if isinstance(latent_vectors[0], np.ndarray):
+        latent_vectors = np.vstack(latent_vectors)
+
+    return latent_vectors, labels, paths
+
+def visualize_latent_space(latent_vectors, labels, method='tsne'):
+    """Visualize latent space using t-SNE or PCA"""
+    plt.figure(figsize=(10, 8))
+
+    # Create label-to-color mapping for consistent colors
+    unique_labels = list(set(labels))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
+    label_to_color = {label: colors[i] for i, label in enumerate(unique_labels)}
+
+    # Apply dimensionality reduction
+    if method.lower() == 'tsne':
+        print("Computing t-SNE projection...")
+        reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, len(latent_vectors) - 1))
+        title = 't-SNE Visualization of Latent Space'
+    else:
+        print("Computing PCA projection...")
+        reducer = PCA(n_components=2, random_state=42)
+        title = 'PCA Visualization of Latent Space'
+
+    # Apply reduction
+    reduced_vecs = reducer.fit_transform(latent_vectors)
+
+    # Create scatter plot
+    for label in unique_labels:
+        # Get indices where this label appears
+        indices = [i for i, l in enumerate(labels) if l == label]
+
+        # Plot these points
+        plt.scatter(
+            reduced_vecs[indices, 0],
+            reduced_vecs[indices, 1],
+            label=label,
+            color=label_to_color[label],
+            alpha=0.7,
+            edgecolor='w',
+            s=100
+        )
+
+    plt.title(title, fontsize=14)
+    plt.xlabel("Dimension 1", fontsize=12)
+    plt.ylabel("Dimension 2", fontsize=12)
+    plt.legend(title="Group", fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    return reduced_vecs
+
+def plot_latent_dimension_activation(latent_vectors, labels):
+    """Analyze activation patterns of latent dimensions"""
+    # Create a DataFrame with latent dimensions and labels
+    import pandas as pd
+
+    # First, convert labels to categorical for better plotting
+    unique_labels = list(set(labels))
+    label_map = {label: i for i, label in enumerate(unique_labels)}
+    label_indices = [label_map[label] for label in labels]
+
+    # Create DataFrames
+    latent_df = pd.DataFrame(latent_vectors)
+    latent_df['label'] = labels
+
+    # Compute mean activation by group
+    mean_activations = {}
+    for label in unique_labels:
+        group_vectors = latent_vectors[np.array(labels) == label]
+        mean_activations[label] = np.mean(group_vectors, axis=0)
+
+    # Identify top discriminative dimensions
+    activation_matrix = np.vstack([mean_activations[label] for label in unique_labels])
+    variance = np.var(activation_matrix, axis=0)
+    top_dims = np.argsort(variance)[-10:]  # Top 10 dimensions
+
+    # Plot mean activation for top dimensions
+    plt.figure(figsize=(14, 6))
+
+    # Plot heatmap
+    plt.subplot(1, 2, 1)
+    heatmap_data = pd.DataFrame({
+        f"Dim {i}": [mean_activations[label][i] for label in unique_labels]
+        for i in top_dims
+    })
+    heatmap_data.index = unique_labels
+
+    sns.heatmap(heatmap_data, cmap='coolwarm', center=0,
+               annot=True, fmt=".2f", cbar_kws={'label': 'Mean Activation'})
+    plt.title("Mean Activation of Top Discriminative Dimensions")
+
+    # Plot box plots for top 5 dimensions
+    plt.subplot(1, 2, 2)
+
+    # Create data for boxplot
+    plot_data = []
+    labels_for_plot = []
+    positions = []
+
+    for i, dim in enumerate(top_dims[:5]):  # Top 5 for clarity
+        for j, label in enumerate(unique_labels):
+            group_values = latent_vectors[np.array(labels) == label, dim]
+            plot_data.append(group_values)
+            labels_for_plot.append(f"{label}")
+            positions.append(i + j * 0.25)
+
+    # Create boxplot
+    boxplot = plt.boxplot(plot_data, positions=positions, patch_artist=True, widths=0.15)
+
+    # Customize boxplot colors
+    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
+    for i, label in enumerate(unique_labels):
+        indices = [j for j, l in enumerate(labels_for_plot) if l == label]
+        for idx in indices:
+            boxplot['boxes'][idx].set_facecolor(colors[i])
+
+    # Add labels and ticks
+    plt.xticks([i + (len(unique_labels) - 1) * 0.125 for i in range(5)],
+              [f"Dim {d}" for d in top_dims[:5]])
+    plt.title("Distribution of Top 5 Discriminative Dimensions")
+    plt.ylabel("Activation Value")
+
+    # Add legend
+    for i, label in enumerate(unique_labels):
+        plt.plot([], [], 'o', color=colors[i], label=label)
+    plt.legend(title="Group")
+
+    plt.tight_layout()
+    plt.show()
+
+    return top_dims
+
+def find_outliers(model, dataloader, threshold_std=2.5):
+    """Identify outliers based on reconstruction error"""
+    device = next(model.parameters()).device
+    criterion = nn.MSELoss(reduction='none')
+
+    all_errors = []
+    all_paths = []
+    all_labels = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Finding outliers"):
+            volumes = batch['volume'].to(device)
+            paths = batch['path']
+            labels = batch['label']
+
+            # Get reconstructions
+            reconstructed = model(volumes)
+
+            # Compute MSE loss per sample
+            mse = criterion(reconstructed, volumes)
+
+            # Average over dimensions
+            mse = mse.mean(dim=(1, 2, 3, 4)).cpu().numpy()
+
+            # Store results
+            all_errors.extend(mse)
+            all_paths.extend(paths)
+            all_labels.extend(labels)
+
+    # Convert to numpy arrays
+    all_errors = np.array(all_errors)
+
+    # Compute statistics
+    mean_error = np.mean(all_errors)
+    std_error = np.std(all_errors)
+
+    # Find outliers (samples with error > mean + threshold_std * std)
+    threshold = mean_error + threshold_std * std_error
+    outlier_indices = np.where(all_errors > threshold)[0]
+
+    print(f"\nOutlier Analysis:")
+    print(f"Mean error: {mean_error:.6f}")
+    print(f"Error standard deviation: {std_error:.6f}")
+    print(f"Outlier threshold: {threshold:.6f}")
+    print(f"Found {len(outlier_indices)} outliers out of {len(all_errors)} samples ({len(outlier_indices)/len(all_errors)*100:.2f}%)")
+
+    # Create dictionary of outliers
+    outliers = {
+        all_paths[i]: {
+            'error': all_errors[i],
+            'label': all_labels[i],
+            'z_score': (all_errors[i] - mean_error) / std_error
+        }
+        for i in outlier_indices
+    }
+
+    # Plot error distribution with outlier threshold
+    plt.figure(figsize=(10, 6))
+    plt.hist(all_errors, bins=30, alpha=0.7)
+    plt.axvline(threshold, color='r', linestyle='--', label=f'Threshold ({threshold_std} std)')
+    plt.title("Reconstruction Error Distribution")
+    plt.xlabel("Mean Squared Error")
+    plt.ylabel("Count")
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+    return outliers, all_errors, all_paths, all_labels
+
+def visualize_outliers(model, outliers, threshold=0.01):
+    """Visualize the top outliers with highest reconstruction error"""
+    device = next(model.parameters()).device
+
+    # Sort outliers by error (descending)
+    sorted_outliers = sorted(outliers.items(), key=lambda x: x[1]['error'], reverse=True)
+
+    # Visualize top outliers
+    num_outliers = min(5, len(sorted_outliers))
+
+    for i in range(num_outliers):
+        path, info = sorted_outliers[i]
+        error = info['error']
+        label = info['label']
+        z_score = info['z_score']
+
+        try:
+            # Load the original volume
+            with torch.no_grad():
+                # Load DICOM file
+                original_volume, _ = load_dicom(path)
+                original_volume = original_volume[9:73, :, :]
+
+                # Process volume
+                norm_vol, _, _ = process_volume(original_volume, target_shape=(64, 128, 128))
+
+                # Convert to tensor and add batch dimension
+                vol_tensor = torch.from_numpy(np.expand_dims(norm_vol, axis=(0, 1))).float().to(device)
+
+                # Get reconstruction
+                reconstructed = model(vol_tensor)
+
+                # Move tensors to CPU and remove batch and channel dimensions
+                vol_np = vol_tensor.cpu().squeeze().numpy()
+                recon_np = reconstructed.cpu().squeeze().numpy()
+
+                # Create figure
+                fig = plt.figure(figsize=(15, 10))
+                plt.suptitle(f"Outlier {i+1}: {path.split('/')[-1]}\nGroup: {label}, Error: {error:.6f}, Z-score: {z_score:.2f}", fontsize=14)
+
+                # Define slice indices
+                z_slice = vol_np.shape[0] // 2
+                y_slice = vol_np.shape[1] // 2
+                x_slice = vol_np.shape[2] // 2
+
+                # Plot original axial slice
+                plt.subplot(2, 3, 1)
+                plt.imshow(vol_np[z_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title("Original - Axial")
+                plt.axis('off')
+
+                # Plot original coronal slice
+                plt.subplot(2, 3, 2)
+                plt.imshow(vol_np[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+                plt.title("Original - Coronal")
+                plt.axis('off')
+
+                # Plot original sagittal slice
+                plt.subplot(2, 3, 3)
+                plt.imshow(vol_np[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title("Original - Sagittal")
+                plt.axis('off')
+
+                # Plot reconstructed axial slice
+                plt.subplot(2, 3, 4)
+                plt.imshow(recon_np[z_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title("Reconstructed - Axial")
+                plt.axis('off')
+
+                # Plot reconstructed coronal slice
+                plt.subplot(2, 3, 5)
+                plt.imshow(recon_np[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+                plt.title("Reconstructed - Coronal")
+                plt.axis('off')
+
+                # Plot reconstructed sagittal slice
+                plt.subplot(2, 3, 6)
+                plt.imshow(recon_np[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title("Reconstructed - Sagittal")
+                plt.axis('off')
+
+                plt.tight_layout()
+                plt.show()
+
+        except Exception as e:
+            print(f"Error visualizing outlier {path}: {e}")
+
+# Run evaluation if this cell is executed
 if __name__ == "__main__":
-    # Load latest checkpoint
-    model, metadata = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    # Uncomment the following to run evaluation
+
+    # Load model and metadata
+    model, metadata = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
 
     # Plot training history
     plot_training_history(metadata)
 
     # Visualize reconstructions
-    visualize_reconstructions(model, val_loader)
+    visualize_reconstruction_samples(model, val_loader, num_samples=3)
 
-    # Compute metrics
-    compute_metrics(model, val_loader)
+    # Compute reconstruction error
+    avg_mse, error_by_label = compute_reconstruction_error(model, val_loader)
+
+    # Extract and visualize latent space
+    latent_vectors, labels, paths = extract_latent_vectors(model, val_loader, max_samples=200)
+    reduced_vecs = visualize_latent_space(latent_vectors, labels, method='tsne')
+    reduced_vecs = visualize_latent_space(latent_vectors, labels, method='pca')
+
+    # Analyze latent dimensions
+    top_dims = plot_latent_dimension_activation(latent_vectors, labels)
+
+    # Find and visualize outliers
+    outliers, all_errors, all_paths, all_labels = find_outliers(model, val_loader, threshold_std=2.5)
+    visualize_outliers(model, outliers)
+
+# Cell 15: Visualizing Latent Dimensions in Brain Space
+import torch
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import LinearSegmentedColormap
+import torch.nn.functional as F
+
+def visualize_latent_dimension(model, dataloader, dimension_idx, alpha=5.0, group=None):
+    """
+    Visualize what a specific latent dimension represents by modifying it
+    and observing the effect on brain reconstruction.
+
+    Parameters:
+        model: Trained autoencoder model
+        dataloader: DataLoader containing samples
+        dimension_idx: The latent dimension to manipulate (e.g., 231)
+        alpha: Strength of the dimension manipulation
+        group: Optional filter for specific patient group (e.g., 'PD', 'Control')
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    # Find a suitable sample (optionally from specific group)
+    for batch in dataloader:
+        volumes = batch['volume']
+        labels = batch['label']
+        paths = batch['path']
+
+        if group is not None:
+            # Find samples from the specified group
+            group_indices = [i for i, label in enumerate(labels) if label == group]
+            if not group_indices:
+                continue
+            # Use the first matching sample
+            idx = group_indices[0]
+            sample = volumes[idx:idx+1].to(device)
+            sample_label = labels[idx]
+            sample_path = paths[idx]
+        else:
+            # Just use the first sample
+            sample = volumes[0:1].to(device)
+            sample_label = labels[0]
+            sample_path = paths[0]
+
+        break  # Exit after finding a sample
+
+    with torch.no_grad():
+        # Encode the sample to get its latent representation
+        z = model.encode(sample)
+
+        # Create modified latent vectors
+        z_plus = z.clone()
+        z_minus = z.clone()
+
+        # Modify the specific dimension
+        z_plus[0, dimension_idx] += alpha
+        z_minus[0, dimension_idx] -= alpha
+
+        # Decode the original and modified latent vectors
+        original_reconstruction = model.decode(z)
+        plus_reconstruction = model.decode(z_plus)
+        minus_reconstruction = model.decode(z_minus)
+
+        # Move tensors to CPU and convert to numpy for visualization
+        original_vol = original_reconstruction.cpu().squeeze().numpy()
+        plus_vol = plus_reconstruction.cpu().squeeze().numpy()
+        minus_vol = minus_reconstruction.cpu().squeeze().numpy()
+
+        # Calculate the difference maps
+        plus_diff = plus_vol - original_vol
+        minus_diff = minus_vol - original_vol
+
+        # Set up the figure
+        fig = plt.figure(figsize=(18, 15))
+        plt.suptitle(f"Visualization of Dimension {dimension_idx} in Brain Space\nPatient Group: {sample_label}", fontsize=16)
+
+        # Define slice indices for visualization
+        z_indices = [original_vol.shape[0]//4, original_vol.shape[0]//2, 3*original_vol.shape[0]//4]
+        y_indices = [original_vol.shape[1]//2]
+        x_indices = [original_vol.shape[2]//2]
+
+        # Create a custom colormap for difference maps
+        diff_cmap = LinearSegmentedColormap.from_list('diff_cmap', ['blue', 'lightgray', 'red'], N=256)
+
+        # Plot the axial slices
+        for i, z_idx in enumerate(z_indices):
+            # Original reconstruction
+            ax = plt.subplot(5, 3, i+1)
+            plt.imshow(original_vol[z_idx], cmap='gray')
+            plt.title(f"Original (Axial z={z_idx})" if i == 0 else f"Axial z={z_idx}")
+            plt.axis('off')
+
+            # Increased dimension
+            ax = plt.subplot(5, 3, i+4)
+            plt.imshow(plus_vol[z_idx], cmap='gray')
+            plt.title(f"Dim {dimension_idx} + {alpha}" if i == 0 else "")
+            plt.axis('off')
+
+            # Decreased dimension
+            ax = plt.subplot(5, 3, i+7)
+            plt.imshow(minus_vol[z_idx], cmap='gray')
+            plt.title(f"Dim {dimension_idx} - {alpha}" if i == 0 else "")
+            plt.axis('off')
+
+            # Difference map (increased - original)
+            ax = plt.subplot(5, 3, i+10)
+            im = plt.imshow(plus_diff[z_idx], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+            plt.title(f"Difference (+)" if i == 0 else "")
+            plt.axis('off')
+
+            # Difference map (decreased - original)
+            ax = plt.subplot(5, 3, i+13)
+            plt.imshow(minus_diff[z_idx], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+            plt.title(f"Difference (-)" if i == 0 else "")
+            plt.axis('off')
+
+        # Add colorbar for difference maps
+        cbar_ax = fig.add_axes([0.93, 0.15, 0.02, 0.3])
+        cbar = plt.colorbar(im, cax=cbar_ax)
+        cbar.set_label('Difference Intensity')
+
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.92, right=0.9)
+        plt.show()
+
+        # Return both the sample info and reconstructions for further analysis
+        return {
+            'label': sample_label,
+            'path': sample_path,
+            'original': original_vol,
+            'plus': plus_vol,
+            'minus': minus_vol,
+            'plus_diff': plus_diff,
+            'minus_diff': minus_diff
+        }
+
+def explore_top_dimensions(model, dataloader, dimensions, groups=None):
+    """
+    Explore the top discriminative dimensions across different patient groups.
+
+    Parameters:
+        model: Trained autoencoder model
+        dataloader: DataLoader containing samples
+        dimensions: List of dimension indices to explore
+        groups: List of groups to include (default is all groups)
+    """
+    if groups is None:
+        # Get all unique groups from the first batch
+        for batch in dataloader:
+            groups = list(set(batch['label']))
+            break
+
+    for dimension in dimensions:
+        print(f"\n{'='*80}")
+        print(f"Exploring Dimension {dimension}")
+        print(f"{'='*80}")
+
+        for group in groups:
+            print(f"\nVisualizing for group: {group}")
+            results = visualize_latent_dimension(model, dataloader, dimension, alpha=8.0, group=group)
+
+            # Optional: compute statistics about the affected regions
+            plus_diff = results['plus_diff']
+            minus_diff = results['minus_diff']
+
+            # Calculate the average absolute effect size
+            mean_effect = (np.mean(np.abs(plus_diff)) + np.mean(np.abs(minus_diff))) / 2
+
+            # Find the regions most affected (top 5% of voxels)
+            top_voxels_plus = np.percentile(np.abs(plus_diff), 95)
+            top_voxels_minus = np.percentile(np.abs(minus_diff), 95)
+
+            print(f"  Mean effect size: {mean_effect:.5f}")
+            print(f"  Top 5% threshold: +{top_voxels_plus:.5f}, -{top_voxels_minus:.5f}")
+
+            # Optional: Add a small delay for better visualization
+            import time
+            time.sleep(1)
+
+def generate_feature_importance_map(model, dataloader, dimension_idx, group=None, num_samples=5):
+    """
+    Generate a more robust feature importance map for a specific dimension
+    by aggregating effects across multiple samples.
+
+    Parameters:
+        model: Trained autoencoder model
+        dataloader: DataLoader containing samples
+        dimension_idx: The latent dimension to analyze
+        group: Optional filter for specific patient group
+        num_samples: Number of samples to aggregate
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    # Storage for aggregated results
+    aggregated_plus_diff = None
+    aggregated_minus_diff = None
+    sample_count = 0
+
+    # Find samples (optionally from specific group)
+    for batch in dataloader:
+        volumes = batch['volume']
+        labels = batch['label']
+
+        if group is not None:
+            # Find samples from the specified group
+            group_indices = [i for i, label in enumerate(labels) if label == group]
+            indices = group_indices
+        else:
+            # Use all samples in batch
+            indices = range(len(volumes))
+
+        for idx in indices:
+            if sample_count >= num_samples:
+                break
+
+            sample = volumes[idx:idx+1].to(device)
+
+            with torch.no_grad():
+                # Encode the sample
+                z = model.encode(sample)
+
+                # Create modified latent vectors
+                z_plus = z.clone()
+                z_minus = z.clone()
+
+                # Modify the specific dimension
+                z_plus[0, dimension_idx] += 5.0
+                z_minus[0, dimension_idx] -= 5.0
+
+                # Decode the vectors
+                original_reconstruction = model.decode(z)
+                plus_reconstruction = model.decode(z_plus)
+                minus_reconstruction = model.decode(z_minus)
+
+                # Calculate the difference maps
+                plus_diff = (plus_reconstruction - original_reconstruction).cpu().squeeze().numpy()
+                minus_diff = (minus_reconstruction - original_reconstruction).cpu().squeeze().numpy()
+
+                # Aggregate the difference maps
+                if aggregated_plus_diff is None:
+                    aggregated_plus_diff = plus_diff
+                    aggregated_minus_diff = minus_diff
+                else:
+                    aggregated_plus_diff += plus_diff
+                    aggregated_minus_diff += minus_diff
+
+                sample_count += 1
+
+        if sample_count >= num_samples:
+            break
+
+    # Average the difference maps
+    aggregated_plus_diff /= sample_count
+    aggregated_minus_diff /= sample_count
+
+    # Compute absolute importance map (average of plus and minus effects)
+    importance_map = (np.abs(aggregated_plus_diff) + np.abs(aggregated_minus_diff)) / 2
+
+    # Visualize the importance map
+    fig = plt.figure(figsize=(15, 5))
+    plt.suptitle(f"Feature Importance Map for Dimension {dimension_idx}" +
+                (f" (Group: {group})" if group else ""), fontsize=16)
+
+    # Plot axial, coronal, and sagittal views
+    z_slice = importance_map.shape[0] // 2
+    y_slice = importance_map.shape[1] // 2
+    x_slice = importance_map.shape[2] // 2
+
+    plt.subplot(1, 3, 1)
+    plt.imshow(importance_map[z_slice], cmap='hot')
+    plt.title(f"Axial (z={z_slice})")
+    plt.colorbar(fraction=0.046, pad=0.04)
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(importance_map[:, y_slice, :], cmap='hot')
+    plt.title(f"Coronal (y={y_slice})")
+    plt.colorbar(fraction=0.046, pad=0.04)
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(importance_map[:, :, x_slice], cmap='hot')
+    plt.title(f"Sagittal (x={x_slice})")
+    plt.colorbar(fraction=0.046, pad=0.04)
+    plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+    return importance_map
+
+# Example usage
+if __name__ == "__main__":
+    # Load your trained model first
+    model, metadata = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
+
+    # Example 1: Visualize one specific important dimension for a specific group
+    # This shows what happens when you increase or decrease this dimension
+    visualize_latent_dimension(model, val_loader, dimension_idx=231, alpha=8.0, group='PD')
+
+    # Example 2: Compare the same dimension across different patient groups
+    # Uncomment to see how the same dimension affects different groups
+    explore_top_dimensions(model, val_loader, dimensions=[231, 94, 154], groups=['PD', 'Control', 'SWEDD'])
+
+    # Example 3: Generate a feature importance map by aggregating across multiple samples
+    # This shows which brain regions are most affected by this dimension
+    generate_feature_importance_map(model, val_loader, dimension_idx=231, group='PD', num_samples=5)
 
 """1. latent 512: MSE val 0.006006; RMSE: 0.0775
 2. latent 256: MSE val 0.0067
@@ -1648,552 +2714,13 @@ if __name__ == "__main__":
 
 1. masked latent 128: 0.004508
 2. masked latent 256: 0.004092
-"""
 
-visualize_reconstructions(model, val_loader)
-
-"""### Find outliers"""
-
-import torch.nn.functional as F
-reconstruction_errors = {}
-with torch.no_grad():
-    for b in tqdm(train_loader):
-        m = b['volume'].to(device)
-        o = model(m)
-        l = F.mse_loss(o, m, reduction='none')
-        l = l.view(l.size(0), -1).mean(dim=1)
-        for label, error in zip(b['path'], l):
-                reconstruction_errors[label] = error.item()
-
-reconstruction_val = {}
-with torch.no_grad():
-    for b in tqdm(val_loader):
-        m = b['volume'].to(device)
-        o = model(m)
-        l = F.mse_loss(o, m, reduction='none')
-        l = l.view(l.size(0), -1).mean(dim=1)
-        for label, error in zip(b['path'], l):
-                reconstruction_val[label] = error.item()
-
-#_=plt.hist(reconstruction_errors.values(),1000)
-plt.rcdefaults()
-_=plt.hist(reconstruction_errors.values(),100)
-_=plt.hist(reconstruction_val.values(),30,alpha=0.5)
-#plt.xlim(0,0.001)
-
-badPT = {label: error for label, error in reconstruction_val.items() if error>.009}
-
-err*1e4
-
-maskH = nib.load('rmask_ICV.nii')
-maskM = maskH.get_fdata()>0.5
-maskM = np.transpose(maskM,[2, 1, 0])
-maskM = np.flip(maskM,axis=1)
-with torch.no_grad():
-    for path, err in badPT.items(): #badPT.items()
-        original_volume, _ = load_dicom(path)
-        original_volume *= maskM
-        original_volume = original_volume[9:73,:,:]
-        norm_vol, _, _ = process_volume(original_volume, target_shape=(64,128,128))
-        inpT =  torch.from_numpy(np.expand_dims(norm_vol,axis=(0,1))).float()
-        inpT = inpT.to(device)
-       # model.to(device)
-        o = model(inpT)
-        o = o.to('cpu')
-        plt.figure()
-        plt.subplot(121)
-        plt.imshow(o[0,0,33,:,:],vmin=0,vmax=3)
-        plt.title(path[22:35])
-        plt.axis('off')
-        plt.subplot(122)
-        plt.imshow(norm_vol[33,:,:],vmin=0,vmax=3)
-        plt.axis('off')
-        plt.figure()
-        plt.subplot(121)
-        plt.imshow(o[0,0,:,50,:],vmin=0,vmax=3)
-        plt.title(f'error{err*1e4:.2f}')
-        plt.axis('off')
-        plt.subplot(122)
-        plt.imshow(norm_vol[:,50,:],vmin=0,vmax=3)
-        plt.axis('off')
-        plt.figure()
-        plt.subplot(121)
-        plt.imshow(o[0,0,:,:,75],vmin=0,vmax=3)
-        plt.axis('off')
-        plt.subplot(122)
-        plt.imshow(norm_vol[:,:,75],vmin=0,vmax=3)
-        plt.axis('off')
-        plt.show()
-        input("press any key")
-
-        plt.close()
-
-plt.imshow(norm_vol[32,:,:])
-plt.colorbar()
-
-for b in train_loader:
-    for iIdx in range(15):
-        plt.figure()
-        plt.subplot(1,3,1)
-        plt.imshow(b['volume'][iIdx,0,32,:,:],vmin=0,vmax=1)
-        plt.subplot(1,3,2)
-        plt.imshow(b['volume'][iIdx,0,:,70,:],vmin=0,vmax=1)
-        plt.subplot(1,3,3)
-        plt.imshow(b['volume'][iIdx,0,:,:,64],vmin=0,vmax=1)
-
-"""### Latent Space Analysis"""
-
-# Cell 15: Latent Space Analysis
-import torch
-import numpy as np
-import seaborn as sns
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-from collections import defaultdict
-
-def extract_latent_representations(model, dataloader, device):
-    """
-    Extract latent representations and corresponding labels for all samples
-    """
-    model.eval()
-    latent_vectors = []
-    labels = []
-
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Extracting latent representations"):
-            volumes = batch['volume'].to(device)
-            # Get latent vectors using the encode method
-            z = model.encode(volumes)
-            latent_vectors.append(z.cpu().numpy())
-            labels.extend(batch['label'])
-
-            # Clean up memory
-            del volumes, z
-            torch.cuda.empty_cache()
-
-    return np.vstack(latent_vectors), np.array(labels)
-
-def visualize_latent_space(latent_vectors, labels, method='tsne'):
-    """
-    Visualize latent space using t-SNE or PCA
-    """
-    plt.figure(figsize=(12, 8))
-
-    if method == 'tsne':
-        reducer = TSNE(n_components=2, random_state=42)
-        title = 't-SNE Visualization of Latent Space'
-    else:
-        reducer = PCA(n_components=2, random_state=42)
-        title = 'PCA Visualization of Latent Space'
-
-    # Reduce dimensionality
-    reduced_vecs = reducer.fit_transform(latent_vectors)
-
-    # Create scatter plot
-    unique_labels = np.unique(labels)
-    colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_labels)))
-
-    for label, color in zip(unique_labels, colors):
-        mask = labels == label
-        plt.scatter(reduced_vecs[mask, 0], reduced_vecs[mask, 1],
-                   label=label, color=color, alpha=0.6)
-
-    plt.title(title)
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
-    return reduced_vecs
-
-def analyze_latent_dimensions(latent_vectors, labels):
-    """
-    Analyze the distribution of values in each latent dimension
-    """
-    plt.figure(figsize=(15, 6))
-
-    # Plot distribution of latent values per group
-    unique_labels = np.unique(labels)
-
-    # Compute mean activation per dimension for each group
-    mean_activations = defaultdict(list)
-    for label in unique_labels:
-        mask = labels == label
-        mean_activations[label] = np.mean(latent_vectors[mask], axis=0)
-
-    # Plot heatmap of mean activations
-    activation_matrix = np.vstack([mean_activations[label] for label in unique_labels])
-    plt.subplot(1, 2, 1)
-    sns.heatmap(activation_matrix, xticklabels=False, yticklabels=unique_labels)
-    plt.title('Mean Latent Dimension Activation by Group')
-    plt.xlabel('Latent Dimensions')
-    plt.ylabel('Group')
-
-    # Plot top discriminative dimensions
-    variance_ratio = np.var(activation_matrix, axis=0)
-    top_dims = np.argsort(variance_ratio)[-5:]  # Top 5 dimensions
-
-    plt.subplot(1, 2, 2)
-    for label in unique_labels:
-        mask = labels == label
-        plt.boxplot([latent_vectors[mask, dim] for dim in top_dims],
-                   positions=np.arange(len(top_dims)) + (unique_labels == label).nonzero()[0][0] * 0.3,
-                   widths=0.2, label=label)
-
-    plt.title('Distribution of Top 5 Discriminative Dimensions')
-    plt.xlabel('Dimension Index')
-    plt.ylabel('Activation')
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-# Run the analysis
-if __name__ == "__main__":
-    # Load model and move to device
-    model, _ = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    # Extract latent representations
-    latent_vecs, labels = extract_latent_representations(model, val_loader, device)
-
-    # Visualize using t-SNE and PCA
-    print("Generating t-SNE visualization...")
-    tsne_coords = visualize_latent_space(latent_vecs, labels, method='tsne')
-
-    print("\nGenerating PCA visualization...")
-    pca_coords = visualize_latent_space(latent_vecs, labels, method='pca')
-
-    # Analyze latent dimensions
-    print("\nAnalyzing latent dimensions...")
-    analyze_latent_dimensions(latent_vecs, labels)
-
-# Cell 16: Region-based Reconstruction Analysis
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.ndimage import center_of_mass
-
-def analyze_reconstruction_quality_by_region(model, dataloader, device):
-    """
-    Analyze reconstruction quality in different brain regions
-    """
-    model.eval()
-    region_errors = defaultdict(list)
-
-    # Define regions of interest (approximate coordinates for DaTSCAN)
-    regions = {
-        'Left Striatum': (slice(54, 74), slice(54, 74), slice(44, 64)),
-        'Right Striatum': (slice(54, 74), slice(54, 74), slice(64, 84)),
-        'Background': (slice(0, 20), slice(0, 20), slice(0, 20))
-    }
-
-    with torch.no_grad():
-        for batch in tqdm(dataloader, desc="Analyzing reconstruction quality"):
-            volumes = batch['volume'].to(device)
-            reconstructed = model(volumes)
-
-            # Calculate error for each region
-            for vol_idx in range(volumes.shape[0]):
-                orig = volumes[vol_idx, 0].cpu().numpy()
-                recon = reconstructed[vol_idx, 0].cpu().numpy()
-
-                for region_name, coords in regions.items():
-                    orig_region = orig[coords]
-                    recon_region = recon[coords]
-                    mse = np.mean((orig_region - recon_region) ** 2)
-                    region_errors[region_name].append(mse)
-
-            # Clean up
-            del volumes, reconstructed
-            torch.cuda.empty_cache()
-
-    # Plot results
-    plt.figure(figsize=(10, 6))
-    plt.boxplot([region_errors[region] for region in regions.keys()],
-                labels=regions.keys())
-    plt.title('Reconstruction Error by Brain Region')
-    plt.ylabel('Mean Squared Error')
-    plt.xticks(rotation=45)
-    plt.grid(True)
-    plt.show()
-
-    # Print summary statistics
-    print("\nReconstruction Error Statistics by Region:")
-    for region in regions.keys():
-        errors = region_errors[region]
-        print(f"\n{region}:")
-        print(f"Mean MSE: {np.mean(errors):.6f}")
-        print(f"Std MSE: {np.std(errors):.6f}")
-        print(f"Min MSE: {np.min(errors):.6f}")
-        print(f"Max MSE: {np.max(errors):.6f}")
-
-# Run the analysis
-if __name__ == "__main__":
-    print("Analyzing reconstruction quality by region...")
-    analyze_reconstruction_quality_by_region(model, val_loader, device)
-
-# Cell 17: Latent Space Clinical Correlation
-import numpy as np
-from scipy.stats import spearmanr
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-def analyze_latent_clinical_correlation(latent_vectors, labels):
-    """
-    Analyze correlation between latent dimensions and clinical groups
-    """
-    # Convert labels to numeric for correlation analysis
-    label_mapping = {label: idx for idx, label in enumerate(np.unique(labels))}
-    numeric_labels = np.array([label_mapping[label] for label in labels])
-
-    # Calculate correlation between each latent dimension and the clinical groups
-    correlations = []
-    p_values = []
-
-    for dim_idx in range(latent_vectors.shape[1]):
-        corr, p_val = spearmanr(latent_vectors[:, dim_idx], numeric_labels)
-        correlations.append(corr)
-        p_values.append(p_val)
-
-    # Plot correlation heatmap
-    plt.figure(figsize=(15, 5))
-
-    # Plot correlations
-    plt.subplot(1, 2, 1)
-    significant_dims = np.array(p_values) < 0.05
-    plt.bar(range(len(correlations)), correlations,
-            color=['red' if sig else 'gray' for sig in significant_dims])
-    plt.title('Correlation of Latent Dimensions with Clinical Groups')
-    plt.xlabel('Latent Dimension')
-    plt.ylabel('Correlation Coefficient')
-    plt.grid(True)
-
-    # Plot most discriminative dimensions
-    top_dims = np.argsort(np.abs(correlations))[-5:]
-    plt.subplot(1, 2, 2)
-    for label in np.unique(labels):
-        mask = labels == label
-        values = latent_vectors[mask][:, top_dims]
-        plt.violinplot(values, positions=range(len(top_dims)),
-                      showmeans=True, showextrema=True)
-
-    plt.title('Distribution of Top Discriminative Dimensions')
-    plt.xlabel('Dimension Index')
-    plt.ylabel('Activation')
-    plt.tight_layout()
-    plt.show()
-
-    # Print summary of most significant dimensions
-    print("\nTop 5 Most Discriminative Dimensions:")
-    for dim_idx in top_dims:
-        print(f"\nDimension {dim_idx}:")
-        print(f"Correlation: {correlations[dim_idx]:.3f}")
-        print(f"P-value: {p_values[dim_idx]:.3e}")
-
-# Run the analysis
-if __name__ == "__main__":
-    print("Analyzing latent space clinical correlations...")
-    analyze_latent_clinical_correlation(latent_vecs, labels)
-
-"""### Synthetic Brain Generation"""
-
-# Cell 18: Synthetic Brain Generation
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import norm
-
-def generate_synthetic_brain(model, dataloader, condition='PD', num_samples=5):
-    """
-    Generate synthetic brain scans by manipulating the latent space
-
-    Args:
-        model: Trained autoencoder model
-        dataloader: DataLoader containing the validation set
-        condition: Target condition ('PD', 'Control', or 'SWEDD')
-        num_samples: Number of synthetic samples to generate
-    """
-    device = next(model.parameters()).device
-    model.eval()
-
-    # First, get latent representations of real brains
-    print("Extracting latent representations...")
-    latent_vectors = []
-    conditions = []
-
-    with torch.no_grad():
-        for batch in dataloader:
-            volumes = batch['volume'].to(device)
-            labels = batch['label']
-
-            # Get latent vectors
-            z = model.encode(volumes)
-            latent_vectors.append(z.cpu().numpy())
-            conditions.extend(labels)
-
-            del volumes, z
-            torch.cuda.empty_cache()
-
-    latent_vectors = np.vstack(latent_vectors)
-    conditions = np.array(conditions)
-
-    # Calculate mean and covariance of latent vectors for target condition
-    target_mask = conditions == condition
-    target_vectors = latent_vectors[target_mask]
-    latent_mean = np.mean(target_vectors, axis=0)
-    latent_cov = np.cov(target_vectors.T)
-
-    # Generate new latent vectors by sampling from learned distribution
-    print(f"\nGenerating synthetic {condition} brains...")
-    synthetic_vectors = np.random.multivariate_normal(
-        latent_mean,
-        latent_cov + 1e-6 * np.eye(latent_cov.shape[0]),  # Add small value to ensure positive definiteness
-        size=num_samples
-    )
-
-    # Convert to torch tensor and move to device
-    synthetic_vectors = torch.tensor(synthetic_vectors, dtype=torch.float32).to(device)
-
-    # Generate synthetic brains using decoder
-    with torch.no_grad():
-        synthetic_brains = model.decode(synthetic_vectors)
-
-    # Visualize results
-    fig = plt.figure(figsize=(15, 3*num_samples))
-
-    for i in range(num_samples):
-        brain = synthetic_brains[i, 0].cpu().numpy()
-
-        # Get middle slices
-        axial = brain[brain.shape[0]//2, :, :]
-        sagittal = brain[:, brain.shape[1]//2, :]
-        coronal = brain[:, :, brain.shape[2]//2]
-
-        # Plot
-        plt.subplot(num_samples, 3, i*3 + 1)
-        plt.imshow(axial, cmap='gray')
-        plt.title(f'Synthetic {condition} - Axial' if i == 0 else '')
-        plt.axis('off')
-
-        plt.subplot(num_samples, 3, i*3 + 2)
-        plt.imshow(sagittal, cmap='gray')
-        plt.title(f'Synthetic {condition} - Sagittal' if i == 0 else '')
-        plt.axis('off')
-
-        plt.subplot(num_samples, 3, i*3 + 3)
-        plt.imshow(coronal, cmap='gray')
-        plt.title(f'Synthetic {condition} - Coronal' if i == 0 else '')
-        plt.axis('off')
-
-    plt.tight_layout()
-    plt.show()
-
-    return synthetic_brains
-
-def interpolate_between_conditions(model, dataloader, start_condition='Control', end_condition='PD', steps=5):
-    """
-    Generate interpolated brains between two conditions
-    """
-    device = next(model.parameters()).device
-    model.eval()
-
-    # Get latent representations
-    print("Extracting latent representations...")
-    latent_vectors = []
-    conditions = []
-
-    with torch.no_grad():
-        for batch in dataloader:
-            volumes = batch['volume'].to(device)
-            labels = batch['label']
-
-            z = model.encode(volumes)
-            latent_vectors.append(z.cpu().numpy())
-            conditions.extend(labels)
-
-            del volumes, z
-            torch.cuda.empty_cache()
-
-    latent_vectors = np.vstack(latent_vectors)
-    conditions = np.array(conditions)
-
-    # Get mean latent vectors for both conditions
-    start_mean = np.mean(latent_vectors[conditions == start_condition], axis=0)
-    end_mean = np.mean(latent_vectors[conditions == end_condition], axis=0)
-
-    # Create interpolation steps
-    alphas = np.linspace(0, 1, steps)
-    interpolated_vectors = np.array([
-        (1 - alpha) * start_mean + alpha * end_mean
-        for alpha in alphas
-    ])
-
-    # Generate interpolated brains
-    interpolated_vectors = torch.tensor(interpolated_vectors, dtype=torch.float32).to(device)
-
-    with torch.no_grad():
-        interpolated_brains = model.decode(interpolated_vectors)
-
-    # Visualize interpolation
-    fig = plt.figure(figsize=(15, 3*steps))
-
-    for i in range(steps):
-        brain = interpolated_brains[i, 0].cpu().numpy()
-
-        # Get middle slices
-        axial = brain[brain.shape[0]//2, :, :]
-        sagittal = brain[:, brain.shape[1]//2, :]
-        coronal = brain[:, :, brain.shape[2]//2]
-
-        # Plot
-        plt.subplot(steps, 3, i*3 + 1)
-        plt.imshow(axial, cmap='gray')
-        plt.title(f'Interpolation {i/(steps-1):.1f} - Axial' if i == 0 else '')
-        plt.axis('off')
-
-        plt.subplot(steps, 3, i*3 + 2)
-        plt.imshow(sagittal, cmap='gray')
-        plt.title(f'Interpolation {i/(steps-1):.1f} - Sagittal' if i == 0 else '')
-        plt.axis('off')
-
-        plt.subplot(steps, 3, i*3 + 3)
-        plt.imshow(coronal, cmap='gray')
-        plt.title(f'Interpolation {i/(steps-1):.1f} - Coronal' if i == 0 else '')
-        plt.axis('off')
-
-    plt.suptitle(f'Interpolation from {start_condition} to {end_condition}')
-    plt.tight_layout()
-    plt.show()
-
-    return interpolated_brains
-
-# Run the generation
-if __name__ == "__main__":
-    # Load model
-    model, _ = load_checkpoint_for_evaluation('checkpoints', 'autoencoder')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    # Generate synthetic brains for each condition
-    print("\nGenerating synthetic Control brains...")
-    synthetic_control = generate_synthetic_brain(model, val_loader, condition='Control')
-
-    print("\nGenerating synthetic PD brains...")
-    synthetic_pd = generate_synthetic_brain(model, val_loader, condition='PD')
-
-    print("\nGenerating synthetic SWEDD brains...")
-    synthetic_swedd = generate_synthetic_brain(model, val_loader, condition='SWEDD')
-
-    # Generate interpolation between conditions
-    print("\nGenerating interpolation from Control to PD...")
-    interpolated = interpolate_between_conditions(model, val_loader)
-
-"""## 2. Variational Autoencoder (VAE)
+## 2. Variational Autoencoder (VAE)
 
 ### Model Setup
 """
 
-# Cell 19: VAE Model Architecture
+# Cell 16: Optimized VAE Implementation
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -2201,7 +2728,7 @@ from collections import OrderedDict
 
 class VAE(nn.Module):
     """
-    3D Variational Autoencoder optimized for 128³ medical volumes with
+    3D Variational Autoencoder optimized for 64×128×128 medical volumes with
     memory-efficient implementation for NVIDIA 4070Ti.
     """
     def __init__(self, latent_dim=256):
@@ -2210,6 +2737,7 @@ class VAE(nn.Module):
         self.decoder = VAEDecoder(latent_dim)
         # Enable CUDNN benchmarking for optimal performance
         torch.backends.cudnn.benchmark = True
+        self.latent_dim = latent_dim
 
     def reparameterize(self, mu, log_var):
         """
@@ -2233,6 +2761,25 @@ class VAE(nn.Module):
 
         return reconstruction, mu, log_var
 
+    def encode(self, x):
+        """Encode input to latent parameters without sampling"""
+        mu, log_var = self.encoder(x)
+        return mu, log_var
+
+    def generate(self, z=None, num_samples=1):
+        """Generate samples from latent space or random samples"""
+        device = next(self.parameters()).device
+
+        if z is None:
+            # Generate random latent vectors
+            z = torch.randn(num_samples, self.latent_dim, device=device)
+
+        # Decode latent vectors to generate samples
+        with torch.no_grad():
+            samples = self.decoder(z)
+
+        return samples
+
 class ConvBlock(nn.Module):
     """Memory-efficient convolutional block with batch normalization and ReLU."""
     def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
@@ -2252,31 +2799,31 @@ class VAEEncoder(nn.Module):
         super().__init__()
 
         # Initial feature extraction
-        self.init_conv = ConvBlock(1, 16)  # 128 -> 128
+        self.init_conv = ConvBlock(1, 16)  # 64×128×128 -> same size
 
         # Downsampling path with progressive channel increase
         self.down1 = nn.Sequential(
-            ConvBlock(16, 32, stride=2),    # 128 -> 64
+            ConvBlock(16, 32, stride=2),    # -> 32×64×64
             ConvBlock(32, 32)
         )
 
         self.down2 = nn.Sequential(
-            ConvBlock(32, 64, stride=2),    # 64 -> 32
+            ConvBlock(32, 64, stride=2),    # -> 16×32×32
             ConvBlock(64, 64)
         )
 
         self.down3 = nn.Sequential(
-            ConvBlock(64, 128, stride=2),   # 32 -> 16
+            ConvBlock(64, 128, stride=2),   # -> 8×16×16
             ConvBlock(128, 128)
         )
 
         self.down4 = nn.Sequential(
-            ConvBlock(128, 256, stride=2),  # 16 -> 8
+            ConvBlock(128, 256, stride=2),  # -> 4×8×8
             ConvBlock(256, 256)
         )
 
         # Project to latent parameters
-        self.flatten_size = 256 * 8 * 8 * 4
+        self.flatten_size = 256 * 4 * 8 * 8
         self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
         self.fc_var = nn.Linear(self.flatten_size, latent_dim)
 
@@ -2284,52 +2831,49 @@ class VAEEncoder(nn.Module):
         # Initial convolution
         x = self.init_conv(x)
 
-        # Downsampling with skip connections
-        d1 = self.down1(x)
-        d2 = self.down2(d1)
-        d3 = self.down3(d2)
-        d4 = self.down4(d3)
+        # Downsampling
+        x = self.down1(x)
+        x = self.down2(x)
+        x = self.down3(x)
+        x = self.down4(x)
 
         # Flatten and project to latent parameters
-        flat = torch.flatten(d4, start_dim=1)
+        flat = torch.flatten(x, start_dim=1)
         mu = self.fc_mu(flat)
         log_var = self.fc_var(flat)
 
-        return mu, log_var #, (d1, d2, d3, d4)
+        return mu, log_var
 
 class VAEDecoder(nn.Module):
     """3D Decoder network with skip connections."""
     def __init__(self, latent_dim=256):
         super().__init__()
 
-
-        self.flatten_size = 256 * 8 * 8 * 4
+        self.flatten_size = 256 * 4 * 8 * 8
         self.fc = nn.Linear(latent_dim, self.flatten_size)
+
+        # Upsampling path with trilinear upsampling for better quality
         self.up1 = nn.Sequential(
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(256,128),
-          #  nn.ConvTranspose3d(128, 64, kernel_size=2, stride=2),  # 8 -> 16
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(256, 128),
             ConvBlock(128, 128)
         )
 
         self.up2 = nn.Sequential(
-            #nn.ConvTranspose3d(64, 32, kernel_size=2, stride=2),   # 16 -> 32
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(128,64),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(128, 64),
             ConvBlock(64, 64)
         )
 
         self.up3 = nn.Sequential(
-           # nn.ConvTranspose3d(32, 16, kernel_size=2, stride=2),    # 32 -> 64
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(64,32),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(64, 32),
             ConvBlock(32, 32)
         )
 
         self.up4 = nn.Sequential(
-            #nn.ConvTranspose3d(16, 16, kernel_size=2, stride=2),    # 64 -> 128
-            nn.Upsample(scale_factor=2,mode='trilinear'),
-            ConvBlock(32,16),
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(32, 16),
             ConvBlock(16, 16)
         )
 
@@ -2347,26 +2891,26 @@ class VAEDecoder(nn.Module):
         x = self.up3(x)
         x = self.up4(x)
 
-        # Final convolution with sigmoid activation
+        # Final convolution (no activation to allow for negative values if needed)
         x = self.final_conv(x)
 
         return x
 
-# Cell 20: VAE Loss Function Implementation
-class VAELoss:
+# Custom loss function for VAE
+class VAELoss(nn.Module):
     """
-    Custom loss function for VAE combining reconstruction loss and KL divergence.
-    Implements β-VAE formulation with annealing for better training stability.
+    VAE loss combining reconstruction loss and KL divergence
+    with beta parameter to control the trade-off.
     """
-    def __init__(self, beta_start=0.0, beta_end=1.0, beta_steps=10000):
-        self.beta_start = beta_start
-        self.beta_end = beta_end
-        self.beta_steps = beta_steps
+    def __init__(self, beta=0.005, beta_warmup_steps=2000):
+        super().__init__()
+        self.beta_base = beta
+        self.beta_warmup_steps = beta_warmup_steps
         self.current_step = 0
 
-    def __call__(self, recon_x, x, mu, log_var):
+    def forward(self, recon_x, x, mu, log_var):
         """
-        Compute VAE loss with annealed β-VAE formulation.
+        Calculate VAE loss with annealed beta.
 
         Args:
             recon_x: Reconstructed volume
@@ -2374,18 +2918,19 @@ class VAELoss:
             mu: Mean of latent distribution
             log_var: Log variance of latent distribution
         """
-        # Reconstruction loss (MSE)
+        # Reconstruction loss (mean squared error)
         recon_loss = F.mse_loss(recon_x, x, reduction='mean')
 
         # KL divergence
+        # See Appendix B from VAE paper: https://arxiv.org/pdf/1312.6114.pdf
         kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
 
-        # Calculate beta for current step
-        beta = min(self.beta_end,
-                  self.beta_start + (self.beta_end - self.beta_start) *
-                  (self.current_step / self.beta_steps))
+        # Calculate beta with warmup
+        beta = min(self.beta_base,
+                  self.beta_base * (self.current_step / self.beta_warmup_steps)
+                  if self.beta_warmup_steps > 0 else self.beta_base)
 
-        # Increment step
+        # Increment step counter
         self.current_step += 1
 
         # Total loss
@@ -2393,522 +2938,1020 @@ class VAELoss:
 
         return total_loss, recon_loss, kl_loss, beta
 
-"""### Config"""
+# Test VAE with dummy data
+def test_vae(batch_size=2, latent_dim=256):
+    """Test the VAE architecture and memory usage with dummy data."""
+    print("\nTesting VAE Architecture...")
 
-# Cell 21: Training Configuration and Utilities
-from tqdm.notebook import tqdm
+    try:
+        # Create model and move to GPU
+        model = VAE(latent_dim=latent_dim)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        # Create loss function
+        vae_loss = VAELoss(beta=0.005)
+
+        # Print model summary
+        num_params = sum(p.numel() for p in model.parameters())
+        print(f"\nVAE Model Parameters: {num_params:,}")
+
+        # Create dummy input
+        dummy_input = torch.randn(batch_size, 1, 64, 128, 128, device=device)
+
+        # Test forward pass
+        print("\nTesting forward pass...")
+        print_memory_stats()
+        with torch.no_grad():
+            recon, mu, log_var = model(dummy_input)
+
+        # Test loss calculation
+        loss, recon_loss, kl_loss, beta = vae_loss(recon, dummy_input, mu, log_var)
+
+        print(f"\nInput shape: {dummy_input.shape}")
+        print(f"Latent mu shape: {mu.shape}")
+        print(f"Output shape: {recon.shape}")
+        print(f"\nLoss values:")
+        print(f"Total loss: {loss.item():.6f}")
+        print(f"Reconstruction loss: {recon_loss.item():.6f}")
+        print(f"KL loss: {kl_loss.item():.6f}")
+        print(f"Beta value: {beta:.6f}")
+
+        # Check memory usage
+        print("\nGPU Memory After Forward Pass:")
+        print_memory_stats()
+
+        # Clean up
+        del model, dummy_input, recon, mu, log_var
+        torch.cuda.empty_cache()
+
+        print("\nVAE test completed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"Error testing VAE: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Run test if this cell is executed
+if __name__ == "__main__":
+    test_vae(batch_size=2, latent_dim=256)
+
+# Cell 17: VAE Training Configuration and Training Loop
 import os
-from pathlib import Path
 import json
 import time
+from pathlib import Path
+import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torch.cuda.amp as amp
+import gc
+import torch
 
 class VAEConfig:
-    """Configuration for VAE training."""
-    def __init__(self):
+    """Configuration for VAE training optimized for NVIDIA 4070Ti"""
+    def __init__(self, **kwargs):
         # Model parameters
-        self.latent_dim = 256
-        self.learning_rate = 5e-5
+        self.latent_dim = kwargs.get('latent_dim', 256)
 
         # Training parameters
-        self.batch_size = 8  # Conservative batch size for 12GB VRAM
-        self.epochs = 300
-        self.accumulation_steps =  2 # Gradient accumulation for effective batch size of 32
+        self.learning_rate = kwargs.get('learning_rate', 5e-5)
+        self.batch_size = kwargs.get('batch_size', 8)
+        self.accumulation_steps = kwargs.get('accumulation_steps', 8)  # Effective batch size of 64
+        self.epochs = kwargs.get('epochs', 100)
+        self.early_stopping_patience = kwargs.get('early_stopping_patience', 15)
 
         # Loss parameters
-        self.beta_start = .002
-        self.beta_end = 0.01
-        self.beta_steps = 8000
-
-        # Early stopping
-        self.patience = 30
-        self.min_delta = 1e-6
+        self.beta = kwargs.get('beta', 0.005)  # KL divergence weight
+        self.beta_warmup_steps = kwargs.get('beta_warmup_steps', 2000)
 
         # Optimization
-        self.use_amp = True  # Automatic mixed precision
-        self.num_workers = 4
-        self.pin_memory = True
+        self.use_mixed_precision = kwargs.get('use_mixed_precision', True)
+        self.weight_decay = kwargs.get('weight_decay', 1e-6)
+        self.gradient_clip = kwargs.get('gradient_clip', 1.0)
 
-        # Checkpoint configuration
-        self.checkpoint_dir = 'checkpoints'
-        self.model_name = 'vae_Beta001'
+        # Dataloader parameters
+        self.num_workers = kwargs.get('num_workers', 4)
+        self.pin_memory = kwargs.get('pin_memory', True)
+
+        # Checkpoint parameters
+        self.checkpoint_dir = kwargs.get('checkpoint_dir', 'checkpoints')
+        self.model_name = kwargs.get('model_name', 'vae_model')
+        self.save_interval = kwargs.get('save_interval', 5)
+
+        # Create checkpoint directory
         Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-class CheckpointHandler:
-    """Handles saving and loading of model checkpoints"""
+        # Print configuration summary
+        print(f"\n{'='*50}")
+        print(f"VAE TRAINING CONFIGURATION")
+        print(f"{'='*50}")
+        print(f"Model: {self.model_name} with latent dim {self.latent_dim}")
+        print(f"Batch size: {self.batch_size} × {self.accumulation_steps} steps = {self.batch_size * self.accumulation_steps} effective")
+        print(f"Learning rate: {self.learning_rate}")
+        print(f"Beta (KL weight): {self.beta} with {self.beta_warmup_steps} warmup steps")
+        print(f"Mixed precision: {'Enabled' if self.use_mixed_precision else 'Disabled'}")
+        print(f"Epochs: {self.epochs} with patience {self.early_stopping_patience}")
+        print(f"Dataloader workers: {self.num_workers}")
+        print(f"Checkpoints saved to: {self.checkpoint_dir}")
+        print(f"{'='*50}\n")
+
+class VAECheckpointHandler:
+    """Handles saving and loading of VAE model checkpoints"""
     def __init__(self, checkpoint_dir, model_name):
         self.checkpoint_dir = Path(checkpoint_dir)
         self.model_name = model_name
         self.checkpoint_path = self.checkpoint_dir / f"{model_name}_checkpoint.pth"
+        self.best_model_path = self.checkpoint_dir / f"{model_name}_best.pth"
         self.metadata_path = self.checkpoint_dir / f"{model_name}_metadata.json"
 
-    def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses):
-        """Save model checkpoint and training metadata"""
+        # Ensure directory exists
+        self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, model, optimizer, scheduler, epoch, train_losses, val_losses,
+           train_recon_losses, train_kl_losses, val_recon_losses, val_kl_losses,
+           is_best=False):
+        """Save VAE checkpoint with additional VAE-specific metrics"""
+        # Save model checkpoint
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
             'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
             'train_losses': train_losses,
-            'val_losses': val_losses
+            'val_losses': val_losses,
+            'train_recon_losses': train_recon_losses,
+            'train_kl_losses': train_kl_losses,
+            'val_recon_losses': val_recon_losses,
+            'val_kl_losses': val_kl_losses
         }
+
+        # Save checkpoint
         torch.save(checkpoint, self.checkpoint_path)
+
+        # Save best model separately if this is the best model
+        if is_best:
+            torch.save(model.state_dict(), self.best_model_path)
+            print(f"Saved best model to {self.best_model_path}")
 
         # Save metadata
         metadata = {
             'last_epoch': epoch,
             'train_losses': train_losses,
             'val_losses': val_losses,
+            'train_recon_losses': train_recon_losses,
+            'train_kl_losses': train_kl_losses,
+            'val_recon_losses': val_recon_losses,
+            'val_kl_losses': val_kl_losses,
             'timestamp': time.strftime("%Y-%m-%d %H:%M:%S")
         }
         with open(self.metadata_path, 'w') as f:
             json.dump(metadata, f, indent=4)
 
-    def load(self, model, optimizer, scheduler):
+    def load(self, model, optimizer=None, scheduler=None, device=None):
         """Load model checkpoint and return training metadata"""
         if not self.checkpoint_path.exists():
+            print(f"No checkpoint found at {self.checkpoint_path}")
             return None
 
-        checkpoint = torch.load(self.checkpoint_path)
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Load checkpoint
+        checkpoint = torch.load(self.checkpoint_path, map_location=device)
+
+        # Load model state
         model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        if scheduler and checkpoint['scheduler_state_dict']:
+
+        # Optionally load optimizer and scheduler states
+        if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+        if scheduler is not None and checkpoint.get('scheduler_state_dict') is not None:
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
 
         return {
             'epoch': checkpoint['epoch'],
-            'train_losses': checkpoint['train_losses'],
-            'val_losses': checkpoint['val_losses']
+            'train_losses': checkpoint.get('train_losses', []),
+            'val_losses': checkpoint.get('val_losses', []),
+            'train_recon_losses': checkpoint.get('train_recon_losses', []),
+            'train_kl_losses': checkpoint.get('train_kl_losses', []),
+            'val_recon_losses': checkpoint.get('val_recon_losses', []),
+            'val_kl_losses': checkpoint.get('val_kl_losses', [])
         }
 
-# Cell 22: Training Loop
+def create_vae_optimizer(model, config):
+    """Create optimizer with parameter groups for VAE"""
+    # Separate parameters that should have weight decay from those that shouldn't
+    decay_params = []
+    no_decay_params = []
+
+    for name, param in model.named_parameters():
+        if 'bias' in name or 'bn' in name:
+            no_decay_params.append(param)
+        else:
+            decay_params.append(param)
+
+    # Create parameter groups
+    param_groups = [
+        {'params': decay_params, 'weight_decay': config.weight_decay},
+        {'params': no_decay_params, 'weight_decay': 0.0}
+    ]
+
+    # Create optimizer
+    optimizer = optim.AdamW(param_groups, lr=config.learning_rate)
+
+    return optimizer
+
+def create_vae_scheduler(optimizer, config):
+    """Create learning rate scheduler"""
+    return ReduceLROnPlateau(
+        optimizer,
+        mode='min',
+        factor=0.5,
+        patience=5,
+        verbose=True,
+        min_lr=1e-6
+    )
+
+class VAEEarlyStopping:
+    """Early stopping handler with patience for VAE"""
+    def __init__(self, patience=10, min_delta=0, verbose=True):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.best_loss = float('inf')
+        self.early_stop = False
+        self.verbose = verbose
+        self.best_epoch = 0
+
+    def __call__(self, val_loss, epoch):
+        if val_loss < self.best_loss - self.min_delta:
+            if self.verbose:
+                improvement = self.best_loss - val_loss
+                print(f"Validation loss improved by {improvement:.6f}")
+            self.best_loss = val_loss
+            self.counter = 0
+            self.best_epoch = epoch
+            return True  # Model improved
+        else:
+            self.counter += 1
+            if self.verbose:
+                print(f"Early stopping counter: {self.counter}/{self.patience}")
+            if self.counter >= self.patience:
+                self.early_stop = True
+                if self.verbose:
+                    print(f"Early stopping triggered. Best epoch was {self.best_epoch}.")
+            return False  # Model didn't improve
+
 def train_vae(model, train_loader, val_loader, config=None):
-    """Training loop with memory optimization for 4070Ti."""
+    """Memory-optimized VAE training loop with mixed precision and gradient accumulation"""
     if config is None:
         config = VAEConfig()
 
+    # Set up device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
     # Initialize components
-    criterion = VAELoss(config.beta_start, config.beta_end, config.beta_steps)
+    criterion = VAELoss(beta=config.beta, beta_warmup_steps=config.beta_warmup_steps)
     optimizer = create_vae_optimizer(model, config)
-    scheduler = create_vae_scheduler(optimizer)
-    scaler = torch.cuda.amp.GradScaler(enabled=config.use_amp)
-    checkpoint_handler = CheckpointHandler(config.checkpoint_dir, config.model_name)
+    scheduler = create_vae_scheduler(optimizer, config)
+    early_stopping = VAEEarlyStopping(patience=config.early_stopping_patience)
+    checkpoint_handler = VAECheckpointHandler(config.checkpoint_dir, config.model_name)
 
-    # Training tracking
-    best_val_loss = float('inf')
-    patience_counter = 0
+    # Mixed precision setup
+    scaler = amp.GradScaler(enabled=config.use_mixed_precision)
+
+    # Training tracking variables
     train_losses = []
     val_losses = []
+    train_recon_losses = []
+    train_kl_losses = []
+    val_recon_losses = []
+    val_kl_losses = []
+    best_val_loss = float('inf')
+    start_time = time.time()
 
     # Load checkpoint if available
     start_epoch = 0
-    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler)
+    checkpoint_data = checkpoint_handler.load(model, optimizer, scheduler, device)
     if checkpoint_data:
         start_epoch = checkpoint_data['epoch'] + 1
-        train_losses = checkpoint_data['train_losses']
-        val_losses = checkpoint_data['val_losses']
+        train_losses = checkpoint_data.get('train_losses', [])
+        val_losses = checkpoint_data.get('val_losses', [])
+        train_recon_losses = checkpoint_data.get('train_recon_losses', [])
+        train_kl_losses = checkpoint_data.get('train_kl_losses', [])
+        val_recon_losses = checkpoint_data.get('val_recon_losses', [])
+        val_kl_losses = checkpoint_data.get('val_kl_losses', [])
         print(f"Resuming training from epoch {start_epoch}")
 
+    # Calculate total steps for progress tracking
+    total_steps = len(train_loader) * config.epochs
+
+    # Training loop
     try:
+        # Create progress bar for total training
+        total_pbar = tqdm(total=total_steps, desc="Total Progress", position=0)
+        total_pbar.update(start_epoch * len(train_loader))
+
         for epoch in range(start_epoch, config.epochs):
             # Training phase
             model.train()
-            train_loss = 0
-            train_recon_loss = 0
-            train_kl_loss = 0
+            epoch_loss = 0
+            epoch_recon_loss = 0
+            epoch_kl_loss = 0
+            current_beta = 0
+            optimizer.zero_grad()  # Zero gradients at epoch start
 
             train_pbar = tqdm(train_loader,
                             desc=f'Epoch {epoch+1}/{config.epochs} [Train]',
-                            leave=False)
+                            leave=False,
+                            position=1)
 
-            for i, batch in enumerate(train_pbar):
+            for batch_idx, batch in enumerate(train_pbar):
                 try:
+                    # Move data to device
                     volumes = batch['volume'].to(device, non_blocking=True)
 
-                    # Forward pass with mixed precision
-                    with torch.cuda.amp.autocast(enabled=config.use_amp):
-                        recon, mu, log_var = model(volumes)
-                        loss, recon_l, kl_l, beta = criterion(recon, volumes, mu, log_var)
+                    # Mixed precision forward pass
+                    with amp.autocast(enabled=config.use_mixed_precision):
+                        reconstructed, mu, log_var = model(volumes)
+                        loss, recon_loss, kl_loss, beta = criterion(reconstructed, volumes, mu, log_var)
+                        current_beta = beta
+                        # Scale loss by accumulation steps
                         loss = loss / config.accumulation_steps
 
-                    # Backward pass
+                    # Mixed precision backward pass
                     scaler.scale(loss).backward()
 
                     # Gradient accumulation
-                    if (i + 1) % config.accumulation_steps == 0:
+                    if (batch_idx + 1) % config.accumulation_steps == 0 or (batch_idx + 1 == len(train_loader)):
+                        # Clip gradients to prevent exploding gradients
+                        if config.gradient_clip > 0:
+                            scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), config.gradient_clip)
+
+                        # Update weights
                         scaler.step(optimizer)
                         scaler.update()
                         optimizer.zero_grad()
 
-                    # Track losses
-                    train_loss += loss.item() * config.accumulation_steps
-                    train_recon_loss += recon_l.item()
-                    train_kl_loss += kl_l.item()
+                    # Track loss (using the non-scaled loss for reporting)
+                    batch_loss = loss.item() * config.accumulation_steps
+                    epoch_loss += batch_loss
+                    epoch_recon_loss += recon_loss.item()
+                    epoch_kl_loss += kl_loss.item()
 
-                    # Update progress bar
+                    # Update progress bars
                     train_pbar.set_postfix({
-                        'loss': loss.item() * config.accumulation_steps,
-                        'recon': recon_l.item(),
-                        'kl': kl_l.item(),
-                        'beta': beta
+                        'loss': f"{batch_loss:.6f}",
+                        'recon': f"{recon_loss.item():.6f}",
+                        'kl': f"{kl_loss.item():.6f}",
+                        'beta': f"{beta:.6f}"
                     })
+                    total_pbar.update(1)
 
-                    # Clean up
-                    del volumes, recon, mu, log_var
+                    # Memory cleanup
+                    del volumes, reconstructed, mu, log_var, loss, recon_loss, kl_loss
                     torch.cuda.empty_cache()
 
                 except RuntimeError as e:
                     if "out of memory" in str(e):
-                        print(f"\nOOM in batch {i}. Cleaning up...")
-                        if 'volumes' in locals():
-                            del volumes
-                        if 'recon' in locals():
-                            del recon
+                        print(f"\nOOM in batch {batch_idx}. Cleaning up...")
                         torch.cuda.empty_cache()
+                        gc.collect()
+                        # Skip this batch and continue
                         continue
+                    else:
+                        print(f"RuntimeError: {str(e)}")
+                        raise e
+                except Exception as e:
+                    print(f"Unexpected error: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                     raise e
+
+            # Calculate average training losses
+            avg_train_loss = epoch_loss / len(train_loader)
+            avg_train_recon_loss = epoch_recon_loss / len(train_loader)
+            avg_train_kl_loss = epoch_kl_loss / len(train_loader)
+
+            train_losses.append(avg_train_loss)
+            train_recon_losses.append(avg_train_recon_loss)
+            train_kl_losses.append(avg_train_kl_loss)
 
             # Validation phase
             model.eval()
             val_loss = 0
+            val_recon_loss_sum = 0
+            val_kl_loss_sum = 0
 
             val_pbar = tqdm(val_loader,
                           desc=f'Epoch {epoch+1}/{config.epochs} [Val]',
-                          leave=False)
+                          leave=False,
+                          position=1)
 
             with torch.no_grad():
                 for batch in val_pbar:
                     try:
                         volumes = batch['volume'].to(device)
-                        recon, mu, log_var = model(volumes)
-                        loss, _, _, _ = criterion(recon, volumes, mu, log_var)
+                        reconstructed, mu, log_var = model(volumes)
+                        loss, recon_loss, kl_loss, _ = criterion(reconstructed, volumes, mu, log_var)
+
                         val_loss += loss.item()
+                        val_recon_loss_sum += recon_loss.item()
+                        val_kl_loss_sum += kl_loss.item()
 
-                        val_pbar.set_postfix({'loss': loss.item()})
+                        val_pbar.set_postfix({
+                            'loss': f"{loss.item():.6f}",
+                            'recon': f"{recon_loss.item():.6f}",
+                            'kl': f"{kl_loss.item():.6f}"
+                        })
 
-                        del volumes, recon, mu, log_var
+                        # Memory cleanup
+                        del volumes, reconstructed, mu, log_var, loss, recon_loss, kl_loss
                         torch.cuda.empty_cache()
 
                     except RuntimeError as e:
                         if "out of memory" in str(e):
                             print("\nOOM during validation. Cleaning up...")
-                            if 'volumes' in locals():
-                                del volumes
-                            if 'recon' in locals():
-                                del recon
                             torch.cuda.empty_cache()
+                            gc.collect()
                             continue
+                        else:
+                            print(f"RuntimeError during validation: {str(e)}")
+                            raise e
+                    except Exception as e:
+                        print(f"Unexpected error during validation: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
                         raise e
 
-            # Calculate average losses
-            avg_train_loss = train_loss / len(train_loader)
+            # Calculate average validation losses
             avg_val_loss = val_loss / len(val_loader)
+            avg_val_recon_loss = val_recon_loss_sum / len(val_loader)
+            avg_val_kl_loss = val_kl_loss_sum / len(val_loader)
 
-            train_losses.append(avg_train_loss)
             val_losses.append(avg_val_loss)
+            val_recon_losses.append(avg_val_recon_loss)
+            val_kl_losses.append(avg_val_kl_loss)
 
             # Update learning rate
             scheduler.step(avg_val_loss)
 
-            # Save checkpoint
-            checkpoint_handler.save(
-                model, optimizer, scheduler,
-                epoch, train_losses, val_losses
-            )
-
-            # Early stopping check
-            if avg_val_loss < best_val_loss - config.min_delta:
+            # Check if this is the best model
+            is_best = avg_val_loss < best_val_loss
+            if is_best:
                 best_val_loss = avg_val_loss
-                patience_counter = 0
-                # Save best model
-                torch.save(model.state_dict(),
-                         os.path.join(config.checkpoint_dir, f'{config.model_name}_best.pth'))
-            else:
-                patience_counter += 1
-                if patience_counter >= config.patience:
-                    print(f"\nEarly stopping triggered at epoch {epoch+1}")
-                    break
+
+            # Save checkpoint
+            if (epoch + 1) % config.save_interval == 0 or is_best or (epoch + 1 == config.epochs):
+                # Save additional loss components
+                checkpoint_handler.save(
+                    model, optimizer, scheduler,
+                    epoch, train_losses, val_losses,
+                    train_recon_losses, train_kl_losses,
+                    val_recon_losses, val_kl_losses,
+                    is_best=is_best
+                )
 
             # Print epoch summary
-            print(f"\nEpoch [{epoch+1}/{config.epochs}]")
-            print(f"Train Loss: {avg_train_loss:.6f}")
-            print(f"Val Loss: {avg_val_loss:.6f}")
-            print(f"Beta: {beta:.4f}")
-            print_gpu_memory_stats()  # From previous implementation
+            elapsed_time = time.time() - start_time
+            time_per_epoch = elapsed_time / (epoch - start_epoch + 1) if epoch >= start_epoch else 0
+            est_time_left = time_per_epoch * (config.epochs - epoch - 1)
+
+            print(f"\nEpoch {epoch+1}/{config.epochs} completed in {time_per_epoch:.2f}s")
+            print(f"Train Loss: {avg_train_loss:.6f} (Recon: {avg_train_recon_loss:.6f}, KL: {avg_train_kl_loss:.6f})")
+            print(f"Val Loss: {avg_val_loss:.6f} (Recon: {avg_val_recon_loss:.6f}, KL: {avg_val_kl_loss:.6f})")
+            print(f"Learning rate: {optimizer.param_groups[0]['lr']:.8f}")
+            print(f"Beta value: {current_beta:.6f}")
+            print(f"Est. time remaining: {est_time_left/60:.2f} minutes")
+            print_memory_stats()
+
+            # Early stopping check
+            if early_stopping(avg_val_loss, epoch):
+                if early_stopping.early_stop:
+                    print("\nEarly stopping triggered!")
+                    break
 
     except KeyboardInterrupt:
         print("\nTraining interrupted by user!")
+        # Still save the model
+        checkpoint_handler.save(
+            model, optimizer, scheduler,
+            epoch, train_losses, val_losses,
+            train_recon_losses, train_kl_losses,
+            val_recon_losses, val_kl_losses,
+            is_best=False
+        )
 
     finally:
+        # Close progress bars
+        if 'total_pbar' in locals():
+            total_pbar.close()
+
         # Plot training history
-        plt.figure(figsize=(10, 5))
+        plt.figure(figsize=(15, 10))
+
+        # Plot total loss
+        plt.subplot(2, 2, 1)
         plt.plot(train_losses, label='Train Loss')
         plt.plot(val_losses, label='Validation Loss')
         plt.xlabel('Epoch')
-        plt.ylabel('Loss')
+        plt.ylabel('Total Loss')
+        plt.title('Total Loss History')
         plt.legend()
         plt.grid(True)
+
+        # Plot reconstruction loss
+        plt.subplot(2, 2, 2)
+        plt.plot(train_recon_losses, label='Train Recon Loss')
+        plt.plot(val_recon_losses, label='Val Recon Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Reconstruction Loss')
+        plt.title('Reconstruction Loss History')
+        plt.legend()
+        plt.grid(True)
+
+        # Plot KL loss
+        plt.subplot(2, 2, 3)
+        plt.plot(train_kl_losses, label='Train KL Loss')
+        plt.plot(val_kl_losses, label='Val KL Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('KL Divergence Loss')
+        plt.title('KL Divergence Loss History')
+        plt.legend()
+        plt.grid(True)
+
+        # Plot recent total loss (last 30 epochs or all if < 30)
+        plt.subplot(2, 2, 4)
+        recent = min(30, len(train_losses))
+        if recent > 5:  # Only plot recent history if we have enough epochs
+            plt.plot(train_losses[-recent:], label='Train Loss')
+            plt.plot(val_losses[-recent:], label='Validation Loss')
+            plt.xlabel('Epoch')
+            plt.ylabel('Total Loss')
+            plt.title(f'Last {recent} Epochs')
+            plt.legend()
+            plt.grid(True)
+
+        plt.tight_layout()
         plt.savefig(os.path.join(config.checkpoint_dir, f"{config.model_name}_training_history.png"))
         plt.show()
 
-    return train_losses, val_losses
+        # Print final training summary
+        total_time = time.time() - start_time
+        print(f"\nTraining completed in {total_time/60:.2f} minutes")
+        print(f"Best validation loss: {best_val_loss:.6f}")
 
-def create_vae_optimizer(model, config):
-    """Create optimizer for VAE training."""
-    return torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-
-def create_vae_scheduler(optimizer):
-    """Create learning rate scheduler for VAE training."""
-    return torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode='min',
-        factor=0.5,
-        patience=5,
-        verbose=True
-    )
+        return {
+            'train_losses': train_losses,
+            'val_losses': val_losses,
+            'train_recon_losses': train_recon_losses,
+            'train_kl_losses': train_kl_losses,
+            'val_recon_losses': val_recon_losses,
+            'val_kl_losses': val_kl_losses,
+            'best_val_loss': best_val_loss,
+            'model': model
+        }
 
 """### Training"""
 
-# TRAINING
-
+# Example usage to train the VAE
 if __name__ == "__main__":
-    # Initialize model and config
-    model = VAE()
-    config = VAEConfig()
+    # Create the VAE model
+    model = VAE(latent_dim=256)
 
-    # Train model
-    train_losses, val_losses = train_vae(model, train_loader, val_loader, config)
+    # Create VAE configuration
+    config = VAEConfig(
+        latent_dim=256,
+        batch_size=8,
+        accumulation_steps=8,  # Effective batch size = 64
+        learning_rate=5e-5,
+        epochs=100,
+        beta=0.005,  # KL weight - smaller values prioritize reconstruction
+        beta_warmup_steps=2000,
+        early_stopping_patience=15,
+        use_mixed_precision=True,
+        num_workers=4,
+        model_name="vae_model_v1"
+    )
 
-# Cell 23: Model Evaluation and Reconstruction Visualization
+    # Train the VAE
+    results = train_vae(model, train_loader, val_loader, config)
+
+"""### Evaluation and Result Visualization"""
+
+# Cell 18: VAE Evaluation and Comparison with Autoencoder
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+import json
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA
+import seaborn as sns
+from tqdm import tqdm
 
-def load_trained_vae(checkpoint_dir, model_name='vae'):
-    """Load trained VAE model and metadata"""
-    checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
+def load_trained_vae(checkpoint_dir, model_name='vae_model', latent_dim=256):
+    """Load trained VAE model for evaluation"""
+    model_path = Path(checkpoint_dir) / f"{model_name}_best.pth"
     metadata_path = Path(checkpoint_dir) / f"{model_name}_metadata.json"
 
     # Load model
-    model = VAE()
-    checkpoint = torch.load(checkpoint_path)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.eval()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = VAE(latent_dim=latent_dim)
+
+    if model_path.exists():
+        # Load best model if available
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        print(f"Loaded best VAE model from {model_path}")
+    else:
+        # Try loading checkpoint if best model doesn't exist
+        checkpoint_path = Path(checkpoint_dir) / f"{model_name}_checkpoint.pth"
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"No VAE model found at {model_path} or {checkpoint_path}")
+
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"Loaded VAE checkpoint from epoch {checkpoint['epoch']}")
 
     # Load training history
-    with open(metadata_path, 'r') as f:
-        metadata = json.load(f)
+    if metadata_path.exists():
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        print(f"Loaded training history with {len(metadata['train_losses'])} epochs")
+    else:
+        metadata = {"train_losses": [], "val_losses": []}
+        print("No metadata found, using empty history")
+
+    model.eval()
+    model.to(device)
 
     return model, metadata
 
-def visualize_reconstructions(model, val_loader, num_samples=3):
-    """Visualize original vs reconstructed volumes with added uncertainty visualization"""
+def visualize_vae_reconstructions(model, dataloader, num_samples=3):
+    """Visualize original vs reconstructed volumes from VAE"""
     device = next(model.parameters()).device
 
+    # Get samples from dataloader
+    samples = []
+    labels = []
+
+    for batch in dataloader:
+        volumes = batch['volume']
+        batch_labels = batch['label']
+
+        for i in range(min(len(volumes), num_samples - len(samples))):
+            samples.append(volumes[i:i+1])
+            labels.append(batch_labels[i])
+
+        if len(samples) >= num_samples:
+            break
+
+    # Visualize each sample with multiple reconstructions
     with torch.no_grad():
-        for batch in val_loader:
-            volumes = batch['volume'].to(device)
-            # Generate multiple reconstructions to assess variance
+        for idx, (sample, label) in enumerate(zip(samples, labels)):
+            # Get original volume
+            orig_vol = sample.to(device)
+
+            # Generate multiple reconstructions to visualize variability
             reconstructions = []
-            for _ in range(5):  # Generate 5 reconstructions per sample
-                recon, _, _ = model(volumes)
-                reconstructions.append(recon.cpu().numpy())
-            reconstructions = np.stack(reconstructions)
+            for _ in range(3):  # Generate 3 different reconstructions
+                recon, _, _ = model(orig_vol)
+                reconstructions.append(recon.cpu().squeeze().numpy())
 
-            # Process num_samples samples
-            for idx in range(min(num_samples, volumes.shape[0])):
-                fig = plt.figure(figsize=(15, 8))
+            # Move original to CPU for visualization
+            orig_vol = orig_vol.cpu().squeeze().numpy()
 
-                # Get middle slices
-                orig_vol = volumes[idx, 0].cpu().numpy()
-                recon_mean = reconstructions[:, idx, 0].mean(axis=0)
-                recon_std = reconstructions[:, idx, 0].std(axis=0)
+            # Create figure for this sample
+            fig = plt.figure(figsize=(15, 12))
+            plt.suptitle(f"VAE Sample {idx+1} - Group: {label}", fontsize=16)
 
-                # Plot axial, sagittal, and coronal views
-                views = ['Axial', 'Sagittal', 'Coronal']
-                slices_orig = [
-                    orig_vol[34, :, :],
-                    orig_vol[:, 50, :],
-                    orig_vol[:, :, 75]
-                ]
-                slices_recon = [
-                    recon_mean[34, :, :],
-                    recon_mean[:,50, :],
-                    recon_mean[:, :, 75]
-                ]
-                slices_std = [
-                    recon_std[34, :, :],
-                    recon_std[:, 50, :],
-                    recon_std[:, :, 75]
-                ]
+            # Define slice indices (midpoint by default)
+            z_slice = orig_vol.shape[0] // 2
+            y_slice = orig_vol.shape[1] // 2
+            x_slice = orig_vol.shape[2] // 2
 
-                for i, (view, orig_slice, recon_slice, std_slice) in enumerate(zip(views, slices_orig, slices_recon, slices_std)):
-                    # Original
-                    plt.subplot(3, 3, i+1)
-                    plt.imshow(orig_slice, cmap='gray',vmin=0,vmax=4)
-                    plt.title(f'Original {view}')
-                    plt.axis('off')
+            # Plot original slices in first row
+            plt.subplot(4, 3, 1)
+            plt.imshow(orig_vol[z_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Axial")
+            plt.axis('off')
 
-                    # Reconstructed
-                    plt.subplot(3, 3, i+4)
-                    plt.imshow(recon_slice, cmap='gray',vmin=0,vmax=4)
-                    plt.title(f'Reconstructed {view}')
-                    plt.axis('off')
+            plt.subplot(4, 3, 2)
+            plt.imshow(orig_vol[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Coronal")
+            plt.axis('off')
 
-                    # Uncertainty
-                    plt.subplot(3, 3, i+7)
-                    plt.imshow(std_slice, cmap='viridis')
-                    plt.title(f'Uncertainty {view}')
-                    plt.colorbar()
-                    plt.axis('off')
+            plt.subplot(4, 3, 3)
+            plt.imshow(orig_vol[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+            plt.title("Original - Sagittal")
+            plt.axis('off')
 
-                plt.suptitle(f'Sample {idx+1} - Original vs Reconstructed with Uncertainty', y=1.02)
-                plt.tight_layout()
-                plt.show()
+            # Plot multiple reconstructions to show variability
+            for i, recon in enumerate(reconstructions):
+                row = i + 1
 
-            break  # Only process first batch
+                plt.subplot(4, 3, row*3 + 1)
+                plt.imshow(recon[z_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title(f"Recon {row} - Axial")
+                plt.axis('off')
 
-# Cell 24: Quantitative Metrics
-def compute_metrics(model, val_loader):
-    """Compute quantitative metrics including reconstruction error and KL divergence"""
+                plt.subplot(4, 3, row*3 + 2)
+                plt.imshow(recon[:, y_slice, :], cmap='gray', vmin=0, vmax=3)
+                plt.title(f"Recon {row} - Coronal")
+                plt.axis('off')
+
+                plt.subplot(4, 3, row*3 + 3)
+                plt.imshow(recon[:, :, x_slice], cmap='gray', vmin=0, vmax=3)
+                plt.title(f"Recon {row} - Sagittal")
+                plt.axis('off')
+
+            plt.tight_layout()
+            plt.show()
+
+def extract_vae_latent_vectors(model, dataloader, max_samples=None):
+    """Extract latent vectors from VAE encoder"""
     device = next(model.parameters()).device
-    mse_criterion = nn.MSELoss(reduction='none')
 
-    total_mse = 0
-    total_kl = 0
-    total_samples = 0
-
-    region_errors = {
-        'Left Striatum': [],
-        'Right Striatum': [],
-        'Background': []
-    }
-
-    # Define regions of interest (approximate coordinates for DaTSCAN)
-    regions = {
-        'Left Striatum': (slice(54, 74), slice(54, 74), slice(44, 64)),
-        'Right Striatum': (slice(54, 74), slice(54, 74), slice(64, 84)),
-        'Background': (slice(0, 20), slice(0, 20), slice(0, 20))
-    }
-
-    with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Computing metrics"):
-            volumes = batch['volume'].to(device)
-            recon, mu, log_var = model(volumes)
-
-            # Overall MSE
-            mse = mse_criterion(recon, volumes).mean(dim=(1,2,3,4))
-
-            # KL divergence
-            kl = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1)
-
-            total_mse += mse.sum().item()
-            total_kl += kl.sum().item()
-            total_samples += volumes.shape[0]
-
-            # Region-specific analysis
-            for vol_idx in range(volumes.shape[0]):
-                orig = volumes[vol_idx, 0].cpu().numpy()
-                recon_vol = recon[vol_idx, 0].cpu().numpy()
-
-                for region_name, coords in regions.items():
-                    orig_region = orig[coords]
-                    recon_region = recon_vol[coords]
-                    mse = np.mean((orig_region - recon_region) ** 2)
-                    region_errors[region_name].append(mse)
-
-    # Calculate average metrics
-    avg_mse = total_mse / total_samples
-    avg_kl = total_kl / total_samples
-
-    print(f"\nOverall Metrics:")
-    print(f"Average MSE: {avg_mse:.6f}")
-    print(f"Average KL Divergence: {avg_kl:.6f}")
-    print(f"RMSE: {np.sqrt(avg_mse):.6f}")
-
-    print("\nRegion-Specific MSE:")
-    for region in regions.keys():
-        errors = region_errors[region]
-        print(f"\n{region}:")
-        print(f"Mean MSE: {np.mean(errors):.6f}")
-        print(f"Std MSE: {np.std(errors):.6f}")
-        print(f"Min MSE: {np.min(errors):.6f}")
-        print(f"Max MSE: {np.max(errors):.6f}")
-
-    return avg_mse, avg_kl, region_errors
-
-# Cell 25: Latent Space Analysis
-def analyze_latent_space(model, val_loader, num_samples=1000):
-    """Analyze the structure of the learned latent space"""
-    device = next(model.parameters()).device
     latent_vectors = []
     labels = []
-    reconstructions = []
+    paths = []
 
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Collecting latent vectors"):
+        for batch in tqdm(dataloader, desc="Extracting VAE latent vectors"):
             volumes = batch['volume'].to(device)
-            mu, log_var = model.encoder(volumes)
-            z = model.reparameterize(mu, log_var)
+            batch_labels = batch['label']
+            batch_paths = batch['path']
 
-            latent_vectors.append(z.cpu().numpy())
-            labels.extend(batch['label'])
+            # Extract latent vectors (mean only, ignore log_var)
+            mu, _ = model.encode(volumes)
 
-            if len(np.concatenate(latent_vectors)) >= num_samples:
+            # Store results
+            latent_vectors.append(mu.cpu().numpy())
+            labels.extend(batch_labels)
+            paths.extend(batch_paths)
+
+            # Check if we have enough samples
+            if max_samples and len(labels) >= max_samples:
+                latent_vectors = np.vstack(latent_vectors)
+                latent_vectors = latent_vectors[:max_samples]
+                labels = labels[:max_samples]
+                paths = paths[:max_samples]
                 break
 
-    latent_vectors = np.concatenate(latent_vectors)[:num_samples]
-    labels = np.array(labels[:num_samples])
+    # Stack all latent vectors if we didn't break early
+    if isinstance(latent_vectors[0], np.ndarray):
+        latent_vectors = np.vstack(latent_vectors)
 
-    # Plot latent space distribution
-    plt.figure(figsize=(15, 5))
+    return latent_vectors, labels, paths
 
-    # Plot distribution of first two dimensions
-    plt.subplot(131)
-    labels_categorical = pd.Categorical(labels).codes
-    plt.scatter(latent_vectors[:, 0], latent_vectors[:, 1], c=labels_categorical, alpha=0.6)
-    plt.title('First Two Latent Dimensions')
-    plt.xlabel('Dimension 1')
-    plt.ylabel('Dimension 2')
+def compare_latent_spaces(ae_vectors, vae_vectors, labels, method='tsne'):
+    """Compare autoencoder and VAE latent spaces side by side"""
+    plt.figure(figsize=(20, 8))
 
-    # Plot average activation per dimension
-    plt.subplot(132)
-    avg_activation = np.mean(np.abs(latent_vectors), axis=0)
-    plt.bar(range(len(avg_activation)), avg_activation)
-    plt.title('Average Activation per Dimension')
-    plt.xlabel('Dimension')
-    plt.ylabel('Average Activation')
+    # Create label-to-color mapping for consistent colors
+    unique_labels = list(set(labels))
+    colors = plt.cm.tab10(np.linspace(0, 1, len(unique_labels)))
+    label_to_color = {label: colors[i] for i, label in enumerate(unique_labels)}
 
-    # Plot variance explained
-    plt.subplot(133)
-    var_explained = np.var(latent_vectors, axis=0)
-    plt.plot(np.cumsum(var_explained) / np.sum(var_explained))
-    plt.title('Cumulative Variance Explained')
-    plt.xlabel('Number of Dimensions')
-    plt.ylabel('Cumulative Variance Ratio')
+    # Apply dimensionality reduction to both latent spaces
+    if method.lower() == 'tsne':
+        print("Computing t-SNE projections...")
+        reducer = TSNE(n_components=2, random_state=42,
+                     perplexity=min(30, len(ae_vectors) - 1))
+        title = 't-SNE Visualization of Latent Spaces'
+    else:
+        print("Computing PCA projections...")
+        reducer = PCA(n_components=2, random_state=42)
+        title = 'PCA Visualization of Latent Spaces'
+
+    # Apply reduction to AE vectors
+    ae_reduced = reducer.fit_transform(ae_vectors)
+
+    # Reset the random state for consistency before applying to VAE vectors
+    if method.lower() == 'tsne':
+        reducer = TSNE(n_components=2, random_state=42,
+                     perplexity=min(30, len(vae_vectors) - 1))
+    else:
+        reducer = PCA(n_components=2, random_state=42)
+
+    # Apply reduction to VAE vectors
+    vae_reduced = reducer.fit_transform(vae_vectors)
+
+    # Plot AE latent space
+    plt.subplot(1, 2, 1)
+    for label in unique_labels:
+        indices = [i for i, l in enumerate(labels) if l == label]
+        plt.scatter(
+            ae_reduced[indices, 0],
+            ae_reduced[indices, 1],
+            label=label,
+            color=label_to_color[label],
+            alpha=0.7,
+            edgecolor='w',
+            s=100
+        )
+    plt.title(f"Standard Autoencoder\n{method.upper()} Latent Space", fontsize=14)
+    plt.xlabel("Dimension 1", fontsize=12)
+    plt.ylabel("Dimension 2", fontsize=12)
+    plt.legend(title="Group", fontsize=10)
+    plt.grid(True, alpha=0.3)
+
+    # Plot VAE latent space
+    plt.subplot(1, 2, 2)
+    for label in unique_labels:
+        indices = [i for i, l in enumerate(labels) if l == label]
+        plt.scatter(
+            vae_reduced[indices, 0],
+            vae_reduced[indices, 1],
+            label=label,
+            color=label_to_color[label],
+            alpha=0.7,
+            edgecolor='w',
+            s=100
+        )
+    plt.title(f"Variational Autoencoder\n{method.upper()} Latent Space", fontsize=14)
+    plt.xlabel("Dimension 1", fontsize=12)
+    plt.ylabel("Dimension 2", fontsize=12)
+    plt.legend(title="Group", fontsize=10)
+    plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.show()
 
-    return latent_vectors, labels
+    return ae_reduced, vae_reduced
 
-# Cell 26: Run Evaluation
+def generate_vae_samples(model, num_samples=5):
+    """Generate synthetic brain scans from random latent vectors"""
+    device = next(model.parameters()).device
+
+    # Generate random latent vectors
+    z = torch.randn(num_samples, model.latent_dim, device=device)
+
+    # Generate samples
+    with torch.no_grad():
+        samples = model.decoder(z)
+
+    # Visualize generated samples
+    plt.figure(figsize=(15, 5 * num_samples))
+
+    for i in range(num_samples):
+        sample = samples[i, 0].cpu().numpy()
+
+        # Get middle slices
+        z_slice = sample.shape[0] // 2
+        y_slice = sample.shape[1] // 2
+        x_slice = sample.shape[2] // 2
+
+        # Plot slices
+        plt.subplot(num_samples, 3, i*3 + 1)
+        plt.imshow(sample[z_slice], cmap='gray')
+        plt.title(f"Sample {i+1} - Axial" if i == 0 else "")
+        plt.axis('off')
+
+        plt.subplot(num_samples, 3, i*3 + 2)
+        plt.imshow(sample[:, y_slice, :], cmap='gray')
+        plt.title(f"Sample {i+1} - Coronal" if i == 0 else "")
+        plt.axis('off')
+
+        plt.subplot(num_samples, 3, i*3 + 3)
+        plt.imshow(sample[:, :, x_slice], cmap='gray')
+        plt.title(f"Sample {i+1} - Sagittal" if i == 0 else "")
+        plt.axis('off')
+
+    plt.suptitle("Generated Brain Scans from VAE Random Sampling", fontsize=16)
+    plt.tight_layout()
+    plt.show()
+
+    return samples
+
+def interpolate_between_groups(ae_model, vae_model, dataloader, start_group='Control', end_group='PD', steps=5):
+    """Compare interpolation between groups for both AE and VAE"""
+    device = next(ae_model.parameters()).device
+
+    # Get a sample from each group
+    start_sample = None
+    end_sample = None
+
+    for batch in dataloader:
+        volumes = batch['volume']
+        labels = batch['label']
+
+        for i, (volume, label) in enumerate(zip(volumes, labels)):
+            if label == start_group and start_sample is None:
+                start_sample = volume.unsqueeze(0)
+            elif label == end_group and end_sample is None:
+                end_sample = volume.unsqueeze(0)
+
+        if start_sample is not None and end_sample is not None:
+            break
+
+    if start_sample is None or end_sample is None:
+        print(f"Couldn't find samples for both {start_group} and {end_group}")
+        return
+
+    # Move to device
+    start_sample = start_sample.to(device)
+    end_sample = end_sample.to(device)
+
+    # Get latent vectors for AE
+    with torch.no_grad():
+        start_z_ae = ae_model.encode(start_sample)
+        end_z_ae = ae_model.encode(end_sample)
+
+    # Get latent vectors for VAE (use mu only)
+    with torch.no_grad():
+        start_z_vae, _ = vae_model.encode(start_sample)
+        end_z_vae, _ = vae_model.encode(end_sample)
+
+    # Create interpolation steps
+    alphas = np.linspace(0, 1, steps)
+
+    # Interpolate in AE latent space
+    ae_interpolated = []
+    for alpha in alphas:
+        z = (1 - alpha) * start_z_ae + alpha * end_z_ae
+        with torch.no_grad():
+            reconstructed = ae_model.decode(z)
+            ae_interpolated.append(reconstructed.cpu().squeeze().numpy())
+
+    # Interpolate in VAE latent space
+    vae_interpolated = []
+    for alpha in alphas:
+        z = (1 - alpha) * start_z_vae + alpha * end_z_vae
+        with torch.no_grad():
+            reconstructed = vae_model.decoder(z)
+            vae_interpolated.append(reconstructed.cpu().squeeze().numpy())
+
+    # Visualize interpolation
+    plt.figure(figsize=(15, 5 * steps))
+
+    # Plot first row title
+    plt.figtext(0.25, 0.98, "Standard Autoencoder", fontsize=14, ha='center')
+    plt.figtext(0.75, 0.98, "Variational Autoencoder", fontsize=14, ha='center')
+
+    for i, alpha in enumerate(alphas):
+        # Get a slice index (middle)
+        z_slice = ae_interpolated[i].shape[0] // 2
+
+        # Plot AE interpolation
+        plt.subplot(steps, 2, i*2 + 1)
+        plt.imshow(ae_interpolated[i][z_slice], cmap='gray')
+        plt.title(f"α = {alpha:.2f}" if i == 0 else "")
+        plt.axis('off')
+
+        # Plot VAE interpolation
+        plt.subplot(steps, 2, i*2 + 2)
+        plt.imshow(vae_interpolated[i][z_slice], cmap='gray')
+        plt.title(f"α = {alpha:.2f}" if i == 0 else "")
+        plt.axis('off')
+
+    plt.suptitle(f"Interpolation from {start_group} to {end_group}", fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+    return ae_interpolated, vae_interpolated
+
+# Run VAE evaluation
 if __name__ == "__main__":
-    # Load trained model
-    model, metadata = load_trained_vae('checkpoints',model_name='vae_Beta001')
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    # Uncomment this code to run the VAE evaluation
+    # First, load both models
+    print("Loading trained Autoencoder...")
+    ae_model, ae_metadata = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
 
-    print("Visualizing reconstructions...")
-    visualize_reconstructions(model, val_loader)
+    print("\nLoading trained VAE...")
+    vae_model, vae_metadata = load_trained_vae('checkpoints', 'vae_model_v1', latent_dim=256)
 
-    print("\nComputing metrics...")
-    avg_mse, avg_kl, region_errors = compute_metrics(model, val_loader)
+    # Compare reconstructions
+    print("\nVisualizing VAE reconstructions...")
+    visualize_vae_reconstructions(vae_model, val_loader, num_samples=3)
 
-    print("\nAnalyzing latent space...")
-    latent_vectors, labels = analyze_latent_space(model, val_loader)
+    # Extract latent vectors from both models
+    print("\nExtracting latent vectors from Autoencoder...")
+    ae_vectors, labels, paths = extract_latent_vectors(ae_model, val_loader, max_samples=200)
 
-"""## 3. AE Semi-Supervised"""
+    print("\nExtracting latent vectors from VAE...")
+    vae_vectors, vae_labels, vae_paths = extract_vae_latent_vectors(vae_model, val_loader, max_samples=200)
+
+    # Compare latent spaces
+    print("\nComparing latent spaces with t-SNE...")
+    ae_tsne, vae_tsne = compare_latent_spaces(ae_vectors, vae_vectors, labels, method='tsne')
+
+    print("\nComparing latent spaces with PCA...")
+    ae_pca, vae_pca = compare_latent_spaces(ae_vectors, vae_vectors, labels, method='pca')
+
+    # Generate synthetic samples from VAE
+    print("\nGenerating synthetic brain scans from VAE...")
+    synthetic_samples = generate_vae_samples(vae_model, num_samples=5)
+
+    # Compare interpolation capabilities
+    print("\nComparing interpolation capabilities...")
+    ae_interp, vae_interp = interpolate_between_groups(ae_model, vae_model, val_loader,
+                                                     start_group='Control', end_group='PD', steps=5)
