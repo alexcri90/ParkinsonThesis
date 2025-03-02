@@ -3536,8 +3536,8 @@ if __name__ == "__main__":
         latent_dim=256,
         batch_size=8,
         accumulation_steps=8,  # Effective batch size = 64
-        learning_rate=1e-5,
-        epochs=300,
+        learning_rate=5e-5,
+        epochs=100,
         beta=0.005,  # KL weight - smaller values prioritize reconstruction
         beta_warmup_steps=2000,
         early_stopping_patience=15,
