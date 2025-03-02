@@ -2702,11 +2702,16 @@ if __name__ == "__main__":
 
     # Example 2: Compare the same dimension across different patient groups
     # Uncomment to see how the same dimension affects different groups
-    explore_top_dimensions(model, val_loader, dimensions=[231, 94, 154], groups=['PD', 'Control', 'SWEDD'])
+    # explore_top_dimensions(model, val_loader, dimensions=[231, 94, 154], groups=['PD', 'Control', 'SWEDD'])
 
     # Example 3: Generate a feature importance map by aggregating across multiple samples
     # This shows which brain regions are most affected by this dimension
-    generate_feature_importance_map(model, val_loader, dimension_idx=231, group='PD', num_samples=5)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=94, group='PD', num_samples=10)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=94, group='Control', num_samples=10)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=231, group='PD', num_samples=10)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=231, group='Control', num_samples=10)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=123, group='PD', num_samples=10)
+    # generate_feature_importance_map(model, val_loader, dimension_idx=123, group='Control', num_samples=10)
 
 """1. latent 512: MSE val 0.006006; RMSE: 0.0775
 2. latent 256: MSE val 0.0067
@@ -3531,8 +3536,8 @@ if __name__ == "__main__":
         latent_dim=256,
         batch_size=8,
         accumulation_steps=8,  # Effective batch size = 64
-        learning_rate=5e-5,
-        epochs=100,
+        learning_rate=1e-5,
+        epochs=300,
         beta=0.005,  # KL weight - smaller values prioritize reconstruction
         beta_warmup_steps=2000,
         early_stopping_patience=15,
