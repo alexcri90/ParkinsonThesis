@@ -2702,16 +2702,303 @@ if __name__ == "__main__":
 
     # Example 2: Compare the same dimension across different patient groups
     # Uncomment to see how the same dimension affects different groups
-    # explore_top_dimensions(model, val_loader, dimensions=[231, 94, 154], groups=['PD', 'Control', 'SWEDD'])
+    explore_top_dimensions(model, val_loader, dimensions=[231, 94, 154], groups=['PD', 'Control', 'SWEDD'])
 
     # Example 3: Generate a feature importance map by aggregating across multiple samples
     # This shows which brain regions are most affected by this dimension
-    # generate_feature_importance_map(model, val_loader, dimension_idx=94, group='PD', num_samples=10)
-    # generate_feature_importance_map(model, val_loader, dimension_idx=94, group='Control', num_samples=10)
-    # generate_feature_importance_map(model, val_loader, dimension_idx=231, group='PD', num_samples=10)
-    # generate_feature_importance_map(model, val_loader, dimension_idx=231, group='Control', num_samples=10)
-    # generate_feature_importance_map(model, val_loader, dimension_idx=123, group='PD', num_samples=10)
-    # generate_feature_importance_map(model, val_loader, dimension_idx=123, group='Control', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=94, group='PD', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=94, group='Control', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=231, group='PD', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=231, group='Control', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=123, group='PD', num_samples=10)
+    generate_feature_importance_map(model, val_loader, dimension_idx=123, group='Control', num_samples=10)
+
+# Cell 16: Optimized VAE Implementation
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from collections import OrderedDict
+
+class VAE(nn.Module):
+    """
+    3D Variational Autoencoder optimized for 64×128×128 medical volumes with
+    memory-efficient implementation for NVIDIA 4070Ti.
+    """
+    def __init__(self, latent_dim=256):
+        super().__init__()
+        self.encoder = VAEEncoder(latent_dim)
+        self.decoder = VAEDecoder(latent_dim)
+        # Enable CUDNN benchmarking for optimal performance
+        torch.backends.cudnn.benchmark = True
+        self.latent_dim = latent_dim
+
+    def reparameterize(self, mu, log_var):
+        """
+        Reparameterization trick to enable backpropagation through sampling.
+        """
+        if self.training:
+            std = torch.exp(0.5 * log_var)
+            eps = torch.randn_like(std)
+            return mu + eps * std
+        return mu
+
+    def forward(self, x):
+        # Encode input to get mean and variance of latent distribution
+        mu, log_var = self.encoder(x)
+
+        # Sample from latent distribution
+        z = self.reparameterize(mu, log_var)
+
+        # Decode sampled latent vector
+        reconstruction = self.decoder(z)
+
+        return reconstruction, mu, log_var
+
+    def encode(self, x):
+        """Encode input to latent parameters without sampling"""
+        mu, log_var = self.encoder(x)
+        return mu, log_var
+
+    def generate(self, z=None, num_samples=1):
+        """Generate samples from latent space or random samples"""
+        device = next(self.parameters()).device
+
+        if z is None:
+            # Generate random latent vectors
+            z = torch.randn(num_samples, self.latent_dim, device=device)
+
+        # Decode latent vectors to generate samples
+        with torch.no_grad():
+            samples = self.decoder(z)
+
+        return samples
+
+class ConvBlock(nn.Module):
+    """Memory-efficient convolutional block with batch normalization and ReLU."""
+    def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=1):
+        super().__init__()
+        self.block = nn.Sequential(OrderedDict([
+            ('conv', nn.Conv3d(in_channels, out_channels, kernel_size, stride, padding)),
+            ('bn', nn.BatchNorm3d(out_channels)),
+            ('relu', nn.ReLU(inplace=True))  # inplace ReLU for memory efficiency
+        ]))
+
+    def forward(self, x):
+        return self.block(x)
+
+class VAEEncoder(nn.Module):
+    """3D Encoder network with probabilistic latent space."""
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        # Initial feature extraction
+        self.init_conv = ConvBlock(1, 16)  # 64×128×128 -> same size
+
+        # Downsampling path with progressive channel increase
+        self.down1 = nn.Sequential(
+            ConvBlock(16, 32, stride=2),    # -> 32×64×64
+            ConvBlock(32, 32)
+        )
+
+        self.down2 = nn.Sequential(
+            ConvBlock(32, 64, stride=2),    # -> 16×32×32
+            ConvBlock(64, 64)
+        )
+
+        self.down3 = nn.Sequential(
+            ConvBlock(64, 128, stride=2),   # -> 8×16×16
+            ConvBlock(128, 128)
+        )
+
+        self.down4 = nn.Sequential(
+            ConvBlock(128, 256, stride=2),  # -> 4×8×8
+            ConvBlock(256, 256)
+        )
+
+        # Project to latent parameters
+        self.flatten_size = 256 * 4 * 8 * 8
+        self.fc_mu = nn.Linear(self.flatten_size, latent_dim)
+        self.fc_var = nn.Linear(self.flatten_size, latent_dim)
+
+    def forward(self, x):
+        # Initial convolution
+        x = self.init_conv(x)
+
+        # Downsampling
+        x = self.down1(x)
+        x = self.down2(x)
+        x = self.down3(x)
+        x = self.down4(x)
+
+        # Flatten and project to latent parameters
+        flat = torch.flatten(x, start_dim=1)
+        mu = self.fc_mu(flat)
+        log_var = self.fc_var(flat)
+
+        return mu, log_var
+
+class VAEDecoder(nn.Module):
+    """3D Decoder network with enhanced capacity for better reconstructions."""
+    def __init__(self, latent_dim=256):
+        super().__init__()
+
+        self.flatten_size = 256 * 4 * 8 * 8
+        self.fc = nn.Linear(latent_dim, self.flatten_size)
+
+        # Upsampling path with enhanced capacity
+        self.up1 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(256, 192),  # Increased intermediate channels
+            ConvBlock(192, 128)
+        )
+
+        self.up2 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(128, 96),   # Increased intermediate channels
+            ConvBlock(96, 64)
+        )
+
+        self.up3 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(64, 48),    # Increased intermediate channels
+            ConvBlock(48, 32)
+        )
+
+        self.up4 = nn.Sequential(
+            nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
+            ConvBlock(32, 24),    # Increased intermediate channels
+            ConvBlock(24, 16)
+        )
+
+        # Add a refinement layer before final output
+        self.refine = ConvBlock(16, 16)
+
+        # Final convolution
+        self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
+
+    def forward(self, z):
+        # Reshape from latent space
+        x = self.fc(z)
+        x = x.view(-1, 256, 4, 8, 8)
+
+        # Upsampling
+        x = self.up1(x)
+        x = self.up2(x)
+        x = self.up3(x)
+        x = self.up4(x)
+
+        # Refinement for better details
+        x = self.refine(x)
+
+        # Final convolution (no activation to allow for negative values if needed)
+        x = self.final_conv(x)
+
+        return x
+
+# Custom loss function for VAE
+class VAELoss(nn.Module):
+    """
+    VAE loss combining reconstruction loss and KL divergence
+    with beta parameter to control the trade-off and free bits approach.
+    """
+    def __init__(self, beta=0.0005, beta_warmup_steps=5000, free_bits=3.0):
+        super().__init__()
+        self.beta_base = beta
+        self.beta_warmup_steps = beta_warmup_steps
+        self.current_step = 0
+        self.free_bits = free_bits  # Free bits parameter to prevent posterior collapse
+
+    def forward(self, recon_x, x, mu, log_var):
+        """
+        Calculate VAE loss with enhanced beta annealing and free bits.
+        """
+        # Reconstruction loss (mean squared error)
+        recon_loss = F.mse_loss(recon_x, x, reduction='mean')
+
+        # KL divergence with free bits
+        # Instead of penalizing all KL divergence, allow some "free bits"
+        kl_raw = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1)
+
+        # Apply free bits: only penalize when KL is above threshold
+        kl_free = torch.maximum(kl_raw - self.free_bits, torch.zeros_like(kl_raw))
+        kl_loss = torch.mean(kl_free)
+
+        # Calculate beta with cyclical warmup
+        # Cyclical annealing gives the model periods to focus on reconstruction
+        if self.beta_warmup_steps > 0:
+            # Implement cyclical annealing
+            cycle_length = self.beta_warmup_steps // 2
+            cycle_position = (self.current_step % cycle_length) / cycle_length
+            if self.current_step // cycle_length % 2 == 0:  # Even cycles: warmup
+                beta = self.beta_base * cycle_position
+            else:  # Odd cycles: constant
+                beta = self.beta_base
+        else:
+            beta = self.beta_base
+
+        # Increment step counter
+        self.current_step += 1
+
+        # Total loss
+        total_loss = recon_loss + beta * kl_loss
+
+        return total_loss, recon_loss, kl_loss, beta
+
+# Test VAE with dummy data
+def test_vae(batch_size=2, latent_dim=256):
+    """Test the VAE architecture and memory usage with dummy data."""
+    print("\nTesting VAE Architecture...")
+
+    try:
+        # Create model and move to GPU
+        model = VAE(latent_dim=latent_dim)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+
+        # Create loss function
+        vae_loss = VAELoss(beta=0.005)
+
+        # Print model summary
+        num_params = sum(p.numel() for p in model.parameters())
+        print(f"\nVAE Model Parameters: {num_params:,}")
+
+        # Create dummy input
+        dummy_input = torch.randn(batch_size, 1, 64, 128, 128, device=device)
+
+        # Test forward pass
+        print("\nTesting forward pass...")
+        print_memory_stats()
+        with torch.no_grad():
+            recon, mu, log_var = model(dummy_input)
+
+        # Test loss calculation
+        loss, recon_loss, kl_loss, beta = vae_loss(recon, dummy_input, mu, log_var)
+
+        print(f"\nInput shape: {dummy_input.shape}")
+        print(f"Latent mu shape: {mu.shape}")
+        print(f"Output shape: {recon.shape}")
+        print(f"\nLoss values:")
+        print(f"Total loss: {loss.item():.6f}")
+        print(f"Reconstruction loss: {recon_loss.item():.6f}")
+        print(f"KL loss: {kl_loss.item():.6f}")
+        print(f"Beta value: {beta:.6f}")
+
+        # Check memory usage
+        print("\nGPU Memory After Forward Pass:")
+        print_memory_stats()
+
+        # Clean up
+        del model, dummy_input, recon, mu, log_var
+        torch.cuda.empty_cache()
+
+        print("\nVAE test completed successfully!")
+        return True
+
+    except Exception as e:
+        print(f"Error testing VAE: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 """1. latent 512: MSE val 0.006006; RMSE: 0.0775
 2. latent 256: MSE val 0.0067
@@ -2850,37 +3137,40 @@ class VAEEncoder(nn.Module):
         return mu, log_var
 
 class VAEDecoder(nn.Module):
-    """3D Decoder network with skip connections."""
+    """3D Decoder network with enhanced capacity for better reconstructions."""
     def __init__(self, latent_dim=256):
         super().__init__()
 
         self.flatten_size = 256 * 4 * 8 * 8
         self.fc = nn.Linear(latent_dim, self.flatten_size)
 
-        # Upsampling path with trilinear upsampling for better quality
+        # Upsampling path with enhanced capacity
         self.up1 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            ConvBlock(256, 128),
-            ConvBlock(128, 128)
+            ConvBlock(256, 192),  # Increased intermediate channels
+            ConvBlock(192, 128)
         )
 
         self.up2 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            ConvBlock(128, 64),
-            ConvBlock(64, 64)
+            ConvBlock(128, 96),   # Increased intermediate channels
+            ConvBlock(96, 64)
         )
 
         self.up3 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            ConvBlock(64, 32),
-            ConvBlock(32, 32)
+            ConvBlock(64, 48),    # Increased intermediate channels
+            ConvBlock(48, 32)
         )
 
         self.up4 = nn.Sequential(
             nn.Upsample(scale_factor=2, mode='trilinear', align_corners=False),
-            ConvBlock(32, 16),
-            ConvBlock(16, 16)
+            ConvBlock(32, 24),    # Increased intermediate channels
+            ConvBlock(24, 16)
         )
+
+        # Add a refinement layer before final output
+        self.refine = ConvBlock(16, 16)
 
         # Final convolution
         self.final_conv = nn.Conv3d(16, 1, kernel_size=1)
@@ -2896,6 +3186,9 @@ class VAEDecoder(nn.Module):
         x = self.up3(x)
         x = self.up4(x)
 
+        # Refinement for better details
+        x = self.refine(x)
+
         # Final convolution (no activation to allow for negative values if needed)
         x = self.final_conv(x)
 
@@ -2905,35 +3198,42 @@ class VAEDecoder(nn.Module):
 class VAELoss(nn.Module):
     """
     VAE loss combining reconstruction loss and KL divergence
-    with beta parameter to control the trade-off.
+    with beta parameter to control the trade-off and free bits approach.
     """
-    def __init__(self, beta=0.005, beta_warmup_steps=2000):
+    def __init__(self, beta=0.0005, beta_warmup_steps=5000, free_bits=3.0):
         super().__init__()
         self.beta_base = beta
         self.beta_warmup_steps = beta_warmup_steps
         self.current_step = 0
+        self.free_bits = free_bits  # Free bits parameter to prevent posterior collapse
 
     def forward(self, recon_x, x, mu, log_var):
         """
-        Calculate VAE loss with annealed beta.
-
-        Args:
-            recon_x: Reconstructed volume
-            x: Original volume
-            mu: Mean of latent distribution
-            log_var: Log variance of latent distribution
+        Calculate VAE loss with enhanced beta annealing and free bits.
         """
         # Reconstruction loss (mean squared error)
         recon_loss = F.mse_loss(recon_x, x, reduction='mean')
 
-        # KL divergence
-        # See Appendix B from VAE paper: https://arxiv.org/pdf/1312.6114.pdf
-        kl_loss = -0.5 * torch.mean(1 + log_var - mu.pow(2) - log_var.exp())
+        # KL divergence with free bits
+        # Instead of penalizing all KL divergence, allow some "free bits"
+        kl_raw = -0.5 * torch.sum(1 + log_var - mu.pow(2) - log_var.exp(), dim=1)
 
-        # Calculate beta with warmup
-        beta = min(self.beta_base,
-                  self.beta_base * (self.current_step / self.beta_warmup_steps)
-                  if self.beta_warmup_steps > 0 else self.beta_base)
+        # Apply free bits: only penalize when KL is above threshold
+        kl_free = torch.maximum(kl_raw - self.free_bits, torch.zeros_like(kl_raw))
+        kl_loss = torch.mean(kl_free)
+
+        # Calculate beta with cyclical warmup
+        # Cyclical annealing gives the model periods to focus on reconstruction
+        if self.beta_warmup_steps > 0:
+            # Implement cyclical annealing
+            cycle_length = self.beta_warmup_steps // 2
+            cycle_position = (self.current_step % cycle_length) / cycle_length
+            if self.current_step // cycle_length % 2 == 0:  # Even cycles: warmup
+                beta = self.beta_base * cycle_position
+            else:  # Odd cycles: constant
+                beta = self.beta_base
+        else:
+            beta = self.beta_base
 
         # Increment step counter
         self.current_step += 1
@@ -3535,15 +3835,15 @@ if __name__ == "__main__":
     config = VAEConfig(
         latent_dim=256,
         batch_size=8,
-        accumulation_steps=8,  # Effective batch size = 64
-        learning_rate=5e-5,
-        epochs=100,
-        beta=0.005,  # KL weight - smaller values prioritize reconstruction
-        beta_warmup_steps=2000,
-        early_stopping_patience=15,
+        accumulation_steps=8,        # Effective batch size = 64
+        learning_rate=2e-5,
+        epochs=300,
+        beta=0.0005,                 # Reduced from 0.005 to 0.0005 (10x smaller)
+        beta_warmup_steps=10000,      # Increased from 2000 to 10000
+        early_stopping_patience=20,
         use_mixed_precision=True,
         num_workers=4,
-        model_name="vae_model_v1"
+        model_name="vae_model_v3"    # New model name to avoid overwriting
     )
 
     # Train the VAE
@@ -3932,7 +4232,7 @@ if __name__ == "__main__":
     ae_model, ae_metadata = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
 
     print("\nLoading trained VAE...")
-    vae_model, vae_metadata = load_trained_vae('checkpoints', 'vae_model_v1', latent_dim=256)
+    vae_model, vae_metadata = load_trained_vae('checkpoints', 'vae_model_v3', latent_dim=256)
 
     # Compare reconstructions
     print("\nVisualizing VAE reconstructions...")
@@ -3960,3 +4260,4 @@ if __name__ == "__main__":
     print("\nComparing interpolation capabilities...")
     ae_interp, vae_interp = interpolate_between_groups(ae_model, vae_model, val_loader,
                                                      start_group='Control', end_group='PD', steps=5)
+
