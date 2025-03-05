@@ -5249,7 +5249,10 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
 
-"""# Performance"""
+"""# Performance Metrics & Visualizations
+
+## KL Divergence
+"""
 
 # Cell 20: VAE Latent Space Analysis through KL Divergence
 
@@ -5452,6 +5455,8 @@ for dim_idx in top_3_dims:
             vae_model, val_loader, dimension_idx=dim_idx, group=group, num_samples=8)
 
 print("Top dimensions visualization completed!")
+
+"""## Metadata Analysis with Latent Dimensions"""
 
 # Cell 22: Metadata Dimension Analysis with Improved Visualization
 
@@ -5793,7 +5798,7 @@ dimension_results = analyze_metadata_dimensions(
 
 print("\nDimension analysis completed!")
 
-# Cell 22: Metadata Dimension Analysis with Standardized Y-Axis Scales
+# Cell 22: Metadata Dimension Analysis with Debug Output
 
 import os
 import pandas as pd
@@ -5807,7 +5812,7 @@ import torch
 import re
 import scipy.stats as stats
 
-def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="dicom_metadata.csv", max_samples=150):
+def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="dicom_metadata.csv", max_samples=150, debug=True):
     """
     Analyze how specific dimensions in the latent spaces correlate with metadata.
     """
@@ -5866,6 +5871,8 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
     ae_latent_vecs = np.vstack(ae_latent_vecs)
     vae_latent_means = np.vstack(vae_latent_means)
 
+    print(f"Extracted latent vectors: AE shape={ae_latent_vecs.shape}, VAE shape={vae_latent_means.shape}")
+
     # Create dataframe with sample info
     sample_df = pd.DataFrame({
         'file_path': sample_paths,
@@ -5914,6 +5921,8 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
     matched_indices = [sample_paths.index(path) for path in merged_df['file_path_sample']]
     ae_matched = ae_latent_vecs[matched_indices]
     vae_matched = vae_latent_means[matched_indices]
+
+    print(f"Matched latent vectors: AE shape={ae_matched.shape}, VAE shape={vae_matched.shape}")
 
     # Analyze categorical metadata fields
     categorical_fields = ['PatientSex', 'StudyDescription', 'Manufacturer', 'ManufacturerModelName']
@@ -5981,18 +5990,34 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
         value_map = {val: i for i, val in enumerate(keep_values)}
         y = np.array([value_map[val] for val in filtered_values])
 
+        print(f"Starting F-statistic calculation for {ae_filtered.shape[1]} AE dimensions...")
+        start_time = time.time()
+
+        # Debug: Log processed dimensions
+        processed_dims = 0
+        success_dims = 0
+
         # DIMENSION SELECTION METHOD:
         # Using ANOVA F-statistic to measure how well each dimension separates different categories
         for dim in range(ae_filtered.shape[1]):
+            processed_dims += 1
             try:
                 # Group data by category for ANOVA
                 groups = [ae_filtered[filtered_values == val, dim] for val in keep_values]
-                # Some groups might be empty or have only one sample
+
+                # Verify we have enough data in each group
                 if all(len(g) > 1 for g in groups):
                     f_val, p_val = stats.f_oneway(*groups)
                     ae_scores[dim] = f_val
                     ae_p_values[dim] = p_val
+                    success_dims += 1
+
+                    # Debug: print some values periodically
+                    if debug and dim % 50 == 0:
+                        print(f"  AE Dim {dim}: F={f_val:.2f}, p={p_val:.4f}, group sizes: {[len(g) for g in groups]}")
                 else:
+                    if debug and dim % 50 == 0:
+                        print(f"  AE Dim {dim}: Skipped - insufficient samples in groups: {[len(g) for g in groups]}")
                     ae_scores[dim] = 0
                     ae_p_values[dim] = 1.0
             except Exception as e:
@@ -6000,14 +6025,32 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
                 ae_scores[dim] = 0
                 ae_p_values[dim] = 1.0
 
+        print(f"Completed AE dimension analysis in {time.time() - start_time:.2f} seconds")
+        print(f"Processed {processed_dims}/{ae_filtered.shape[1]} dimensions, {success_dims} with valid calculations")
+
+        print(f"Starting F-statistic calculation for {vae_filtered.shape[1]} VAE dimensions...")
+        start_time = time.time()
+
+        # Reset counters for VAE
+        processed_dims = 0
+        success_dims = 0
+
         for dim in range(vae_filtered.shape[1]):
+            processed_dims += 1
             try:
                 groups = [vae_filtered[filtered_values == val, dim] for val in keep_values]
                 if all(len(g) > 1 for g in groups):
                     f_val, p_val = stats.f_oneway(*groups)
                     vae_scores[dim] = f_val
                     vae_p_values[dim] = p_val
+                    success_dims += 1
+
+                    # Debug: print some values periodically
+                    if debug and dim % 50 == 0:
+                        print(f"  VAE Dim {dim}: F={f_val:.2f}, p={p_val:.4f}, group sizes: {[len(g) for g in groups]}")
                 else:
+                    if debug and dim % 50 == 0:
+                        print(f"  VAE Dim {dim}: Skipped - insufficient samples in groups: {[len(g) for g in groups]}")
                     vae_scores[dim] = 0
                     vae_p_values[dim] = 1.0
             except Exception as e:
@@ -6015,12 +6058,53 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
                 vae_scores[dim] = 0
                 vae_p_values[dim] = 1.0
 
+        print(f"Completed VAE dimension analysis in {time.time() - start_time:.2f} seconds")
+        print(f"Processed {processed_dims}/{vae_filtered.shape[1]} dimensions, {success_dims} with valid calculations")
+
+        # ADD DETAILED DEBUGGING OUTPUT
+        print(f"\nF-statistic Calculation Results for {field}:")
+        print(f"AE dimensions with p < 0.05: {np.sum(ae_p_values < 0.05)} out of {len(ae_p_values)}")
+        print(f"VAE dimensions with p < 0.05: {np.sum(vae_p_values < 0.05)} out of {len(vae_p_values)}")
+        print(f"Top 5 AE F-statistics: {sorted(ae_scores)[-5:]}")
+        print(f"Top 5 VAE F-statistics: {sorted(vae_scores)[-5:]}")
+        print(f"Mean AE F-statistic: {np.mean(ae_scores):.4f}")
+        print(f"Mean VAE F-statistic: {np.mean(vae_scores):.4f}")
+
+        # Plot histogram of F-statistics to see distribution
+        plt.figure(figsize=(15, 6))
+        plt.subplot(1, 2, 1)
+        plt.hist(ae_scores, bins=30)
+        plt.title(f'AE F-statistic Distribution for {field}')
+        plt.xlabel('F-statistic')
+        plt.ylabel('Count')
+        plt.grid(alpha=0.3)
+
+        plt.subplot(1, 2, 2)
+        plt.hist(vae_scores, bins=30)
+        plt.title(f'VAE F-statistic Distribution for {field}')
+        plt.xlabel('F-statistic')
+        plt.ylabel('Count')
+        plt.grid(alpha=0.3)
+
+        plt.tight_layout()
+        plt.show()
+
         # Find top dimensions (highest F-statistic and p < 0.05)
         ae_signif_dims = np.where(ae_p_values < 0.05)[0]
         vae_signif_dims = np.where(vae_p_values < 0.05)[0]
 
-        ae_top_dims = ae_signif_dims[np.argsort(ae_scores[ae_signif_dims])[::-1][:10]]
-        vae_top_dims = vae_signif_dims[np.argsort(vae_scores[vae_signif_dims])[::-1][:10]]
+        print(f"Found {len(ae_signif_dims)} significant AE dimensions")
+        print(f"Found {len(vae_signif_dims)} significant VAE dimensions")
+
+        if len(ae_signif_dims) > 0:
+            ae_top_dims = ae_signif_dims[np.argsort(ae_scores[ae_signif_dims])[::-1][:10]]
+        else:
+            ae_top_dims = np.argsort(ae_scores)[::-1][:10]  # Just use highest F even if not significant
+
+        if len(vae_signif_dims) > 0:
+            vae_top_dims = vae_signif_dims[np.argsort(vae_scores[vae_signif_dims])[::-1][:10]]
+        else:
+            vae_top_dims = np.argsort(vae_scores)[::-1][:10]  # Just use highest F even if not significant
 
         print(f"\nTop 10 AE dimensions for {field}:")
         for i, dim in enumerate(ae_top_dims):
@@ -6090,7 +6174,7 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
                         # Standard boxplot without colors
                         plt.boxplot(data)
 
-                        plt.title(f'AE Dimension {dim}', fontsize=14)
+                        plt.title(f'AE Dimension {dim} (F={ae_scores[dim]:.2f}, p={ae_p_values[dim]:.4f})', fontsize=12)
                         plt.ylabel('Dimension Value', fontsize=12)
 
                         # Set x-ticks with increased spacing
@@ -6125,7 +6209,7 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
                         # Standard boxplot without colors
                         plt.boxplot(data)
 
-                        plt.title(f'VAE Dimension {dim}', fontsize=14)
+                        plt.title(f'VAE Dimension {dim} (F={vae_scores[dim]:.2f}, p={vae_p_values[dim]:.4f})', fontsize=12)
                         plt.ylabel('Dimension Value', fontsize=12)
 
                         # Set x-ticks with increased spacing
@@ -6156,15 +6240,1200 @@ def analyze_metadata_dimensions(ae_model, vae_model, dataloader, metadata_path="
 
     return dimension_analysis
 
+# Make sure to import time for the timing measurements
+import time
+
 # Load both models
 print("Loading trained models...")
 ae_model, _ = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
 vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
 
-# Run the dimension analysis
+# Run the dimension analysis with debug information
 print("\nAnalyzing which dimensions correlate with metadata...")
 dimension_results = analyze_metadata_dimensions(
     ae_model, vae_model, val_loader,
-    metadata_path="dicom_metadata.csv", max_samples=150)
+    metadata_path="dicom_metadata.csv", max_samples=500,
+    debug=True)  # Enable debug output
 
 print("\nDimension analysis completed!")
+
+"""## Group Separation"""
+
+# Cell 23: VAE Latent Dimension Analysis for Patient Group Separation
+
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import mutual_info_score
+from scipy.stats import f_oneway
+import scipy.stats as stats
+from tqdm import tqdm
+import gc
+
+def analyze_vae_dimensions_for_group_separation(model, dataloader, max_samples=200):
+    """
+    Analyze how individual VAE latent dimensions separate between patient groups (PD, Control, SWEDD).
+
+    This analysis focuses on:
+    1. Which dimensions have highest KL divergence (most "active" dimensions)
+    2. Which dimensions best separate between patient groups
+    3. Visualizing the distribution of top dimensions across groups
+    """
+    device = next(model.parameters()).device
+    model.eval()
+
+    # Storage for latent vectors and metadata
+    latent_means = []
+    latent_logvars = []
+    kl_per_dim = []
+    labels = []
+    paths = []
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Extracting VAE latent vectors"):
+            try:
+                volumes = batch['volume'].to(device)
+                batch_labels = batch['label']
+                batch_paths = batch['path']
+
+                # Extract latent vectors
+                mu, log_var = model.encode(volumes)
+
+                # Calculate KL divergence per dimension: 0.5 * (mu^2 + exp(log_var) - log_var - 1)
+                kl_dims = 0.5 * (mu.pow(2) + log_var.exp() - log_var - 1)
+
+                # Store results
+                latent_means.append(mu.cpu().numpy())
+                latent_logvars.append(log_var.cpu().numpy())
+                kl_per_dim.append(kl_dims.cpu().numpy())
+                labels.extend(batch_labels)
+                paths.extend(batch_paths)
+
+                # Memory cleanup
+                del volumes, mu, log_var, kl_dims
+                torch.cuda.empty_cache()
+
+                if len(labels) >= max_samples:
+                    break
+
+            except Exception as e:
+                print(f"Error processing batch: {str(e)}")
+                continue
+
+    # Stack arrays
+    latent_means = np.vstack(latent_means)
+    latent_logvars = np.vstack(latent_logvars)
+    kl_per_dim = np.vstack(kl_per_dim)
+
+    # Limit to max_samples if needed
+    if max_samples and len(labels) > max_samples:
+        latent_means = latent_means[:max_samples]
+        latent_logvars = latent_logvars[:max_samples]
+        kl_per_dim = kl_per_dim[:max_samples]
+        labels = labels[:max_samples]
+        paths = paths[:max_samples]
+
+    # Get unique patient groups
+    unique_groups = sorted(list(set(labels)))
+
+    # Print overview
+    print(f"Analyzing {len(labels)} samples across {len(unique_groups)} patient groups: {unique_groups}")
+    group_counts = {group: labels.count(group) for group in unique_groups}
+    print("Samples per group:", group_counts)
+
+    # Calculate overall KL divergence per dimension
+    mean_kl_per_dim = np.mean(kl_per_dim, axis=0)
+
+    # Calculate separation metrics for each dimension
+    # We'll use ANOVA F-statistic to measure how well each dimension separates groups
+    f_stats = np.zeros(latent_means.shape[1])
+    p_values = np.ones(latent_means.shape[1])
+    mi_scores = np.zeros(latent_means.shape[1])  # Mutual information scores
+
+    # Create a numeric encoding of labels for mutual information
+    label_map = {label: i for i, label in enumerate(unique_groups)}
+    numeric_labels = np.array([label_map[label] for label in labels])
+
+    # Calculate separation metrics for each dimension
+    for dim in range(latent_means.shape[1]):
+        # Get dimension values for each group
+        groups_data = [latent_means[np.array(labels) == group, dim] for group in unique_groups]
+
+        # Calculate ANOVA F-statistic and p-value
+        if all(len(g) > 1 for g in groups_data):
+            f_val, p_val = f_oneway(*groups_data)
+            f_stats[dim] = f_val
+            p_values[dim] = p_val
+
+        # Calculate mutual information
+        try:
+            # Discretize dimension values for MI calculation
+            dim_values = latent_means[:, dim]
+            bins = min(20, len(dim_values) // 10)  # Use fewer bins for smaller datasets
+            discretized = np.digitize(dim_values, np.linspace(min(dim_values), max(dim_values), bins))
+            mi_scores[dim] = mutual_info_score(discretized, numeric_labels)
+        except Exception as e:
+            print(f"Error calculating MI for dimension {dim}: {e}")
+            mi_scores[dim] = 0
+
+    # Find top dimensions by different metrics
+    # 1. Top active dimensions (highest KL)
+    top_kl_dims = np.argsort(mean_kl_per_dim)[::-1][:20]
+
+    # 2. Top separating dimensions (highest F-statistic with p < 0.05)
+    significant_dims = np.where(p_values < 0.05)[0]
+    top_f_dims = significant_dims[np.argsort(f_stats[significant_dims])[::-1][:20]] if len(significant_dims) > 0 else np.argsort(f_stats)[::-1][:20]
+
+    # 3. Top dimensions by mutual information
+    top_mi_dims = np.argsort(mi_scores)[::-1][:20]
+
+    # Create a composite score that combines these metrics
+    # Normalize each metric to [0, 1] range and then average
+    if np.max(mean_kl_per_dim) > np.min(mean_kl_per_dim):
+        norm_kl = (mean_kl_per_dim - np.min(mean_kl_per_dim)) / (np.max(mean_kl_per_dim) - np.min(mean_kl_per_dim) + 1e-10)
+    else:
+        norm_kl = np.zeros_like(mean_kl_per_dim)
+
+    if np.max(f_stats) > np.min(f_stats):
+        norm_f = (f_stats - np.min(f_stats)) / (np.max(f_stats) - np.min(f_stats) + 1e-10)
+    else:
+        norm_f = np.zeros_like(f_stats)
+
+    if np.max(mi_scores) > np.min(mi_scores):
+        norm_mi = (mi_scores - np.min(mi_scores)) / (np.max(mi_scores) - np.min(mi_scores) + 1e-10)
+    else:
+        norm_mi = np.zeros_like(mi_scores)
+
+    # Weight the score components based on significance (F-stat p-value)
+    significance_weight = np.where(p_values < 0.05, 1.0, 0.1)
+    composite_scores = (norm_kl + norm_f * significance_weight + norm_mi) / 3
+
+    # Top dimensions by composite score
+    top_composite_dims = np.argsort(composite_scores)[::-1][:20]
+
+    # Print top dimensions by each metric
+    print("\nTop 10 dimensions by average KL divergence (most active):")
+    for i, dim in enumerate(top_kl_dims[:10]):
+        print(f"  Dimension {dim}: KL={mean_kl_per_dim[dim]:.4f}")
+
+    print("\nTop 10 dimensions by F-statistic (best group separation):")
+    for i, dim in enumerate(top_f_dims[:10]):
+        print(f"  Dimension {dim}: F={f_stats[dim]:.2f}, p={p_values[dim]:.6f}")
+
+    print("\nTop 10 dimensions by mutual information:")
+    for i, dim in enumerate(top_mi_dims[:10]):
+        print(f"  Dimension {dim}: MI={mi_scores[dim]:.4f}")
+
+    print("\nTop 10 dimensions by composite score:")
+    for i, dim in enumerate(top_composite_dims[:10]):
+        print(f"  Dimension {dim}: Score={composite_scores[dim]:.4f}, KL={mean_kl_per_dim[dim]:.4f}, F={f_stats[dim]:.2f}, p={p_values[dim]:.6f}")
+
+    # Visualize top dimensions by different metrics
+    print("\nVisualizing top dimensions by group separation...")
+
+    # Create a custom palette for consistent colors
+    palette = {'PD': 'red', 'Control': 'blue', 'SWEDD': 'green'}
+
+    # Visualize top dimensions by F-statistic
+    top_dims_to_plot = top_f_dims[:5]
+    visualize_dimensions_by_group(latent_means, labels, top_dims_to_plot,
+                                 group_counts, f_stats, p_values, palette,
+                                 "Top Dimensions by F-statistic")
+
+    # Visualize top dimensions by KL divergence
+    visualize_dimensions_by_group(latent_means, labels, top_kl_dims[:5],
+                                 group_counts, f_stats, p_values, palette,
+                                 "Top Dimensions by KL Divergence")
+
+    # Visualize top dimensions by composite score
+    visualize_dimensions_by_group(latent_means, labels, top_composite_dims[:5],
+                                 group_counts, f_stats, p_values, palette,
+                                 "Top Dimensions by Composite Score")
+
+    # Create a dimension score dataframe for further reference
+    dimension_scores = pd.DataFrame({
+        'dimension': np.arange(latent_means.shape[1]),
+        'kl_divergence': mean_kl_per_dim,
+        'f_statistic': f_stats,
+        'p_value': p_values,
+        'mutual_info': mi_scores,
+        'composite_score': composite_scores,
+        'significant': p_values < 0.05
+    })
+
+    # Sort by composite score
+    dimension_scores = dimension_scores.sort_values('composite_score', ascending=False)
+
+    # Create group separation visualization in 2D space using top 2 dimensions
+    create_2d_separation_plot(latent_means, labels, top_f_dims[:2], palette,
+                             "Group Separation Using Top 2 Dimensions (F-statistic)")
+
+    # Create group separation visualization in 2D space using top 2 composite dimensions
+    create_2d_separation_plot(latent_means, labels, top_composite_dims[:2], palette,
+                             "Group Separation Using Top 2 Dimensions (Composite Score)")
+
+    return {
+        'latent_means': latent_means,
+        'latent_logvars': latent_logvars,
+        'kl_per_dim': kl_per_dim,
+        'labels': labels,
+        'paths': paths,
+        'top_kl_dims': top_kl_dims,
+        'top_f_dims': top_f_dims,
+        'top_mi_dims': top_mi_dims,
+        'top_composite_dims': top_composite_dims,
+        'dimension_scores': dimension_scores,
+        'f_stats': f_stats,
+        'p_values': p_values,
+        'mean_kl_per_dim': mean_kl_per_dim,
+        'mi_scores': mi_scores
+    }
+
+def visualize_dimensions_by_group(latent_means, labels, dimensions,
+                                 group_counts, f_stats, p_values,
+                                 palette, title):
+    """
+    Visualize how specific dimensions distribute across patient groups.
+
+    Parameters:
+        latent_means: Numpy array of latent vectors (n_samples, n_dims)
+        labels: List of group labels for each sample
+        dimensions: List of dimensions to visualize
+        group_counts: Dictionary with count of samples per group
+        f_stats: F-statistics for each dimension
+        p_values: p-values for each dimension
+        palette: Color palette for groups
+        title: Title for the plot
+    """
+    unique_groups = sorted(list(set(labels)))
+    n_dims = len(dimensions)
+
+    # Set up the figure
+    fig, axes = plt.subplots(1, n_dims, figsize=(n_dims*5, 6))
+    if n_dims == 1:
+        axes = [axes]
+
+    fig.suptitle(f"{title}", fontsize=16)
+
+    # Create visualization for each dimension
+    for i, dim in enumerate(dimensions):
+        ax = axes[i]
+
+        # Create a dataframe for this dimension
+        dim_df = pd.DataFrame({
+            'Value': latent_means[:, dim],
+            'Group': labels
+        })
+
+        # Create violin plot with swarm plot overlay
+        sns.violinplot(x='Group', y='Value', data=dim_df, palette=palette, ax=ax)
+
+        # Add swarm plot if there aren't too many samples (to avoid clutter)
+        if sum(group_counts.values()) < 100:
+            sns.swarmplot(x='Group', y='Value', data=dim_df, color='black', alpha=0.5, ax=ax)
+
+        # Add box plot for clearer visualization of the median and quartiles
+        sns.boxplot(x='Group', y='Value', data=dim_df, width=0.2, palette=palette,
+                   boxprops={'alpha': 0.5}, ax=ax)
+
+        # Add stats in the title
+        ax.set_title(f"Dimension {dim}\nF={f_stats[dim]:.2f}, p={p_values[dim]:.6f}", fontsize=12)
+        ax.set_xlabel('')
+
+        if i == 0:
+            ax.set_ylabel('Dimension Value', fontsize=12)
+        else:
+            ax.set_ylabel('')
+
+        # Add group counts to x-axis labels
+        x_labels = [f"{group}\n(n={group_counts[group]})" for group in unique_groups]
+        ax.set_xticklabels(x_labels)
+
+        # Add grid for better readability
+        ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85)
+    plt.show()
+
+def create_2d_separation_plot(latent_means, labels, top_2_dims, palette, title):
+    """
+    Create a 2D scatter plot showing how the top 2 dimensions separate patient groups.
+
+    Parameters:
+        latent_means: Numpy array of latent vectors
+        labels: List of group labels
+        top_2_dims: List of the top 2 dimensions to plot
+        palette: Color palette for groups
+        title: Title for the plot
+    """
+    if len(top_2_dims) < 2:
+        print("Need at least 2 dimensions for 2D plot")
+        return
+
+    # Create figure
+    plt.figure(figsize=(10, 8))
+
+    # Extract the two dimensions
+    dim1, dim2 = top_2_dims[0], top_2_dims[1]
+
+    # Create dataframe for plotting
+    plot_df = pd.DataFrame({
+        'Dimension 1': latent_means[:, dim1],
+        'Dimension 2': latent_means[:, dim2],
+        'Group': labels
+    })
+
+    # Create scatter plot
+    sns.scatterplot(x='Dimension 1', y='Dimension 2', hue='Group',
+                   data=plot_df, palette=palette, s=100, alpha=0.7)
+
+    # Add group centroids
+    for group in set(labels):
+        group_data = plot_df[plot_df['Group'] == group]
+        centroid_x = group_data['Dimension 1'].mean()
+        centroid_y = group_data['Dimension 2'].mean()
+        plt.scatter(centroid_x, centroid_y, s=200, color=palette[group],
+                   marker='X', edgecolor='black', linewidth=2,
+                   label=f"{group} centroid")
+
+    # Add dimension indices to axis labels
+    plt.xlabel(f"Dimension {dim1}", fontsize=12)
+    plt.ylabel(f"Dimension {dim2}", fontsize=12)
+
+    # Add title with dimension indices
+    plt.title(f"{title}\nDimensions {dim1} and {dim2}", fontsize=14)
+
+    # Add grid for better readability
+    plt.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Calculate and display group separation metrics for these dimensions
+    calculate_2d_separation_metrics(latent_means[:, [dim1, dim2]], labels,
+                                   f"Dimensions {dim1} and {dim2}")
+
+def calculate_2d_separation_metrics(points_2d, labels, title):
+    """
+    Calculate metrics that quantify how well the selected dimensions separate groups.
+
+    Parameters:
+        points_2d: Numpy array of 2D points
+        labels: List of group labels
+        title: Title for printed metrics
+    """
+    unique_groups = sorted(list(set(labels)))
+
+    # Convert labels to numpy array
+    labels = np.array(labels)
+
+    # Calculate group centroids
+    centroids = {}
+    for group in unique_groups:
+        group_points = points_2d[labels == group]
+        centroids[group] = np.mean(group_points, axis=0)
+
+    # Calculate distances between centroids
+    print(f"\n{title} - Centroid distances between groups:")
+    for i, group1 in enumerate(unique_groups):
+        for group2 in unique_groups[i+1:]:
+            dist = np.linalg.norm(centroids[group1] - centroids[group2])
+            print(f"  {group1} vs {group2}: {dist:.4f}")
+
+    # Calculate average distance of each sample to its own group centroid
+    within_dists = {}
+    for group in unique_groups:
+        group_points = points_2d[labels == group]
+        dists = np.linalg.norm(group_points - centroids[group], axis=1)
+        within_dists[group] = np.mean(dists)
+
+    print(f"\n{title} - Average within-group distances:")
+    for group, dist in within_dists.items():
+        print(f"  {group}: {dist:.4f}")
+
+    # Calculate silhouette-like metric (ratio of between vs. within)
+    between_dists = {}
+    for i, group1 in enumerate(unique_groups):
+        for group2 in unique_groups[i+1:]:
+            between_dists[f"{group1}-{group2}"] = np.linalg.norm(centroids[group1] - centroids[group2])
+
+    avg_within = np.mean(list(within_dists.values()))
+    avg_between = np.mean(list(between_dists.values()))
+    separation_ratio = avg_between / avg_within
+
+    print(f"\n{title} - Separation quality:")
+    print(f"  Average within-group distance: {avg_within:.4f}")
+    print(f"  Average between-group distance: {avg_between:.4f}")
+    print(f"  Separation ratio: {separation_ratio:.4f} (higher is better)")
+
+# Load the trained VAE model from previous cells
+print("Loading VAE model...")
+vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
+
+# Run the full analysis
+print("\nAnalyzing VAE dimensions for patient group separation...")
+results = analyze_vae_dimensions_for_group_separation(vae_model, val_loader, max_samples=200)
+
+# Analyze what top dimensions represent in brain space by visualizing them
+print("\nVisualizing what top dimensions represent in brain space...")
+top_dims_to_visualize = results['top_composite_dims'][:3]
+
+for dim in top_dims_to_visualize:
+    print(f"\nAnalyzing dimension {dim} in brain space:")
+    visualize_vae_latent_dimension(vae_model, val_loader, dimension_idx=dim, alpha=5.0)
+
+# Cell 24: AE vs VAE Performance Analysis with Top Discriminative Dimensions
+
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import f_oneway
+from tqdm import tqdm
+import gc
+import matplotlib.patches as mpatches
+from matplotlib.lines import Line2D
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+def compare_ae_vae_performance(ae_model, vae_model, dataloader, max_samples=150):
+    """
+    Comprehensive comparison of AE and VAE performance focusing on:
+    1. Reconstruction quality
+    2. Top discriminative dimensions and their group separation ability
+    """
+    device = next(ae_model.parameters()).device
+    ae_model.eval()
+    vae_model.eval()
+
+    # Storage for data
+    original_samples = []
+    reconstructions_ae = []
+    reconstructions_vae = []
+    latent_ae = []
+    latent_vae_mu = []
+    labels = []
+    paths = []
+
+    print("Extracting reconstructions and latent representations...")
+
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Processing samples"):
+            volumes = batch['volume'].to(device)
+            batch_labels = batch['label']
+            batch_paths = batch['path']
+
+            # Get AE outputs
+            ae_latent = ae_model.encode(volumes)
+            ae_recon = ae_model.decode(ae_latent)
+
+            # Get VAE outputs
+            vae_mu, vae_logvar = vae_model.encode(volumes)
+            vae_recon, _, _ = vae_model(volumes)
+
+            # Store data
+            original_samples.append(volumes.cpu().numpy())
+            reconstructions_ae.append(ae_recon.cpu().numpy())
+            reconstructions_vae.append(vae_recon.cpu().numpy())
+            latent_ae.append(ae_latent.cpu().numpy())
+            latent_vae_mu.append(vae_mu.cpu().numpy())
+            labels.extend(batch_labels)
+            paths.extend(batch_paths)
+
+            # Memory cleanup
+            del volumes, ae_latent, ae_recon, vae_mu, vae_logvar, vae_recon
+            torch.cuda.empty_cache()
+
+            if len(labels) >= max_samples:
+                break
+
+    # Concatenate data
+    original_samples = np.vstack(original_samples)[:max_samples]
+    reconstructions_ae = np.vstack(reconstructions_ae)[:max_samples]
+    reconstructions_vae = np.vstack(reconstructions_vae)[:max_samples]
+    latent_ae = np.vstack(latent_ae)[:max_samples]
+    latent_vae_mu = np.vstack(latent_vae_mu)[:max_samples]
+    labels = labels[:max_samples]
+    paths = paths[:max_samples]
+
+    # Get unique groups
+    unique_groups = sorted(list(set(labels)))
+    print(f"Analyzing {len(labels)} samples across {len(unique_groups)} groups: {unique_groups}")
+
+    # Create a color palette for groups
+    palette = {'PD': '#E41A1C', 'Control': '#377EB8', 'SWEDD': '#4DAF4A'}
+    if len(unique_groups) > len(palette):
+        # Generate colors for any additional groups
+        additional_colors = plt.cm.tab10(np.linspace(0, 1, len(unique_groups)))
+        palette = {group: additional_colors[i] for i, group in enumerate(unique_groups)}
+
+    # 1. Reconstruction quality comparison
+    compare_reconstruction_quality(original_samples, reconstructions_ae, reconstructions_vae, labels, unique_groups)
+
+    # 2. Find top discriminative dimensions for each model
+    ae_dim_results = find_discriminative_dimensions(latent_ae, labels, unique_groups, "AE")
+    vae_dim_results = find_discriminative_dimensions(latent_vae_mu, labels, unique_groups, "VAE")
+
+    # 3. Compare top dimensions
+    compare_top_dimensions(ae_dim_results, vae_dim_results)
+
+    # 4. Visualize top dimensions for group separation
+    visualize_top_dimensions(latent_ae, latent_vae_mu, labels, unique_groups,
+                            ae_dim_results, vae_dim_results, palette)
+
+    return {
+        'original_samples': original_samples,
+        'reconstructions_ae': reconstructions_ae,
+        'reconstructions_vae': reconstructions_vae,
+        'latent_ae': latent_ae,
+        'latent_vae_mu': latent_vae_mu,
+        'labels': labels,
+        'paths': paths,
+        'ae_dim_results': ae_dim_results,
+        'vae_dim_results': vae_dim_results
+    }
+
+def compare_reconstruction_quality(originals, recon_ae, recon_vae, labels, unique_groups):
+    """Visualize and compare reconstruction quality between AE and VAE."""
+    print("\n1. Reconstruction Quality Comparison")
+
+    # Calculate MSE for each sample
+    mse_ae = np.mean(np.square(originals - recon_ae).reshape(originals.shape[0], -1), axis=1)
+    mse_vae = np.mean(np.square(originals - recon_vae).reshape(originals.shape[0], -1), axis=1)
+
+    # Per-group statistics
+    mse_by_group = {}
+    for group in unique_groups:
+        group_mask = np.array(labels) == group
+        group_mse_ae = mse_ae[group_mask]
+        group_mse_vae = mse_vae[group_mask]
+
+        mse_by_group[group] = {
+            'AE': {
+                'mean': np.mean(group_mse_ae),
+                'std': np.std(group_mse_ae)
+            },
+            'VAE': {
+                'mean': np.mean(group_mse_vae),
+                'std': np.std(group_mse_vae)
+            }
+        }
+
+    # Print statistics
+    print("\nReconstruction Error by Group (MSE):")
+    for group in unique_groups:
+        ae_stats = mse_by_group[group]['AE']
+        vae_stats = mse_by_group[group]['VAE']
+        winner = "AE" if ae_stats['mean'] < vae_stats['mean'] else "VAE"
+
+        print(f"  {group}:")
+        print(f"    AE:  {ae_stats['mean']:.6f} ± {ae_stats['std']:.6f}")
+        print(f"    VAE: {vae_stats['mean']:.6f} ± {vae_stats['std']:.6f}")
+        print(f"    Best: {winner} by {abs(ae_stats['mean'] - vae_stats['mean']):.6f}")
+
+    # Create comparison visualization
+    plt.figure(figsize=(15, 6))
+
+    # 1. Direct comparison scatter plot
+    plt.subplot(1, 2, 1)
+    plt.scatter(mse_ae, mse_vae, c=np.where(mse_ae < mse_vae, 'blue', 'red'),
+               alpha=0.7, s=80, edgecolor='k', linewidth=0.5)
+
+    # Add diagonal line
+    max_err = max(np.max(mse_ae), np.max(mse_vae))
+    plt.plot([0, max_err], [0, max_err], 'k--', alpha=0.5)
+
+    # Add annotations
+    plt.text(max_err*0.1, max_err*0.8, "VAE Better", color='red', fontsize=12, ha='center')
+    plt.text(max_err*0.8, max_err*0.1, "AE Better", color='blue', fontsize=12, ha='center')
+
+    # Better = Lower reconstruction error
+    ae_win_count = np.sum(mse_ae < mse_vae)
+    vae_win_count = np.sum(mse_vae < mse_ae)
+    plt.title(f"AE vs VAE Reconstruction Error\nAE better: {ae_win_count}, VAE better: {vae_win_count}", fontsize=14)
+    plt.xlabel("AE Error (MSE)", fontsize=12)
+    plt.ylabel("VAE Error (MSE)", fontsize=12)
+    plt.grid(alpha=0.3)
+
+    # 2. Group-wise VAE improvement percentage
+    plt.subplot(1, 2, 2)
+
+    # Calculate relative improvement (positive = VAE better, negative = AE better)
+    improvement = ((mse_ae - mse_vae) / mse_ae) * 100
+
+    # Create dataframe for plotting
+    imp_df = pd.DataFrame({
+        'Improvement (%)': improvement,
+        'Group': labels
+    })
+
+    # Create violin plot with box plot overlay
+    sns.violinplot(x='Group', y='Improvement (%)', data=imp_df)
+    sns.boxplot(x='Group', y='Improvement (%)', data=imp_df, width=0.1,
+              boxprops={'facecolor': 'white'})
+
+    # Add zero line
+    plt.axhline(y=0, color='r', linestyle='--')
+
+    # Customize plot
+    plt.title("VAE Improvement over AE (%)", fontsize=14)
+    plt.ylabel("Improvement (%)\nPositive = VAE better, Negative = AE better", fontsize=12)
+    plt.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Visual comparison of actual reconstructions
+    visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, unique_groups)
+
+def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, unique_groups):
+    """Compare the visual quality of reconstructions for sample images from each group."""
+    # Get one sample per group
+    sample_indices = []
+    for group in unique_groups:
+        group_indices = [i for i, label in enumerate(labels) if label == group]
+        if group_indices:
+            # Pick middle sample to avoid potential outliers
+            sample_indices.append(group_indices[len(group_indices)//2])
+
+    if not sample_indices:
+        return
+
+    # Define anatomically relevant slices
+    axial_slice = 32  # Axial view
+
+    # Create figure for reconstructions
+    fig = plt.figure(figsize=(12, 4 * len(sample_indices)))
+    plt.suptitle("Visual Comparison of Reconstructions", fontsize=16)
+
+    for i, idx in enumerate(sample_indices):
+        # Get original and reconstructions
+        orig = originals[idx].squeeze()
+        ae_recon = recon_ae[idx].squeeze()
+        vae_recon = recon_vae[idx].squeeze()
+        group = labels[idx]
+
+        # Original
+        plt.subplot(len(sample_indices), 3, i*3 + 1)
+        plt.imshow(orig[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.title(f"Original - {group}", fontsize=12)
+        plt.axis('off')
+
+        # AE reconstruction
+        plt.subplot(len(sample_indices), 3, i*3 + 2)
+        plt.imshow(ae_recon[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.title("AE Reconstruction", fontsize=12)
+        plt.axis('off')
+
+        # VAE reconstruction
+        plt.subplot(len(sample_indices), 3, i*3 + 3)
+        plt.imshow(vae_recon[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.title("VAE Reconstruction", fontsize=12)
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+    # Create figure for error maps
+    fig = plt.figure(figsize=(12, 4 * len(sample_indices)))
+    plt.suptitle("Reconstruction Error Maps", fontsize=16)
+
+    for i, idx in enumerate(sample_indices):
+        # Get original and reconstructions
+        orig = originals[idx].squeeze()
+        ae_recon = recon_ae[idx].squeeze()
+        vae_recon = recon_vae[idx].squeeze()
+        group = labels[idx]
+
+        # Calculate error maps
+        ae_error = np.abs(orig - ae_recon)
+        vae_error = np.abs(orig - vae_recon)
+
+        # Set common color scale
+        vmax = max(np.max(ae_error), np.max(vae_error))
+
+        # Original
+        plt.subplot(len(sample_indices), 3, i*3 + 1)
+        plt.imshow(orig[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.title(f"Original - {group}", fontsize=12)
+        plt.axis('off')
+
+        # AE error
+        plt.subplot(len(sample_indices), 3, i*3 + 2)
+        plt.imshow(ae_error[axial_slice], cmap='hot', vmin=0, vmax=vmax)
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title("AE Error", fontsize=12)
+        plt.axis('off')
+
+        # VAE error
+        plt.subplot(len(sample_indices), 3, i*3 + 3)
+        plt.imshow(vae_error[axial_slice], cmap='hot', vmin=0, vmax=vmax)
+        plt.colorbar(fraction=0.046, pad=0.04)
+        plt.title("VAE Error", fontsize=12)
+        plt.axis('off')
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.9)
+    plt.show()
+
+def find_discriminative_dimensions(latent_vectors, labels, unique_groups, model_name, top_n=10):
+    """
+    Find the most discriminative dimensions between patient groups.
+    Uses F-statistic from one-way ANOVA to measure separation power.
+    """
+    print(f"\nFinding top discriminative dimensions for {model_name}...")
+
+    # Convert labels to numpy array
+    labels_array = np.array(labels)
+
+    # Calculate F-statistic for each dimension
+    f_values = []
+    p_values = []
+
+    for dim in range(latent_vectors.shape[1]):
+        # Extract values for this dimension for each group
+        groups_data = [latent_vectors[labels_array == group, dim] for group in unique_groups]
+
+        try:
+            # Run one-way ANOVA
+            if all(len(g) > 1 for g in groups_data):
+                f_stat, p_val = f_oneway(*groups_data)
+                f_values.append(f_stat)
+                p_values.append(p_val)
+            else:
+                f_values.append(0)
+                p_values.append(1.0)
+        except Exception as e:
+            print(f"Error for dimension {dim}: {e}")
+            f_values.append(0)
+            p_values.append(1.0)
+
+    # Convert to numpy arrays
+    f_values = np.array(f_values)
+    p_values = np.array(p_values)
+
+    # Find top discriminative dimensions
+    significant_dims = np.where(p_values < 0.05)[0]
+    print(f"  Found {len(significant_dims)} significant dimensions (p < 0.05)")
+
+    # Sort by F-statistic
+    sorted_indices = np.argsort(f_values)[::-1]
+    top_indices = sorted_indices[:top_n]
+
+    # Get corresponding F and p values
+    top_f_values = f_values[top_indices]
+    top_p_values = p_values[top_indices]
+
+    # Report top dimensions
+    print("\nTop 5 discriminative dimensions:")
+    for i in range(min(5, len(top_indices))):
+        dim = top_indices[i]
+        print(f"  Dimension {dim}: F = {top_f_values[i]:.2f}, p = {top_p_values[i]:.6f}")
+
+    # Calculate group statistics for top dimensions
+    group_stats = {}
+    for dim in top_indices[:5]:  # Only store stats for top 5 dims to save memory
+        dim_stats = {}
+        for group in unique_groups:
+            values = latent_vectors[labels_array == group, dim]
+            dim_stats[group] = {
+                'mean': np.mean(values),
+                'std': np.std(values),
+                'min': np.min(values),
+                'max': np.max(values)
+            }
+        group_stats[dim] = dim_stats
+
+    return {
+        'top_indices': top_indices,
+        'top_f_values': top_f_values,
+        'top_p_values': top_p_values,
+        'all_f_values': f_values,
+        'all_p_values': p_values,
+        'group_stats': group_stats
+    }
+
+def compare_top_dimensions(ae_results, vae_results):
+    """Compare statistical separation power of top dimensions for AE and VAE."""
+    print("\n2. Top Dimensions Comparison")
+
+    # Create a figure
+    plt.figure(figsize=(14, 6))
+
+    # 1. Top F-statistics comparison (left subplot)
+    plt.subplot(1, 2, 1)
+
+    # Get top 10 F-statistics for each model
+    ae_f = ae_results['top_f_values'][:10]
+    vae_f = vae_results['top_f_values'][:10]
+
+    # Create index positions
+    x = np.arange(len(ae_f))
+    width = 0.35
+
+    # Create bar chart
+    plt.bar(x - width/2, ae_f, width, label='AE', color='#A1CAF1')
+    plt.bar(x + width/2, vae_f, width, label='VAE', color='#F08080')
+
+    # Add labels and customize plot
+    plt.xlabel('Dimension Rank', fontsize=12)
+    plt.ylabel('F-statistic', fontsize=12)
+    plt.title('Top 10 Discriminative Dimensions by F-statistic', fontsize=14)
+    plt.xticks(x, [f'{i+1}' for i in range(len(x))])
+    plt.legend()
+    plt.grid(axis='y', alpha=0.3)
+
+    # 2. Significant dimensions count (right subplot)
+    plt.subplot(1, 2, 2)
+
+    # Count significant dimensions (p < 0.05)
+    ae_sig_count = np.sum(ae_results['all_p_values'] < 0.05)
+    vae_sig_count = np.sum(vae_results['all_p_values'] < 0.05)
+
+    # Calculate percentages
+    ae_perc = ae_sig_count / len(ae_results['all_p_values']) * 100
+    vae_perc = vae_sig_count / len(vae_results['all_p_values']) * 100
+
+    # Create bar chart
+    models = ['AE', 'VAE']
+    counts = [ae_sig_count, vae_sig_count]
+    percentages = [ae_perc, vae_perc]
+
+    bars = plt.bar(models, counts, color=['#A1CAF1', '#F08080'])
+
+    # Add count labels
+    for i, (bar, count, percentage) in enumerate(zip(bars, counts, percentages)):
+        plt.text(bar.get_x() + bar.get_width()/2, count + 1,
+               f"{count} ({percentage:.1f}%)", ha='center', fontsize=12)
+
+    # Customize plot
+    plt.xlabel('Model', fontsize=12)
+    plt.ylabel('Number of Significant Dimensions (p < 0.05)', fontsize=12)
+    plt.title('Dimensions with Significant Group Separation', fontsize=14)
+    plt.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+    # 3. Distribution of F-statistics (supplementary plot)
+    plt.figure(figsize=(10, 5))
+
+    # Get all F-values
+    ae_all_f = ae_results['all_f_values']
+    vae_all_f = vae_results['all_f_values']
+
+    # Create histogram
+    bins = np.linspace(0, max(max(ae_all_f), max(vae_all_f)), 30)
+    plt.hist(ae_all_f, bins=bins, alpha=0.5, label='AE', color='#A1CAF1')
+    plt.hist(vae_all_f, bins=bins, alpha=0.5, label='VAE', color='#F08080')
+
+    # Customize plot
+    plt.xlabel('F-statistic', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.title('Distribution of F-statistics (higher = better group separation)', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.show()
+
+def visualize_top_dimensions(latent_ae, latent_vae, labels, unique_groups,
+                            ae_results, vae_results, palette):
+    """
+    Visualize how top dimensions separate patient groups in AE and VAE.
+    Shows 2D plots of the 2 most discriminative dimensions with group centroids.
+    """
+    print("\n3. Top Dimensions Group Separation Visualization")
+
+    # Convert labels to numpy array
+    labels_array = np.array(labels)
+
+    # A. First, visualize AE top 2 dimensions
+    ae_top_dims = ae_results['top_indices'][:2]
+    ae_top_f = ae_results['top_f_values'][:2]
+    ae_top_p = ae_results['top_p_values'][:2]
+
+    # B. Then, visualize VAE top 2 dimensions
+    vae_top_dims = vae_results['top_indices'][:2]
+    vae_top_f = vae_results['top_f_values'][:2]
+    vae_top_p = vae_results['top_p_values'][:2]
+
+    # Create a figure with AE and VAE side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+
+    # 1. AE Top 2 Dimensions Scatter Plot
+    visualize_2d_separation(latent_ae, labels_array, unique_groups, ae_top_dims,
+                           ae_top_f, ae_top_p, palette, ax1, "AE")
+
+    # 2. VAE Top 2 Dimensions Scatter Plot
+    visualize_2d_separation(latent_vae, labels_array, unique_groups, vae_top_dims,
+                           vae_top_f, vae_top_p, palette, ax2, "VAE")
+
+    plt.tight_layout()
+    plt.show()
+
+    # Additional visualization: Show distribution of each dimension by group
+    visualize_top_dim_distributions(latent_ae, latent_vae, labels_array, unique_groups,
+                                   ae_top_dims, vae_top_dims, palette)
+
+def visualize_2d_separation(latent_vectors, labels, unique_groups, top_dims,
+                           f_values, p_values, palette, ax, model_name):
+    """
+    Create a 2D scatter plot showing how the top 2 dimensions separate groups.
+    Also shows centroids and calculates separation metrics.
+    """
+    # Extract the top 2 dimensions
+    dim1, dim2 = top_dims
+
+    # Create a dataframe for the plot
+    plot_df = pd.DataFrame({
+        'x': latent_vectors[:, dim1],
+        'y': latent_vectors[:, dim2],
+        'group': labels
+    })
+
+    # Calculate centroids for each group
+    centroids = {}
+    for group in unique_groups:
+        group_data = plot_df[plot_df['group'] == group]
+        centroids[group] = {
+            'x': group_data['x'].mean(),
+            'y': group_data['y'].mean()
+        }
+
+    # Plot each group's points
+    for group in unique_groups:
+        group_data = plot_df[plot_df['group'] == group]
+        ax.scatter(group_data['x'], group_data['y'], label=group,
+                  color=palette[group], s=80, alpha=0.7, edgecolor='w')
+
+    # Plot centroids
+    for group, coords in centroids.items():
+        ax.scatter(coords['x'], coords['y'], s=200, color=palette[group],
+                 marker='X', edgecolor='black', linewidth=2)
+
+    # Calculate and plot the connecting lines between centroids
+    for i, group1 in enumerate(unique_groups):
+        for group2 in unique_groups[i+1:]:
+            ax.plot([centroids[group1]['x'], centroids[group2]['x']],
+                   [centroids[group1]['y'], centroids[group2]['y']],
+                   'k--', alpha=0.5, linewidth=1)
+
+            # Calculate and show distance
+            dist = np.sqrt((centroids[group1]['x'] - centroids[group2]['x'])**2 +
+                          (centroids[group1]['y'] - centroids[group2]['y'])**2)
+
+            # Position the distance label at the midpoint of the line
+            mid_x = (centroids[group1]['x'] + centroids[group2]['x']) / 2
+            mid_y = (centroids[group1]['y'] + centroids[group2]['y']) / 2
+
+            ax.text(mid_x, mid_y, f"{dist:.2f}",
+                  backgroundcolor='white', ha='center', va='center', fontsize=10)
+
+    # Customize plot
+    ax.set_title(f"{model_name} Top Dimensions Separation\n(Dim {dim1}: F={f_values[0]:.2f}, p={p_values[0]:.6f},\nDim {dim2}: F={f_values[1]:.2f}, p={p_values[1]:.6f})",
+               fontsize=14)
+    ax.set_xlabel(f"Dimension {dim1}", fontsize=12)
+    ax.set_ylabel(f"Dimension {dim2}", fontsize=12)
+    ax.grid(alpha=0.3)
+
+    # Create custom legend with both groups and centroids
+    legend_elements = []
+
+    # Group markers
+    for group in unique_groups:
+        legend_elements.append(
+            mpatches.Patch(color=palette[group], label=group))
+
+    # Centroid marker
+    legend_elements.append(
+        Line2D([0], [0], marker='X', color='w', markerfacecolor='gray',
+              markersize=10, label='Centroids'))
+
+    ax.legend(handles=legend_elements, loc='best')
+
+    # Calculate separation quality metrics
+    within_group_distances = []
+    for group in unique_groups:
+        group_mask = labels == group
+        points = np.column_stack((latent_vectors[group_mask, dim1],
+                                 latent_vectors[group_mask, dim2]))
+        centroid = np.array([centroids[group]['x'], centroids[group]['y']])
+
+        # Calculate distances from each point to its centroid
+        distances = np.sqrt(np.sum((points - centroid)**2, axis=1))
+        within_group_distances.extend(distances)
+
+    # Calculate between-group distances (centroid to centroid)
+    between_group_distances = []
+    for i, group1 in enumerate(unique_groups):
+        for group2 in unique_groups[i+1:]:
+            dist = np.sqrt((centroids[group1]['x'] - centroids[group2]['x'])**2 +
+                          (centroids[group1]['y'] - centroids[group2]['y'])**2)
+            between_group_distances.append(dist)
+
+    # Calculate average distances
+    avg_within = np.mean(within_group_distances)
+    avg_between = np.mean(between_group_distances)
+    separation_ratio = avg_between / avg_within if avg_within > 0 else 0
+
+    # Display metrics on the plot
+    ax.text(0.05, 0.05,
+           f"Avg within-group: {avg_within:.2f}\nAvg between-group: {avg_between:.2f}\nSeparation ratio: {separation_ratio:.2f}",
+           transform=ax.transAxes,
+           bbox=dict(facecolor='white', alpha=0.8))
+
+    return {
+        'centroids': centroids,
+        'avg_within': avg_within,
+        'avg_between': avg_between,
+        'separation_ratio': separation_ratio
+    }
+
+def visualize_top_dim_distributions(latent_ae, latent_vae, labels, unique_groups,
+                                   ae_top_dims, vae_top_dims, palette):
+    """
+    Visualize the distribution of values for top dimensions across patient groups.
+    Shows violin plots for each group in each dimension.
+    """
+    # Convert to pandas format for easier plotting
+    ae_dim1, ae_dim2 = ae_top_dims
+    vae_dim1, vae_dim2 = vae_top_dims
+
+    # Create dataframes for top dimensions
+    ae_df = pd.DataFrame({
+        f'AE Dim {ae_dim1}': latent_ae[:, ae_dim1],
+        f'AE Dim {ae_dim2}': latent_ae[:, ae_dim2],
+        'Group': labels
+    })
+
+    vae_df = pd.DataFrame({
+        f'VAE Dim {vae_dim1}': latent_vae[:, vae_dim1],
+        f'VAE Dim {vae_dim2}': latent_vae[:, vae_dim2],
+        'Group': labels
+    })
+
+    # Create figure for top dimension distributions
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # 1. AE Dimension 1
+    ax = axes[0, 0]
+    sns.violinplot(x='Group', y=f'AE Dim {ae_dim1}', data=ae_df, palette=palette, ax=ax)
+    sns.boxplot(x='Group', y=f'AE Dim {ae_dim1}', data=ae_df, width=0.2, color='white', ax=ax)
+    ax.set_title(f"AE Dimension {ae_dim1} Distribution", fontsize=14)
+    ax.grid(axis='y', alpha=0.3)
+
+    # 2. AE Dimension 2
+    ax = axes[0, 1]
+    sns.violinplot(x='Group', y=f'AE Dim {ae_dim2}', data=ae_df, palette=palette, ax=ax)
+    sns.boxplot(x='Group', y=f'AE Dim {ae_dim2}', data=ae_df, width=0.2, color='white', ax=ax)
+    ax.set_title(f"AE Dimension {ae_dim2} Distribution", fontsize=14)
+    ax.grid(axis='y', alpha=0.3)
+
+    # 3. VAE Dimension 1
+    ax = axes[1, 0]
+    sns.violinplot(x='Group', y=f'VAE Dim {vae_dim1}', data=vae_df, palette=palette, ax=ax)
+    sns.boxplot(x='Group', y=f'VAE Dim {vae_dim1}', data=vae_df, width=0.2, color='white', ax=ax)
+    ax.set_title(f"VAE Dimension {vae_dim1} Distribution", fontsize=14)
+    ax.grid(axis='y', alpha=0.3)
+
+    # 4. VAE Dimension 2
+    ax = axes[1, 1]
+    sns.violinplot(x='Group', y=f'VAE Dim {vae_dim2}', data=vae_df, palette=palette, ax=ax)
+    sns.boxplot(x='Group', y=f'VAE Dim {vae_dim2}', data=vae_df, width=0.2, color='white', ax=ax)
+    ax.set_title(f"VAE Dimension {vae_dim2} Distribution", fontsize=14)
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    plt.suptitle("Distribution of Top Discriminative Dimensions by Patient Group", fontsize=16)
+    plt.subplots_adjust(top=0.93)
+    plt.show()
+
+    # Create additional plot showing top 3-5 dimensions as heatmap of means
+    visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups,
+                                   ae_top_dims[:5], vae_top_dims[:5], palette)
+
+def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups,
+                                   ae_top_dims, vae_top_dims, palette):
+    """
+    Create a heatmap visualization showing how the top dimensions
+    differ in mean values across patient groups for both models.
+    """
+    # Calculate group means for top AE dimensions
+    ae_means = np.zeros((len(unique_groups), len(ae_top_dims)))
+    for i, group in enumerate(unique_groups):
+        group_mask = labels == group
+        for j, dim in enumerate(ae_top_dims):
+            ae_means[i, j] = np.mean(latent_ae[group_mask, dim])
+
+    # Calculate group means for top VAE dimensions
+    vae_means = np.zeros((len(unique_groups), len(vae_top_dims)))
+    for i, group in enumerate(unique_groups):
+        group_mask = labels == group
+        for j, dim in enumerate(vae_top_dims):
+            vae_means[i, j] = np.mean(latent_vae[group_mask, dim])
+
+    # Create a figure for the heatmaps
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
+
+    # 1. AE heatmap
+    im1 = ax1.imshow(ae_means, cmap='coolwarm', aspect='auto')
+
+    # Add axis labels
+    ax1.set_yticks(np.arange(len(unique_groups)))
+    ax1.set_yticklabels(unique_groups)
+    ax1.set_xticks(np.arange(len(ae_top_dims)))
+    ax1.set_xticklabels([f'Dim {dim}' for dim in ae_top_dims])
+
+    # Add colorbar
+    divider = make_axes_locatable(ax1)
+    cax1 = divider.append_axes("right", size="5%", pad=0.1)
+    plt.colorbar(im1, cax=cax1)
+
+    # Add title
+    ax1.set_title("AE Top Dimensions - Mean Values by Group", fontsize=14)
+
+    # Add value annotations
+    for i in range(len(unique_groups)):
+        for j in range(len(ae_top_dims)):
+            ax1.text(j, i, f"{ae_means[i, j]:.2f}",
+                    ha="center", va="center", color="black" if abs(ae_means[i, j]) < 1 else "white")
+
+    # 2. VAE heatmap
+    im2 = ax2.imshow(vae_means, cmap='coolwarm', aspect='auto')
+
+    # Add axis labels
+    ax2.set_yticks(np.arange(len(unique_groups)))
+    ax2.set_yticklabels(unique_groups)
+    ax2.set_xticks(np.arange(len(vae_top_dims)))
+    ax2.set_xticklabels([f'Dim {dim}' for dim in vae_top_dims])
+
+    # Add colorbar
+    divider = make_axes_locatable(ax2)
+    cax2 = divider.append_axes("right", size="5%", pad=0.1)
+    plt.colorbar(im2, cax=cax2)
+
+    # Add title
+    ax2.set_title("VAE Top Dimensions - Mean Values by Group", fontsize=14)
+
+    # Add value annotations
+    for i in range(len(unique_groups)):
+        for j in range(len(vae_top_dims)):
+            ax2.text(j, i, f"{vae_means[i, j]:.2f}",
+                    ha="center", va="center", color="black" if abs(vae_means[i, j]) < 1 else "white")
+
+    plt.tight_layout()
+    plt.show()
+
+# Load the trained models
+print("Loading trained models...")
+ae_model, _ = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
+vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
+
+# Run the comparison analysis with focus on discriminative dimensions
+results = compare_ae_vae_performance(ae_model, vae_model, val_loader, max_samples=150)
+
