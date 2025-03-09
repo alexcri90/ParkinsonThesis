@@ -224,9 +224,9 @@ def extract_slices(volume):
     Assumes volume shape is (depth, height, width).
     """
     d, h, w = volume.shape
-    axial = volume[d // 2, :, :]         # Axial: slice along depth
-    coronal = volume[:, h // 2, :]        # Coronal: slice along height
-    sagittal = volume[:, :, w // 2]       # Sagittal: slice along width
+    axial = volume[32, :, :]         # Axial: slice along depth
+    coronal = volume[:, 50, :]        # Coronal: slice along height
+    sagittal = volume[:, :, 55]       # Sagittal: slice along width
     return axial, coronal, sagittal
 
 # List of groups and their expected labels
@@ -662,92 +662,6 @@ if __name__ == "__main__":
     print(f"Dataloader test completed in {time.time() - start_time:.2f} seconds")
     print_memory_stats()
 
-"""### LP Ram Loader"""
-
-# class LPRamDataset(Dataset):
-#     def __init__(self, dataframe, transform=None):
-#         self.df = dataframe
-#         self.transform = transform
-#         maskH = nib.load('rmask_ICV.nii')
-#         mask = maskH.get_fdata()>0.5
-#         mask = np.transpose(mask,[2, 1, 0])
-#         mask = np.flip(mask,axis=1)
-#         self.npArr = np.zeros((len(dataframe),1,64,128,128),dtype=np.float32)
-
-#         counter=0
-#         for _, row in dataframe.iterrows():
-#             try:
-#                 file_path = row["file_path"]
-
-#             # Load DICOM
-#                 volume, _ = load_dicom(file_path)
-#                 volume -= volume.min()
-#          #       print(counter)
-#          #       print(volume.shape)
-#         #        print(mask.shape)
-#                 volume *= mask
-#                 norm_vol, _, masked_vol = process_volume(volume[9:73,:,:], target_shape=(64, 128, 128))
-#                 self.npArr[counter,0,:,:,:]=norm_vol
-#                 counter +=1
-#            #     delete volume, norm_vol, masked_vol
-#             except Exception as e:
-#                 print(f"Error processing file {row['file_path']}: {e}")
-#         self.npArr = self.npArr[:counter,:,:,:,:]
-#  #       self.immArr = torch.from_numpy(self.npArr).float().to("cuda")
-#   #      delete volume, masked_vol, mask
-#         gc.collect()
-
-#     def __len__(self):
-#         """Return the total number of samples in the dataset"""
-#         return len(self.df)
-
-#     def __getitem__(self, idx):
-#       #      print(self.immArr.shape)
-#  #           print(idx)
-#             volume_tensor = torch.from_numpy(self.npArr[idx, :, :, :, :])
-#             return {
-#                 "volume": volume_tensor,
-#                 "label": self.df.iloc[idx]["label"],
-#                 "path":self.df.iloc[idx]["file_path"]
-#             }
-
-
-# def create_dataloaders(df, batch_size=4, train_split=0.8):
-#     """Create train and validation dataloaders with stratified split"""
-#     # Stratified split to maintain group distributions
-#     train_df, val_df = train_test_split(
-#         df,
-#         test_size=1-train_split,
-#         stratify=df['label'],
-#         random_state=42
-#     )
-
-#     print("\nTraining set distribution:")
-#     print(train_df['label'].value_counts())
-#     print("\nValidation set distribution:")
-#     print(val_df['label'].value_counts())
-
-#     # Create datasets
-
-#     # Create dataloaders
-#     train_loader = DataLoader(
-#         train_dataset,
-#         batch_size=batch_size,
-#         shuffle=True,
-#         num_workers=0,  # No multiprocessing for debugging
-#         pin_memory=True
-#     )
-
-#     val_loader = DataLoader(
-#         val_dataset,
-#         batch_size=batch_size,
-#         shuffle=False,
-#         num_workers=0,  # No multiprocessing for debugging
-#         pin_memory=True
-#     )
-
-#     return train_loader, val_loader
-
 """# Exploratory Data Analysis (EDA)"""
 
 # !pip install seaborn
@@ -929,7 +843,9 @@ def plot_group_statistics(stats_df):
 def visualize_sample_slices(stats_df, dataloader, samples_per_group=1):
     """
     Visualizes a limited number of samples from each group
-    with efficient memory handling, selecting from the pre-processed samples
+    with efficient memory handling, selecting from the pre-processed samples.
+    Shows anatomically interesting slices (axial=32, coronal=50, sagittal=55 and 70)
+    instead of central slices.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -967,34 +883,46 @@ def visualize_sample_slices(stats_df, dataloader, samples_per_group=1):
         if all(len(paths) == 0 for paths in selected_paths.values()):
             break
 
+    # Define anatomically interesting slices
+    axial_slice_idx = 32      # Axial view - slice 32
+    coronal_slice_idx = 50    # Coronal view - slice 50
+    sagittal_slice1_idx = 55  # Sagittal view - slice 55
+    sagittal_slice2_idx = 70  # Sagittal view - slice 70
+
     # Visualize the samples
     num_groups = len(groups)
-    plt.figure(figsize=(15, 5 * num_groups))
+    plt.figure(figsize=(20, 5 * num_groups))  # Wider figure to accommodate 4 slices
 
     for i, (key, vol) in enumerate(samples_data.items()):
         # Extract label
         label = key.split('_')[0]
 
-        # Get middle slices
+        # Get anatomically interesting slices
         vol = vol.squeeze()  # Remove channel dimension
-        axial_slice = vol[vol.shape[0]//2, :, :]
-        sagittal_slice = vol[:, vol.shape[1]//2, :]
-        coronal_slice = vol[:, :, vol.shape[2]//2]
+        axial_slice = vol[axial_slice_idx, :, :]
+        coronal_slice = vol[:, coronal_slice_idx, :]
+        sagittal_slice1 = vol[:, :, sagittal_slice1_idx]
+        sagittal_slice2 = vol[:, :, sagittal_slice2_idx]
 
-        # Plot slices
-        plt.subplot(len(samples_data), 3, i*3 + 1)
+        # Plot slices (now 4 slices per row)
+        plt.subplot(len(samples_data), 4, i*4 + 1)
         plt.imshow(axial_slice, cmap='gray')
-        plt.title(f'{label} - Axial')
+        plt.title(f'{label} - Axial (z={axial_slice_idx})')
         plt.axis('off')
 
-        plt.subplot(len(samples_data), 3, i*3 + 2)
-        plt.imshow(sagittal_slice, cmap='gray')
-        plt.title(f'{label} - Sagittal')
-        plt.axis('off')
-
-        plt.subplot(len(samples_data), 3, i*3 + 3)
+        plt.subplot(len(samples_data), 4, i*4 + 2)
         plt.imshow(coronal_slice, cmap='gray')
-        plt.title(f'{label} - Coronal')
+        plt.title(f'{label} - Coronal (y={coronal_slice_idx})')
+        plt.axis('off')
+
+        plt.subplot(len(samples_data), 4, i*4 + 3)
+        plt.imshow(sagittal_slice1, cmap='gray')
+        plt.title(f'{label} - Sagittal1 (x={sagittal_slice1_idx})')
+        plt.axis('off')
+
+        plt.subplot(len(samples_data), 4, i*4 + 4)
+        plt.imshow(sagittal_slice2, cmap='gray')
+        plt.title(f'{label} - Sagittal2 (x={sagittal_slice2_idx})')
         plt.axis('off')
 
     plt.tight_layout()
@@ -2427,7 +2355,8 @@ if __name__ == "__main__":
     outliers, all_errors, all_paths, all_labels = find_outliers(model, val_loader, threshold_std=2.5)
     visualize_outliers(model, outliers)
 
-# Cell 15: Updated Autoencoder Latent Dimension Visualization with Anatomical Slices
+# Cell 15: Autoencoder Latent Dimension Visualization with Consistent Scales
+
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -2438,6 +2367,8 @@ def visualize_latent_dimension(model, dataloader, dimension_idx, alpha=5.0, grou
     """
     Visualize what a specific latent dimension represents by modifying it
     and observing the effect on brain reconstruction using anatomically relevant slices.
+
+    Ensures consistent scales across all views for better comparison.
 
     Parameters:
         model: Trained autoencoder model
@@ -2514,119 +2445,133 @@ def visualize_latent_dimension(model, dataloader, dimension_idx, alpha=5.0, grou
         # Create a custom colormap for difference maps
         diff_cmap = plt.cm.RdBu_r  # Red-Blue colormap with red for negative, blue for positive
 
+        # Determine consistent scales for brain intensity and difference maps
+        brain_vmin, brain_vmax = 0, 3  # Standard scale for brain images
+
+        # Find global min/max for difference maps to use consistent scale
+        diff_min = min(np.min(plus_diff), np.min(minus_diff))
+        diff_max = max(np.max(plus_diff), np.max(minus_diff))
+        # Make the range symmetric around zero for better visualization
+        diff_abs_max = max(abs(diff_min), abs(diff_max))
+        diff_vmin, diff_vmax = -diff_abs_max, diff_abs_max
+
         # Row 1: Original reconstruction - 4 views
         plt.subplot(5, 4, 1)
-        plt.imshow(original_vol[slices['axial']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(original_vol[slices['axial']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original (Axial z={slices['axial']})")
         plt.axis('off')
 
         plt.subplot(5, 4, 2)
-        plt.imshow(original_vol[:, slices['coronal'], :], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(original_vol[:, slices['coronal'], :], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original (Coronal y={slices['coronal']})")
         plt.axis('off')
 
         plt.subplot(5, 4, 3)
-        plt.imshow(original_vol[:, :, slices['sagittal1']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(original_vol[:, :, slices['sagittal1']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original (Sagittal x={slices['sagittal1']})")
         plt.axis('off')
 
         plt.subplot(5, 4, 4)
-        plt.imshow(original_vol[:, :, slices['sagittal2']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(original_vol[:, :, slices['sagittal2']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original (Sagittal x={slices['sagittal2']})")
         plt.axis('off')
 
         # Row 2: Increased dimension - 4 views
         plt.subplot(5, 4, 5)
-        plt.imshow(plus_vol[slices['axial']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(plus_vol[slices['axial']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} + {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 6)
-        plt.imshow(plus_vol[:, slices['coronal'], :], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(plus_vol[:, slices['coronal'], :], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} + {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 7)
-        plt.imshow(plus_vol[:, :, slices['sagittal1']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(plus_vol[:, :, slices['sagittal1']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} + {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 8)
-        plt.imshow(plus_vol[:, :, slices['sagittal2']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(plus_vol[:, :, slices['sagittal2']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} + {alpha}")
         plt.axis('off')
 
         # Row 3: Decreased dimension - 4 views
         plt.subplot(5, 4, 9)
-        plt.imshow(minus_vol[slices['axial']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(minus_vol[slices['axial']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} - {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 10)
-        plt.imshow(minus_vol[:, slices['coronal'], :], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(minus_vol[:, slices['coronal'], :], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} - {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 11)
-        plt.imshow(minus_vol[:, :, slices['sagittal1']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(minus_vol[:, :, slices['sagittal1']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} - {alpha}")
         plt.axis('off')
 
         plt.subplot(5, 4, 12)
-        plt.imshow(minus_vol[:, :, slices['sagittal2']], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(minus_vol[:, :, slices['sagittal2']], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Dim {dimension_idx} - {alpha}")
         plt.axis('off')
 
         # Row 4: Difference map (increased - original) - 4 views
         plt.subplot(5, 4, 13)
-        im1 = plt.imshow(plus_diff[slices['axial']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        im1 = plt.imshow(plus_diff[slices['axial']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (+)")
         plt.axis('off')
 
         plt.subplot(5, 4, 14)
-        plt.imshow(plus_diff[:, slices['coronal'], :], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(plus_diff[:, slices['coronal'], :], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (+)")
         plt.axis('off')
 
         plt.subplot(5, 4, 15)
-        plt.imshow(plus_diff[:, :, slices['sagittal1']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(plus_diff[:, :, slices['sagittal1']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (+)")
         plt.axis('off')
 
         plt.subplot(5, 4, 16)
-        plt.imshow(plus_diff[:, :, slices['sagittal2']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(plus_diff[:, :, slices['sagittal2']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (+)")
         plt.axis('off')
 
         # Row 5: Difference map (decreased - original) - 4 views
         plt.subplot(5, 4, 17)
-        im2 = plt.imshow(minus_diff[slices['axial']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        im2 = plt.imshow(minus_diff[slices['axial']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (-)")
         plt.axis('off')
 
         plt.subplot(5, 4, 18)
-        plt.imshow(minus_diff[:, slices['coronal'], :], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(minus_diff[:, slices['coronal'], :], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (-)")
         plt.axis('off')
 
         plt.subplot(5, 4, 19)
-        plt.imshow(minus_diff[:, :, slices['sagittal1']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(minus_diff[:, :, slices['sagittal1']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (-)")
         plt.axis('off')
 
         plt.subplot(5, 4, 20)
-        plt.imshow(minus_diff[:, :, slices['sagittal2']], cmap=diff_cmap, vmin=-0.5, vmax=0.5)
+        plt.imshow(minus_diff[:, :, slices['sagittal2']], cmap=diff_cmap, vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference (-)")
         plt.axis('off')
 
-        # Add colorbar for difference maps
+        # Add colorbar for difference maps - now showing the global range
         cbar_ax = fig.add_axes([0.93, 0.15, 0.02, 0.3])
         cbar = plt.colorbar(im1, cax=cbar_ax)
-        cbar.set_label('Difference Intensity')
+        cbar.set_label(f'Difference Intensity (Range: {diff_vmin:.3f} to {diff_vmax:.3f})')
 
         plt.tight_layout()
         plt.subplots_adjust(top=0.92, right=0.9)
         plt.show()
+
+        # Print information about scales used
+        print(f"Brain Intensity Scale: {brain_vmin} to {brain_vmax}")
+        print(f"Difference Map Scale: {diff_vmin:.3f} to {diff_vmax:.3f}")
 
         # Return both the sample info and reconstructions for further analysis
         return {
@@ -2636,12 +2581,15 @@ def visualize_latent_dimension(model, dataloader, dimension_idx, alpha=5.0, grou
             'plus': plus_vol,
             'minus': minus_vol,
             'plus_diff': plus_diff,
-            'minus_diff': minus_diff
+            'minus_diff': minus_diff,
+            'diff_min': diff_vmin,
+            'diff_max': diff_vmax
         }
 
 def explore_top_dimensions(model, dataloader, dimensions, groups=None):
     """
     Explore the top discriminative dimensions across different patient groups using anatomically relevant slices.
+    Ensures consistent scales across all visualizations for a given dimension.
 
     Parameters:
         model: Trained autoencoder model
@@ -2660,32 +2608,46 @@ def explore_top_dimensions(model, dataloader, dimensions, groups=None):
         print(f"Exploring Dimension {dimension}")
         print(f"{'='*80}")
 
+        # First pass to determine global min/max difference values
+        diff_min_global = float('inf')
+        diff_max_global = float('-inf')
+
+        # Store results from first pass
+        dimension_results = {}
+
+        # Scan all groups to find global min/max
         for group in groups:
-            print(f"\nVisualizing for group: {group}")
+            print(f"\nAnalyzing dimension {dimension} for group: {group} (first pass)")
             results = visualize_latent_dimension(model, dataloader, dimension, alpha=8.0, group=group)
 
-            # Optional: compute statistics about the affected regions
+            # Update global min/max
             plus_diff = results['plus_diff']
             minus_diff = results['minus_diff']
 
-            # Calculate the average absolute effect size
-            mean_effect = (np.mean(np.abs(plus_diff)) + np.mean(np.abs(minus_diff))) / 2
+            curr_min = min(np.min(plus_diff), np.min(minus_diff))
+            curr_max = max(np.max(plus_diff), np.max(minus_diff))
 
-            # Find the regions most affected (top 5% of voxels)
-            top_voxels_plus = np.percentile(np.abs(plus_diff), 95)
-            top_voxels_minus = np.percentile(np.abs(minus_diff), 95)
+            diff_min_global = min(diff_min_global, curr_min)
+            diff_max_global = max(diff_max_global, curr_max)
 
-            print(f"  Mean effect size: {mean_effect:.5f}")
-            print(f"  Top 5% threshold: +{top_voxels_plus:.5f}, -{top_voxels_minus:.5f}")
+            # Store results for second pass
+            dimension_results[group] = results
 
-            # Optional: Add a small delay for better visualization
-            import time
-            time.sleep(1)
+        # Make the scale symmetric
+        diff_abs_max = max(abs(diff_min_global), abs(diff_max_global))
+        diff_global_vmin, diff_global_vmax = -diff_abs_max, diff_abs_max
+
+        print(f"\nGlobal difference range for dimension {dimension} across all groups: {diff_global_vmin:.3f} to {diff_global_vmax:.3f}")
+
+        # Optional: Add a small delay for better visualization
+        import time
+        time.sleep(1)
 
 def generate_feature_importance_map(model, dataloader, dimension_idx, group=None, num_samples=5):
     """
     Generate a more robust feature importance map for a specific dimension
     by aggregating effects across multiple samples using anatomically relevant slices.
+    Uses consistent scales across all views for better comparison.
 
     Parameters:
         model: Trained autoencoder model
@@ -2768,57 +2730,67 @@ def generate_feature_importance_map(model, dataloader, dimension_idx, group=None
     sagittal_slice1 = 55  # Sagittal view - slice 55
     sagittal_slice2 = 70  # Sagittal view - slice 70
 
+    # Determine global max value for importance map for consistent scale
+    importance_max = np.max(importance_map)
+
+    # Determine global min/max for activation maps for consistent scale
+    activation_min = min(np.min(aggregated_plus_diff), np.min(aggregated_minus_diff))
+    activation_max = max(np.max(aggregated_plus_diff), np.max(aggregated_minus_diff))
+    # Make the activation scale symmetric around zero
+    activation_abs_max = max(abs(activation_min), abs(activation_max))
+    activation_vmin, activation_vmax = -activation_abs_max, activation_abs_max
+
     # Visualize the importance map
     fig = plt.figure(figsize=(16, 8))
     plt.suptitle(f"Feature Importance Map for Dimension {dimension_idx}" +
                 (f" (Group: {group})" if group else ""), fontsize=16)
 
-    # Plot axial, coronal, and sagittal views
+    # Plot axial, coronal, and sagittal views for importance map
     plt.subplot(2, 4, 1)
-    plt.imshow(importance_map[axial_slice], cmap='hot')
+    im1 = plt.imshow(importance_map[axial_slice], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Axial (z={axial_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 2)
-    plt.imshow(importance_map[:, coronal_slice, :], cmap='hot')
+    plt.imshow(importance_map[:, coronal_slice, :], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Coronal (y={coronal_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 3)
-    plt.imshow(importance_map[:, :, sagittal_slice1], cmap='hot')
+    plt.imshow(importance_map[:, :, sagittal_slice1], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Sagittal (x={sagittal_slice1})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 4)
-    plt.imshow(importance_map[:, :, sagittal_slice2], cmap='hot')
+    plt.imshow(importance_map[:, :, sagittal_slice2], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Sagittal (x={sagittal_slice2})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
-    # Plot activating direction (positive difference)
+    # Plot activating direction (positive difference) with consistent scale
     plt.subplot(2, 4, 5)
-    plt.imshow(aggregated_plus_diff[axial_slice], cmap='bwr', vmin=-0.2, vmax=0.2)
+    im2 = plt.imshow(aggregated_plus_diff[axial_slice], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Axial")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 6)
-    plt.imshow(aggregated_plus_diff[:, coronal_slice, :], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, coronal_slice, :], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Coronal")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 7)
-    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice1], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice1], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Sagittal 1")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 8)
-    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice2], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice2], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Sagittal 2")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
@@ -2826,6 +2798,10 @@ def generate_feature_importance_map(model, dataloader, dimension_idx, group=None
     plt.tight_layout()
     plt.subplots_adjust(top=0.9)
     plt.show()
+
+    # Print information about scales used
+    print(f"Importance Map Scale: 0 to {importance_max:.3f}")
+    print(f"Activation Map Scale: {activation_vmin:.3f} to {activation_vmax:.3f}")
 
     return importance_map, aggregated_plus_diff, aggregated_minus_diff
 
@@ -3687,7 +3663,7 @@ if __name__ == "__main__":
     # Train the VAE
     results = train_vae(model, train_loader, val_loader, config)
 
-# Extra test - Vae v5
+# Extra test - Vae v6
 if __name__ == "__main__":
     # Create the VAE model
     model = VAE(latent_dim=256)
@@ -3699,12 +3675,12 @@ if __name__ == "__main__":
         accumulation_steps=8,        # Effective batch size = 64
         learning_rate=2e-5,
         epochs=300,
-        beta=0.0005,                 # Reduced from 0.005 to 0.0005 (10x smaller)
-        beta_warmup_steps=10000,      # Increased from 2000 to 10000
+        beta=0.001,                 # Reduced from 0.005 to 0.0005 (10x smaller)
+        beta_warmup_steps=2000,      # Increased from 2000 to 10000
         early_stopping_patience=20,
         use_mixed_precision=True,
         num_workers=4,
-        model_name="vae_model_v5"    # New model name to avoid overwriting
+        model_name="vae_model_v6"    # New model name to avoid overwriting
     )
 
     # Train the VAE
@@ -4635,7 +4611,7 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
 
-# Cell 19: VAE Feature Importance Maps and Uncertainty Visualization
+# Cell 19: VAE Feature Importance Maps and Uncertainty Visualization with Consistent Scales
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
@@ -4647,6 +4623,7 @@ def generate_vae_feature_importance_map(model, dataloader, dimension_idx, group=
     """
     Generate feature importance map for a specific VAE latent dimension
     by aggregating effects across multiple samples using anatomically relevant slices.
+    Uses consistent scales across all views for better comparison.
 
     Parameters:
         model: Trained VAE model
@@ -4740,57 +4717,67 @@ def generate_vae_feature_importance_map(model, dataloader, dimension_idx, group=
     sagittal_slice1 = 55  # Sagittal view - slice 55
     sagittal_slice2 = 70  # Sagittal view - slice 70
 
+    # Determine global max value for importance maps for consistent scale
+    importance_max = np.max(importance_map)
+
+    # Determine global min/max for activation maps for consistent scale
+    activation_min = min(np.min(aggregated_plus_diff), np.min(aggregated_minus_diff))
+    activation_max = max(np.max(aggregated_plus_diff), np.max(aggregated_minus_diff))
+    # Make the activation scale symmetric around zero
+    activation_abs_max = max(abs(activation_min), abs(activation_max))
+    activation_vmin, activation_vmax = -activation_abs_max, activation_abs_max
+
     # Visualize the importance map
     fig = plt.figure(figsize=(16, 8))
     plt.suptitle(f"VAE Feature Importance Map for Dimension {dimension_idx}" +
                 (f" (Group: {group})" if group else ""), fontsize=16)
 
-    # Plot axial, coronal, and sagittal views
+    # Plot axial, coronal, and sagittal views for importance map - all with same scale
     plt.subplot(2, 4, 1)
-    plt.imshow(importance_map[axial_slice], cmap='hot')
+    im1 = plt.imshow(importance_map[axial_slice], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Axial (z={axial_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 2)
-    plt.imshow(importance_map[:, coronal_slice, :], cmap='hot')
+    plt.imshow(importance_map[:, coronal_slice, :], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Coronal (y={coronal_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 3)
-    plt.imshow(importance_map[:, :, sagittal_slice1], cmap='hot')
+    plt.imshow(importance_map[:, :, sagittal_slice1], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Sagittal (x={sagittal_slice1})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 4)
-    plt.imshow(importance_map[:, :, sagittal_slice2], cmap='hot')
+    plt.imshow(importance_map[:, :, sagittal_slice2], cmap='hot', vmin=0, vmax=importance_max)
     plt.title(f"Sagittal (x={sagittal_slice2})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
-    # Plot activating direction (positive difference)
+    # Plot activating direction (positive difference) with consistent scale
     plt.subplot(2, 4, 5)
-    plt.imshow(aggregated_plus_diff[axial_slice], cmap='bwr', vmin=-0.2, vmax=0.2)
+    im2 = plt.imshow(aggregated_plus_diff[axial_slice], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Axial")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 6)
-    plt.imshow(aggregated_plus_diff[:, coronal_slice, :], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, coronal_slice, :], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Coronal")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 7)
-    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice1], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice1], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Sagittal 1")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 8)
-    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice2], cmap='bwr', vmin=-0.2, vmax=0.2)
+    plt.imshow(aggregated_plus_diff[:, :, sagittal_slice2], cmap='bwr', vmin=activation_vmin, vmax=activation_vmax)
     plt.title(f"Activating Direction - Sagittal 2")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
@@ -4798,6 +4785,10 @@ def generate_vae_feature_importance_map(model, dataloader, dimension_idx, group=
     plt.tight_layout()
     plt.subplots_adjust(top=0.9)
     plt.show()
+
+    # Print information about scales used
+    print(f"Importance Map Scale: 0 to {importance_max:.3f}")
+    print(f"Activation Map Scale: {activation_vmin:.3f} to {activation_vmax:.3f}")
 
     # Return values for further analysis
     mean_mu = np.mean(mu_values)
@@ -4814,6 +4805,7 @@ def visualize_vae_uncertainty(model, dataloader, group=None, num_samples=20):
     """
     Visualize uncertainty in VAE's reconstructions by sampling
     multiple times from the latent distribution.
+    Uses consistent scales across all views for better comparison.
 
     Parameters:
         model: Trained VAE model
@@ -4881,73 +4873,79 @@ def visualize_vae_uncertainty(model, dataloader, group=None, num_samples=20):
     recon_mean = np.mean(reconstructions, axis=0)
     recon_std = np.std(reconstructions, axis=0)
 
+    # Determine global scale for original and mean reconstruction
+    brain_vmin, brain_vmax = 0, 3  # Standard scale for brain images
+
+    # Determine global max for uncertainty maps
+    uncertainty_max = np.max(recon_std)
+
     # Visualize uncertainty
     fig = plt.figure(figsize=(16, 12))
     plt.suptitle(f"VAE Reconstruction Uncertainty - Group: {sample_label}", fontsize=16)
 
-    # Row 1: Original sample
+    # Row 1: Original sample with consistent scale
     plt.subplot(3, 4, 1)
-    plt.imshow(sample_np[axial_slice], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(sample_np[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Original - Axial (z={axial_slice})")
     plt.axis('off')
 
     plt.subplot(3, 4, 2)
-    plt.imshow(sample_np[:, coronal_slice, :], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(sample_np[:, coronal_slice, :], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Original - Coronal (y={coronal_slice})")
     plt.axis('off')
 
     plt.subplot(3, 4, 3)
-    plt.imshow(sample_np[:, :, sagittal_slice1], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(sample_np[:, :, sagittal_slice1], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Original - Sagittal (x={sagittal_slice1})")
     plt.axis('off')
 
     plt.subplot(3, 4, 4)
-    plt.imshow(sample_np[:, :, sagittal_slice2], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(sample_np[:, :, sagittal_slice2], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Original - Sagittal (x={sagittal_slice2})")
     plt.axis('off')
 
-    # Row 2: Mean reconstruction
+    # Row 2: Mean reconstruction with consistent scale
     plt.subplot(3, 4, 5)
-    plt.imshow(recon_mean[axial_slice], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(recon_mean[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Mean Recon - Axial")
     plt.axis('off')
 
     plt.subplot(3, 4, 6)
-    plt.imshow(recon_mean[:, coronal_slice, :], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(recon_mean[:, coronal_slice, :], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Mean Recon - Coronal")
     plt.axis('off')
 
     plt.subplot(3, 4, 7)
-    plt.imshow(recon_mean[:, :, sagittal_slice1], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(recon_mean[:, :, sagittal_slice1], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Mean Recon - Sagittal 1")
     plt.axis('off')
 
     plt.subplot(3, 4, 8)
-    plt.imshow(recon_mean[:, :, sagittal_slice2], cmap='gray', vmin=0, vmax=3)
+    plt.imshow(recon_mean[:, :, sagittal_slice2], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
     plt.title(f"Mean Recon - Sagittal 2")
     plt.axis('off')
 
-    # Row 3: Standard deviation (uncertainty)
+    # Row 3: Standard deviation (uncertainty) with consistent scale
     plt.subplot(3, 4, 9)
-    plt.imshow(recon_std[axial_slice], cmap='viridis')
+    plt.imshow(recon_std[axial_slice], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Axial")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(3, 4, 10)
-    plt.imshow(recon_std[:, coronal_slice, :], cmap='viridis')
+    plt.imshow(recon_std[:, coronal_slice, :], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Coronal")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(3, 4, 11)
-    plt.imshow(recon_std[:, :, sagittal_slice1], cmap='viridis')
+    plt.imshow(recon_std[:, :, sagittal_slice1], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Sagittal 1")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(3, 4, 12)
-    plt.imshow(recon_std[:, :, sagittal_slice2], cmap='viridis')
+    plt.imshow(recon_std[:, :, sagittal_slice2], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Sagittal 2")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
@@ -4956,12 +4954,17 @@ def visualize_vae_uncertainty(model, dataloader, group=None, num_samples=20):
     plt.subplots_adjust(top=0.9)
     plt.show()
 
+    # Print information about scales used
+    print(f"Brain Intensity Scale: {brain_vmin} to {brain_vmax}")
+    print(f"Uncertainty Scale: 0 to {uncertainty_max:.3f}")
+
     return recon_mean, recon_std
 
 def generate_full_brain_uncertainty_map(model, dataloader, group=None, num_samples=10):
     """
     Generate uncertainty maps across the entire brain by analyzing the
     variability in reconstructions from multiple samples.
+    Uses consistent scales across all views for better comparison.
 
     Parameters:
         model: Trained VAE model
@@ -5034,32 +5037,35 @@ def generate_full_brain_uncertainty_map(model, dataloader, group=None, num_sampl
     sagittal_slice1 = 55  # Sagittal view - slice 55
     sagittal_slice2 = 70  # Sagittal view - slice 70
 
+    # Global max for uncertainty visualization
+    uncertainty_max = np.max(avg_uncertainty)
+
     # Visualize average uncertainty across all samples
     fig = plt.figure(figsize=(16, 8))
     plt.suptitle(f"VAE Full Brain Uncertainty Map" +
                 (f" - Group: {group}" if group else ""), fontsize=16)
 
-    # Top row: Uncertainty views with viridis colormap
+    # Top row: Uncertainty views with viridis colormap and consistent scale
     plt.subplot(2, 4, 1)
-    plt.imshow(avg_uncertainty[axial_slice], cmap='viridis')
+    plt.imshow(avg_uncertainty[axial_slice], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Axial (z={axial_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 2)
-    plt.imshow(avg_uncertainty[:, coronal_slice, :], cmap='viridis')
+    plt.imshow(avg_uncertainty[:, coronal_slice, :], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Coronal (y={coronal_slice})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 3)
-    plt.imshow(avg_uncertainty[:, :, sagittal_slice1], cmap='viridis')
+    plt.imshow(avg_uncertainty[:, :, sagittal_slice1], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Sagittal (x={sagittal_slice1})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
 
     plt.subplot(2, 4, 4)
-    plt.imshow(avg_uncertainty[:, :, sagittal_slice2], cmap='viridis')
+    plt.imshow(avg_uncertainty[:, :, sagittal_slice2], cmap='viridis', vmin=0, vmax=uncertainty_max)
     plt.title(f"Uncertainty - Sagittal (x={sagittal_slice2})")
     plt.colorbar(fraction=0.046, pad=0.04)
     plt.axis('off')
@@ -5097,11 +5103,16 @@ def generate_full_brain_uncertainty_map(model, dataloader, group=None, num_sampl
     plt.subplots_adjust(top=0.9)
     plt.show()
 
+    # Print information about scales used
+    print(f"Uncertainty Scale: 0 to {uncertainty_max:.3f}")
+    print(f"High Uncertainty Threshold: {threshold:.3f}")
+
     return avg_uncertainty, high_uncertainty_mask
 
 def compare_group_uncertainty(model, dataloader, groups=['PD', 'Control', 'SWEDD'], num_samples=5):
     """
     Compare uncertainty patterns between different patient groups.
+    Uses consistent scales across all visualizations for better comparison.
 
     Parameters:
         model: Trained VAE model
@@ -5118,6 +5129,9 @@ def compare_group_uncertainty(model, dataloader, groups=['PD', 'Control', 'SWEDD
             model, dataloader, group=group, num_samples=num_samples)
         uncertainty_maps[group] = avg_uncertainty
 
+    # Find global max across all groups for consistent scale
+    global_max = max(np.max(uncertainty_maps[group]) for group in groups)
+
     # Define anatomically relevant slices
     axial_slice = 32      # Axial view - slice 32
     coronal_slice = 50    # Coronal view - slice 50
@@ -5128,28 +5142,28 @@ def compare_group_uncertainty(model, dataloader, groups=['PD', 'Control', 'SWEDD
     fig = plt.figure(figsize=(16, 12))
     plt.suptitle(f"VAE Uncertainty Comparison Between Groups", fontsize=16)
 
-    # Row for each group
+    # Row for each group - all with the same color scale
     for i, group in enumerate(groups):
         plt.subplot(len(groups) + 1, 4, i*4 + 1)
-        plt.imshow(uncertainty_maps[group][axial_slice], cmap='viridis')
+        plt.imshow(uncertainty_maps[group][axial_slice], cmap='viridis', vmin=0, vmax=global_max)
         plt.title(f"{group} - Axial")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, i*4 + 2)
-        plt.imshow(uncertainty_maps[group][:, coronal_slice, :], cmap='viridis')
+        plt.imshow(uncertainty_maps[group][:, coronal_slice, :], cmap='viridis', vmin=0, vmax=global_max)
         plt.title(f"{group} - Coronal")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, i*4 + 3)
-        plt.imshow(uncertainty_maps[group][:, :, sagittal_slice1], cmap='viridis')
+        plt.imshow(uncertainty_maps[group][:, :, sagittal_slice1], cmap='viridis', vmin=0, vmax=global_max)
         plt.title(f"{group} - Sagittal 1")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, i*4 + 4)
-        plt.imshow(uncertainty_maps[group][:, :, sagittal_slice2], cmap='viridis')
+        plt.imshow(uncertainty_maps[group][:, :, sagittal_slice2], cmap='viridis', vmin=0, vmax=global_max)
         plt.title(f"{group} - Sagittal 2")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
@@ -5157,32 +5171,39 @@ def compare_group_uncertainty(model, dataloader, groups=['PD', 'Control', 'SWEDD
     # Bottom row: Calculate difference between first two groups (if applicable)
     if len(groups) >= 2:
         diff_map = uncertainty_maps[groups[0]] - uncertainty_maps[groups[1]]
-        vmax = max(abs(diff_map.min()), abs(diff_map.max()))
-        vmin = -vmax
+
+        # Find min/max for difference map and make symmetric
+        diff_min, diff_max = np.min(diff_map), np.max(diff_map)
+        diff_abs_max = max(abs(diff_min), abs(diff_max))
+        diff_vmin, diff_vmax = -diff_abs_max, diff_abs_max
 
         plt.subplot(len(groups) + 1, 4, len(groups)*4 + 1)
-        plt.imshow(diff_map[axial_slice], cmap='bwr', vmin=vmin, vmax=vmax)
+        plt.imshow(diff_map[axial_slice], cmap='bwr', vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference ({groups[0]} - {groups[1]}) - Axial")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, len(groups)*4 + 2)
-        plt.imshow(diff_map[:, coronal_slice, :], cmap='bwr', vmin=vmin, vmax=vmax)
+        plt.imshow(diff_map[:, coronal_slice, :], cmap='bwr', vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference ({groups[0]} - {groups[1]}) - Coronal")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, len(groups)*4 + 3)
-        plt.imshow(diff_map[:, :, sagittal_slice1], cmap='bwr', vmin=vmin, vmax=vmax)
+        plt.imshow(diff_map[:, :, sagittal_slice1], cmap='bwr', vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference ({groups[0]} - {groups[1]}) - Sagittal 1")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
 
         plt.subplot(len(groups) + 1, 4, len(groups)*4 + 4)
-        plt.imshow(diff_map[:, :, sagittal_slice2], cmap='bwr', vmin=vmin, vmax=vmax)
+        plt.imshow(diff_map[:, :, sagittal_slice2], cmap='bwr', vmin=diff_vmin, vmax=diff_vmax)
         plt.title(f"Difference ({groups[0]} - {groups[1]}) - Sagittal 2")
         plt.colorbar(fraction=0.046, pad=0.04)
         plt.axis('off')
+
+        # Print information about scales used
+        print(f"Uncertainty Scale: 0 to {global_max:.3f}")
+        print(f"Difference Map Scale: {diff_vmin:.3f} to {diff_vmax:.3f}")
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.95)
@@ -5456,9 +5477,233 @@ for dim_idx in top_3_dims:
 
 print("Top dimensions visualization completed!")
 
+# Cell 22: Analysis of Latent Space Distributions and Alpha Values
+
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm import tqdm
+
+# Function to analyze autoencoder
+def analyze_ae_alpha(ae_model, dataloader, alpha_value=8.0, max_samples=200):
+    """Calculate how many standard deviations alpha represents for AE dimensions"""
+    device = next(ae_model.parameters()).device
+    ae_model.eval()
+
+    print(f"Analyzing Autoencoder latent space (alpha = {alpha_value})...")
+
+    # Storage for latent vectors
+    latent_vectors = []
+
+    # Extract latent vectors
+    with torch.no_grad():
+        sample_count = 0
+        for batch in tqdm(dataloader, desc="Extracting AE latent vectors"):
+            volumes = batch['volume'].to(device)
+
+            # Get AE latent vectors
+            z = ae_model.encode(volumes)
+
+            # Store results
+            latent_vectors.append(z.cpu().numpy())
+
+            # Update counter and check limit
+            sample_count += len(volumes)
+            if sample_count >= max_samples:
+                break
+
+            # Memory cleanup
+            del volumes, z
+            torch.cuda.empty_cache()
+
+    # Stack arrays
+    latent_vectors = np.vstack(latent_vectors)
+    print(f"Collected {latent_vectors.shape[0]} samples with {latent_vectors.shape[1]} dimensions")
+
+    # Calculate statistics
+    dim_stds = np.std(latent_vectors, axis=0)
+    alpha_in_std_devs = alpha_value / dim_stds
+
+    # Print statistics
+    print(f"\nAutoencoder Latent Space Statistics:")
+    print(f"  Alpha value: {alpha_value}")
+    print(f"  Mean standard deviation: {np.mean(dim_stds):.4f}")
+    print(f"  Alpha in std devs: mean = {np.mean(alpha_in_std_devs):.2f}, min = {np.min(alpha_in_std_devs):.2f}, max = {np.max(alpha_in_std_devs):.2f}")
+
+    # Create histogram
+    plt.figure(figsize=(10, 6))
+    plt.hist(alpha_in_std_devs, bins=30, color='#A1CAF1')
+    plt.axvline(x=1, color='r', linestyle='--', label='1 std dev')
+    plt.axvline(x=2, color='r', linestyle=':', label='2 std devs')
+    plt.axvline(x=3, color='r', linestyle='-.', label='3 std devs')
+    plt.xlabel(f'Alpha ({alpha_value}) in Standard Deviations', fontsize=12)
+    plt.ylabel('Count of Dimensions', fontsize=12)
+    plt.title('Autoencoder: How Many Standard Deviations Does Alpha Represent?', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    return latent_vectors, dim_stds, alpha_in_std_devs
+
+# Function to analyze VAE
+def analyze_vae_alpha(vae_model, dataloader, alpha_value=5.0, max_samples=200):
+    """Calculate how many standard deviations alpha represents for VAE dimensions"""
+    device = next(vae_model.parameters()).device
+    vae_model.eval()
+
+    print(f"Analyzing VAE latent space (alpha = {alpha_value})...")
+
+    # Storage for latent vectors
+    latent_means = []
+
+    # Extract latent vectors
+    with torch.no_grad():
+        sample_count = 0
+        for batch in tqdm(dataloader, desc="Extracting VAE latent vectors"):
+            volumes = batch['volume'].to(device)
+
+            # Get VAE latent vectors - return is (mu, log_var)
+            mu, _ = vae_model.encode(volumes)
+
+            # Store results
+            latent_means.append(mu.cpu().numpy())
+
+            # Update counter and check limit
+            sample_count += len(volumes)
+            if sample_count >= max_samples:
+                break
+
+            # Memory cleanup
+            del volumes, mu
+            torch.cuda.empty_cache()
+
+    # Stack arrays
+    latent_means = np.vstack(latent_means)
+    print(f"Collected {latent_means.shape[0]} samples with {latent_means.shape[1]} dimensions")
+
+    # Calculate statistics
+    dim_stds = np.std(latent_means, axis=0)
+    alpha_in_std_devs = alpha_value / dim_stds
+
+    # Print statistics
+    print(f"\nVAE Latent Space Statistics:")
+    print(f"  Alpha value: {alpha_value}")
+    print(f"  Mean standard deviation: {np.mean(dim_stds):.4f}")
+    print(f"  Alpha in std devs: mean = {np.mean(alpha_in_std_devs):.2f}, min = {np.min(alpha_in_std_devs):.2f}, max = {np.max(alpha_in_std_devs):.2f}")
+
+    # Create histogram
+    plt.figure(figsize=(10, 6))
+    plt.hist(alpha_in_std_devs, bins=30, color='#F08080')
+    plt.axvline(x=1, color='r', linestyle='--', label='1 std dev')
+    plt.axvline(x=2, color='r', linestyle=':', label='2 std devs')
+    plt.axvline(x=3, color='r', linestyle='-.', label='3 std devs')
+    plt.xlabel(f'Alpha ({alpha_value}) in Standard Deviations', fontsize=12)
+    plt.ylabel('Count of Dimensions', fontsize=12)
+    plt.title('VAE: How Many Standard Deviations Does Alpha Represent?', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    return latent_means, dim_stds, alpha_in_std_devs
+
+# Function to analyze specific dimensions
+def analyze_specific_dimension(model, dataloader, dimension, is_vae=False, alpha_value=8.0, max_samples=200):
+    """Analyze a specific latent dimension in detail"""
+    device = next(model.parameters()).device
+    model.eval()
+    model_name = "VAE" if is_vae else "Autoencoder"
+
+    print(f"Analyzing {model_name} dimension {dimension} (alpha = {alpha_value})...")
+
+    # Storage for dimension values
+    dim_values = []
+
+    # Extract latent vectors
+    with torch.no_grad():
+        sample_count = 0
+        for batch in tqdm(dataloader, desc=f"Extracting {model_name} dimension {dimension}"):
+            volumes = batch['volume'].to(device)
+
+            # Get latent vectors
+            if is_vae:
+                z, _ = model.encode(volumes)  # For VAE, get mean vectors
+            else:
+                z = model.encode(volumes)  # For AE, get latent vectors
+
+            # Extract the specific dimension
+            dim_values.extend(z[:, dimension].cpu().numpy())
+
+            # Update counter and check limit
+            sample_count += len(volumes)
+            if sample_count >= max_samples:
+                break
+
+            # Memory cleanup
+            del volumes, z
+            torch.cuda.empty_cache()
+
+    # Convert to numpy array
+    dim_values = np.array(dim_values)
+
+    # Calculate statistics
+    dim_mean = np.mean(dim_values)
+    dim_std = np.std(dim_values)
+
+    # Print statistics
+    print(f"\n{model_name} Dimension {dimension} Statistics:")
+    print(f"  Mean: {dim_mean:.4f}")
+    print(f"  Standard deviation: {dim_std:.4f}")
+    print(f"  Alpha ({alpha_value}) in std devs: {alpha_value / dim_std:.2f}")
+
+    # Create visualization
+    plt.figure(figsize=(10, 6))
+
+    # Plot histogram with KDE
+    sns.histplot(dim_values, kde=True)
+
+    # Add lines for mean and perturbations
+    plt.axvline(x=dim_mean, color='r', linestyle='-', label='Mean')
+    plt.axvline(x=dim_mean + alpha_value, color='g', linestyle='--', label=f'Mean + α ({alpha_value})')
+    plt.axvline(x=dim_mean - alpha_value, color='b', linestyle='--', label=f'Mean - α ({alpha_value})')
+
+    # Add lines for standard deviations
+    for i in range(1, 4):
+        plt.axvline(x=dim_mean + i*dim_std, color='k', linestyle=':', alpha=0.5, label=f'+{i} std' if i == 1 else None)
+        plt.axvline(x=dim_mean - i*dim_std, color='k', linestyle=':', alpha=0.5, label=f'-{i} std' if i == 1 else None)
+
+    plt.xlabel('Dimension Value', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.title(f'{model_name} Dimension {dimension} Distribution\nAlpha={alpha_value} = {alpha_value/dim_std:.2f} std devs', fontsize=14)
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    return dim_values, dim_mean, dim_std
+
+# Load the trained models (if not already loaded)
+print("Loading trained models...")
+ae_model, _ = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
+vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
+
+# Analyze both models
+print("\nAnalyzing alpha values in terms of standard deviations...")
+ae_vectors, ae_stds, ae_alpha_in_stds = analyze_ae_alpha(ae_model, val_loader, alpha_value=8.0, max_samples=200)
+vae_means, vae_stds, vae_alpha_in_stds = analyze_vae_alpha(vae_model, val_loader, alpha_value=5.0, max_samples=200)
+
+# Analyze specific dimensions mentioned in the original code
+print("\nAnalyzing specific dimensions of interest:")
+for dim in [231, 94, 154]:  # Top dimensions analyzed in previous cells
+    print(f"\nDimension {dim}:")
+    analyze_specific_dimension(ae_model, val_loader, dim, is_vae=False, alpha_value=8.0, max_samples=200)
+    analyze_specific_dimension(vae_model, val_loader, dim, is_vae=True, alpha_value=5.0, max_samples=200)
+
 """## Metadata Analysis with Latent Dimensions"""
 
-# Cell 22: Metadata Dimension Analysis with Improved Visualization
+# Cell 23: Metadata Dimension Analysis with Improved Visualization
 
 import os
 import pandas as pd
@@ -5798,7 +6043,7 @@ dimension_results = analyze_metadata_dimensions(
 
 print("\nDimension analysis completed!")
 
-# Cell 22: Metadata Dimension Analysis with Debug Output
+# Cell 24: Metadata Dimension Analysis with Debug Output
 
 import os
 import pandas as pd
@@ -6259,7 +6504,7 @@ print("\nDimension analysis completed!")
 
 """## Group Separation"""
 
-# Cell 23: VAE Latent Dimension Analysis for Patient Group Separation
+# Cell 25: VAE Latent Dimension Analysis for Patient Group Separation
 
 import torch
 import numpy as np
@@ -6685,7 +6930,7 @@ for dim in top_dims_to_visualize:
     print(f"\nAnalyzing dimension {dim} in brain space:")
     visualize_vae_latent_dimension(vae_model, val_loader, dimension_idx=dim, alpha=5.0)
 
-# Cell 24: AE vs VAE Performance Analysis with Top Discriminative Dimensions
+# Cell 26: AE vs VAE Performance Analysis with Consistent Scales
 
 import torch
 import numpy as np
@@ -6890,7 +7135,10 @@ def compare_reconstruction_quality(originals, recon_ae, recon_vae, labels, uniqu
     visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, unique_groups)
 
 def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, unique_groups):
-    """Compare the visual quality of reconstructions for sample images from each group."""
+    """
+    Compare the visual quality of reconstructions for sample images from each group
+    with consistent scales across all groups.
+    """
     # Get one sample per group
     sample_indices = []
     for group in unique_groups:
@@ -6909,6 +7157,9 @@ def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, uni
     fig = plt.figure(figsize=(12, 4 * len(sample_indices)))
     plt.suptitle("Visual Comparison of Reconstructions", fontsize=16)
 
+    # Define consistent scale for brain images
+    brain_vmin, brain_vmax = 0, 3
+
     for i, idx in enumerate(sample_indices):
         # Get original and reconstructions
         orig = originals[idx].squeeze()
@@ -6918,19 +7169,19 @@ def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, uni
 
         # Original
         plt.subplot(len(sample_indices), 3, i*3 + 1)
-        plt.imshow(orig[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(orig[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original - {group}", fontsize=12)
         plt.axis('off')
 
         # AE reconstruction
         plt.subplot(len(sample_indices), 3, i*3 + 2)
-        plt.imshow(ae_recon[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(ae_recon[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title("AE Reconstruction", fontsize=12)
         plt.axis('off')
 
         # VAE reconstruction
         plt.subplot(len(sample_indices), 3, i*3 + 3)
-        plt.imshow(vae_recon[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(vae_recon[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title("VAE Reconstruction", fontsize=12)
         plt.axis('off')
 
@@ -6938,9 +7189,32 @@ def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, uni
     plt.subplots_adjust(top=0.9)
     plt.show()
 
-    # Create figure for error maps
+    # IMPROVEMENT: Calculate the global maximum error across all groups and samples
+    # to ensure consistent color scales
+    all_ae_errors = []
+    all_vae_errors = []
+
+    for idx in sample_indices:
+        orig = originals[idx].squeeze()
+        ae_recon = recon_ae[idx].squeeze()
+        vae_recon = recon_vae[idx].squeeze()
+
+        # Calculate error maps
+        ae_error = np.abs(orig - ae_recon)
+        vae_error = np.abs(orig - vae_recon)
+
+        all_ae_errors.append(ae_error[axial_slice])
+        all_vae_errors.append(vae_error[axial_slice])
+
+    # Determine global maximum error for consistent scale
+    global_max_error = max(
+        max(np.max(err) for err in all_ae_errors),
+        max(np.max(err) for err in all_vae_errors)
+    )
+
+    # Create figure for error maps with consistent scale across all groups
     fig = plt.figure(figsize=(12, 4 * len(sample_indices)))
-    plt.suptitle("Reconstruction Error Maps", fontsize=16)
+    plt.suptitle(f"Reconstruction Error Maps (Global Scale: 0 to {global_max_error:.3f})", fontsize=16)
 
     for i, idx in enumerate(sample_indices):
         # Get original and reconstructions
@@ -6953,32 +7227,53 @@ def visualize_sample_reconstructions(originals, recon_ae, recon_vae, labels, uni
         ae_error = np.abs(orig - ae_recon)
         vae_error = np.abs(orig - vae_recon)
 
-        # Set common color scale
-        vmax = max(np.max(ae_error), np.max(vae_error))
-
         # Original
         plt.subplot(len(sample_indices), 3, i*3 + 1)
-        plt.imshow(orig[axial_slice], cmap='gray', vmin=0, vmax=3)
+        plt.imshow(orig[axial_slice], cmap='gray', vmin=brain_vmin, vmax=brain_vmax)
         plt.title(f"Original - {group}", fontsize=12)
         plt.axis('off')
 
-        # AE error
+        # AE error with global consistent scale
         plt.subplot(len(sample_indices), 3, i*3 + 2)
-        plt.imshow(ae_error[axial_slice], cmap='hot', vmin=0, vmax=vmax)
-        plt.colorbar(fraction=0.046, pad=0.04)
+        im = plt.imshow(ae_error[axial_slice], cmap='hot', vmin=0, vmax=global_max_error)
+        plt.colorbar(im, fraction=0.046, pad=0.04)
         plt.title("AE Error", fontsize=12)
         plt.axis('off')
 
-        # VAE error
+        # VAE error with global consistent scale
         plt.subplot(len(sample_indices), 3, i*3 + 3)
-        plt.imshow(vae_error[axial_slice], cmap='hot', vmin=0, vmax=vmax)
-        plt.colorbar(fraction=0.046, pad=0.04)
+        im = plt.imshow(vae_error[axial_slice], cmap='hot', vmin=0, vmax=global_max_error)
+        plt.colorbar(im, fraction=0.046, pad=0.04)
         plt.title("VAE Error", fontsize=12)
         plt.axis('off')
 
     plt.tight_layout()
     plt.subplots_adjust(top=0.9)
     plt.show()
+
+    # Add a quantitative comparison of error magnitudes by group
+    print("\nError Magnitude Comparison by Group:")
+    print(f"Global error scale: 0 to {global_max_error:.3f}")
+
+    for i, idx in enumerate(sample_indices):
+        group = labels[idx]
+        orig = originals[idx].squeeze()
+        ae_recon = recon_ae[idx].squeeze()
+        vae_recon = recon_vae[idx].squeeze()
+
+        # Calculate error statistics for this sample
+        ae_error = np.abs(orig - ae_recon)
+        vae_error = np.abs(orig - vae_recon)
+
+        ae_mean = np.mean(ae_error[axial_slice])
+        vae_mean = np.mean(vae_error[axial_slice])
+        ae_max = np.max(ae_error[axial_slice])
+        vae_max = np.max(vae_error[axial_slice])
+
+        print(f"\n{group} Group:")
+        print(f"  AE Mean Error: {ae_mean:.4f}, Max Error: {ae_max:.4f}")
+        print(f"  VAE Mean Error: {vae_mean:.4f}, Max Error: {vae_max:.4f}")
+        print(f"  Error Ratio (AE/VAE): {ae_mean/vae_mean:.4f}")
 
 def find_discriminative_dimensions(latent_vectors, labels, unique_groups, model_name, top_n=10):
     """
@@ -7320,11 +7615,41 @@ def visualize_top_dim_distributions(latent_ae, latent_vae, labels, unique_groups
     # Create figure for top dimension distributions
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
 
+    # Determine global min/max values for consistent y-axis scales
+    # For AE dimensions
+    ae_dim1_min = ae_df[f'AE Dim {ae_dim1}'].min()
+    ae_dim1_max = ae_df[f'AE Dim {ae_dim1}'].max()
+    ae_dim2_min = ae_df[f'AE Dim {ae_dim2}'].min()
+    ae_dim2_max = ae_df[f'AE Dim {ae_dim2}'].max()
+
+    ae_ymin = min(ae_dim1_min, ae_dim2_min)
+    ae_ymax = max(ae_dim1_max, ae_dim2_max)
+
+    # Add some padding
+    ae_range = ae_ymax - ae_ymin
+    ae_ymin -= ae_range * 0.1
+    ae_ymax += ae_range * 0.1
+
+    # For VAE dimensions
+    vae_dim1_min = vae_df[f'VAE Dim {vae_dim1}'].min()
+    vae_dim1_max = vae_df[f'VAE Dim {vae_dim1}'].max()
+    vae_dim2_min = vae_df[f'VAE Dim {vae_dim2}'].min()
+    vae_dim2_max = vae_df[f'VAE Dim {vae_dim2}'].max()
+
+    vae_ymin = min(vae_dim1_min, vae_dim2_min)
+    vae_ymax = max(vae_dim1_max, vae_dim2_max)
+
+    # Add some padding
+    vae_range = vae_ymax - vae_ymin
+    vae_ymin -= vae_range * 0.1
+    vae_ymax += vae_range * 0.1
+
     # 1. AE Dimension 1
     ax = axes[0, 0]
     sns.violinplot(x='Group', y=f'AE Dim {ae_dim1}', data=ae_df, palette=palette, ax=ax)
     sns.boxplot(x='Group', y=f'AE Dim {ae_dim1}', data=ae_df, width=0.2, color='white', ax=ax)
     ax.set_title(f"AE Dimension {ae_dim1} Distribution", fontsize=14)
+    ax.set_ylim(ae_ymin, ae_ymax)  # Use consistent y-axis scale for AE dimensions
     ax.grid(axis='y', alpha=0.3)
 
     # 2. AE Dimension 2
@@ -7332,6 +7657,7 @@ def visualize_top_dim_distributions(latent_ae, latent_vae, labels, unique_groups
     sns.violinplot(x='Group', y=f'AE Dim {ae_dim2}', data=ae_df, palette=palette, ax=ax)
     sns.boxplot(x='Group', y=f'AE Dim {ae_dim2}', data=ae_df, width=0.2, color='white', ax=ax)
     ax.set_title(f"AE Dimension {ae_dim2} Distribution", fontsize=14)
+    ax.set_ylim(ae_ymin, ae_ymax)  # Use consistent y-axis scale for AE dimensions
     ax.grid(axis='y', alpha=0.3)
 
     # 3. VAE Dimension 1
@@ -7339,6 +7665,7 @@ def visualize_top_dim_distributions(latent_ae, latent_vae, labels, unique_groups
     sns.violinplot(x='Group', y=f'VAE Dim {vae_dim1}', data=vae_df, palette=palette, ax=ax)
     sns.boxplot(x='Group', y=f'VAE Dim {vae_dim1}', data=vae_df, width=0.2, color='white', ax=ax)
     ax.set_title(f"VAE Dimension {vae_dim1} Distribution", fontsize=14)
+    ax.set_ylim(vae_ymin, vae_ymax)  # Use consistent y-axis scale for VAE dimensions
     ax.grid(axis='y', alpha=0.3)
 
     # 4. VAE Dimension 2
@@ -7346,6 +7673,7 @@ def visualize_top_dim_distributions(latent_ae, latent_vae, labels, unique_groups
     sns.violinplot(x='Group', y=f'VAE Dim {vae_dim2}', data=vae_df, palette=palette, ax=ax)
     sns.boxplot(x='Group', y=f'VAE Dim {vae_dim2}', data=vae_df, width=0.2, color='white', ax=ax)
     ax.set_title(f"VAE Dimension {vae_dim2} Distribution", fontsize=14)
+    ax.set_ylim(vae_ymin, vae_ymax)  # Use consistent y-axis scale for VAE dimensions
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -7377,11 +7705,21 @@ def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups
         for j, dim in enumerate(vae_top_dims):
             vae_means[i, j] = np.mean(latent_vae[group_mask, dim])
 
+    # Determine the global min/max for both heatmaps to use a consistent colormap scale
+    global_min = min(np.min(ae_means), np.min(vae_means))
+    global_max = max(np.max(ae_means), np.max(vae_means))
+
+    # Make the colormap symmetric around zero if values cross zero
+    if global_min < 0 and global_max > 0:
+        abs_max = max(abs(global_min), abs(global_max))
+        global_min = -abs_max
+        global_max = abs_max
+
     # Create a figure for the heatmaps
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8))
 
-    # 1. AE heatmap
-    im1 = ax1.imshow(ae_means, cmap='coolwarm', aspect='auto')
+    # 1. AE heatmap with consistent scale
+    im1 = ax1.imshow(ae_means, cmap='coolwarm', aspect='auto', vmin=global_min, vmax=global_max)
 
     # Add axis labels
     ax1.set_yticks(np.arange(len(unique_groups)))
@@ -7392,7 +7730,8 @@ def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups
     # Add colorbar
     divider = make_axes_locatable(ax1)
     cax1 = divider.append_axes("right", size="5%", pad=0.1)
-    plt.colorbar(im1, cax=cax1)
+    cbar1 = plt.colorbar(im1, cax=cax1)
+    cbar1.set_label('Mean Dimension Value')
 
     # Add title
     ax1.set_title("AE Top Dimensions - Mean Values by Group", fontsize=14)
@@ -7400,11 +7739,12 @@ def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups
     # Add value annotations
     for i in range(len(unique_groups)):
         for j in range(len(ae_top_dims)):
+            text_color = "white" if abs(ae_means[i, j]) > (global_max - global_min) * 0.7 else "black"
             ax1.text(j, i, f"{ae_means[i, j]:.2f}",
-                    ha="center", va="center", color="black" if abs(ae_means[i, j]) < 1 else "white")
+                    ha="center", va="center", color=text_color)
 
-    # 2. VAE heatmap
-    im2 = ax2.imshow(vae_means, cmap='coolwarm', aspect='auto')
+    # 2. VAE heatmap with same consistent scale
+    im2 = ax2.imshow(vae_means, cmap='coolwarm', aspect='auto', vmin=global_min, vmax=global_max)
 
     # Add axis labels
     ax2.set_yticks(np.arange(len(unique_groups)))
@@ -7415,7 +7755,8 @@ def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups
     # Add colorbar
     divider = make_axes_locatable(ax2)
     cax2 = divider.append_axes("right", size="5%", pad=0.1)
-    plt.colorbar(im2, cax=cax2)
+    cbar2 = plt.colorbar(im2, cax=cax2)
+    cbar2.set_label('Mean Dimension Value')
 
     # Add title
     ax2.set_title("VAE Top Dimensions - Mean Values by Group", fontsize=14)
@@ -7423,10 +7764,13 @@ def visualize_dimension_group_means(latent_ae, latent_vae, labels, unique_groups
     # Add value annotations
     for i in range(len(unique_groups)):
         for j in range(len(vae_top_dims)):
+            text_color = "white" if abs(vae_means[i, j]) > (global_max - global_min) * 0.7 else "black"
             ax2.text(j, i, f"{vae_means[i, j]:.2f}",
-                    ha="center", va="center", color="black" if abs(vae_means[i, j]) < 1 else "white")
+                    ha="center", va="center", color=text_color)
 
+    plt.suptitle(f"Dimension Mean Values (Scale: {global_min:.2f} to {global_max:.2f})", fontsize=16)
     plt.tight_layout()
+    plt.subplots_adjust(top=0.90)
     plt.show()
 
 # Load the trained models
@@ -7436,4 +7780,776 @@ vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
 
 # Run the comparison analysis with focus on discriminative dimensions
 results = compare_ae_vae_performance(ae_model, vae_model, val_loader, max_samples=150)
+
+"""## Identifiability of the same Patient, is it possible?"""
+
+# Cell 27: Identifying Patients with Multiple Exams
+import os
+import re
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import defaultdict
+from datetime import datetime
+import torch
+from tqdm import tqdm
+import gc
+
+def extract_patient_info(file_path):
+    """
+    Extract patient ID and exam date from file path.
+    Returns a tuple (patient_id, exam_date, group)
+    """
+    # Normalize path
+    file_path = file_path.replace('\\', '/')
+
+    # Extract patient group (PD, Control, SWEDD)
+    if 'PPMI_Images_PD' in file_path:
+        patient_group = 'PD'
+    elif 'PPMI_Images_Cont' in file_path:
+        patient_group = 'Control'
+    elif 'PPMI_Images_SWEDD' in file_path:
+        patient_group = 'SWEDD'
+    else:
+        patient_group = 'Unknown'
+
+    # Extract patient ID - should be a folder after the group folder
+    patient_id_match = re.search(r'PPMI_Images_\w+/(\d+)/', file_path)
+    if not patient_id_match:
+        patient_id_match = re.search(r'PPMI_(\d+)_', file_path)
+
+    patient_id = patient_id_match.group(1) if patient_id_match else None
+
+    # Extract exam date - typically found in a format like "2011-01-20_16_28_47.0"
+    date_match = re.search(r'(\d{4}-\d{2}-\d{2})_\d{2}_\d{2}_\d{2}', file_path)
+    if date_match:
+        exam_date = date_match.group(1)
+    else:
+        # Try another common format
+        date_match = re.search(r'(\d{8})', file_path)
+        if date_match:
+            date_str = date_match.group(1)
+            # Format YYYYMMDD
+            exam_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+        else:
+            exam_date = None
+
+    return patient_id, exam_date, patient_group
+
+def identify_longitudinal_patients(dataloader, min_exams=3, max_patients=10):
+    """
+    Identify patients with multiple exams and select a subset for analysis.
+    Prioritizes patients with the MOST exams in each group.
+
+    Parameters:
+        dataloader: DataLoader containing DATSCAN images
+        min_exams: Minimum number of exams required to consider a patient for analysis
+        max_patients: Maximum number of patients to include in the analysis
+
+    Returns:
+        Dictionary with patient info and DataFrame of longitudinal patients
+    """
+    print("Identifying patients with multiple exams...")
+
+    # Dictionary to store patient info
+    patient_exams = defaultdict(lambda: defaultdict(list))
+
+    # Extract patient info from all file paths in the dataloader
+    for batch in tqdm(dataloader, desc="Processing files"):
+        paths = batch['path']
+        labels = batch['label']
+
+        for path, label in zip(paths, labels):
+            patient_id, exam_date, patient_group = extract_patient_info(path)
+
+            if patient_id and exam_date:
+                # Store the path along with the exam date
+                patient_exams[patient_id][exam_date].append({
+                    'path': path,
+                    'group': label if label else patient_group
+                })
+
+    # Count number of exams per patient
+    exam_counts = {patient_id: len(exams) for patient_id, exams in patient_exams.items()}
+
+    # Create a DataFrame for analysis
+    patient_info = []
+    for patient_id, exam_dates in patient_exams.items():
+        # Get the patient group (should be the same for all exams)
+        patient_group = next(iter(next(iter(exam_dates.values()))))['group']
+        num_exams = len(exam_dates)
+
+        # Get the first and last exam dates
+        exam_date_list = list(exam_dates.keys())
+        first_exam = min(exam_date_list) if exam_date_list else None
+        last_exam = max(exam_date_list) if exam_date_list else None
+
+        # Calculate the time span in days if possible
+        time_span = None
+        if first_exam and last_exam:
+            try:
+                first_date = datetime.strptime(first_exam, "%Y-%m-%d")
+                last_date = datetime.strptime(last_exam, "%Y-%m-%d")
+                time_span = (last_date - first_date).days
+            except ValueError:
+                pass
+
+        patient_info.append({
+            'patient_id': patient_id,
+            'group': patient_group,
+            'num_exams': num_exams,
+            'first_exam': first_exam,
+            'last_exam': last_exam,
+            'time_span_days': time_span
+        })
+
+    patient_df = pd.DataFrame(patient_info)
+
+    # Sort by number of exams in descending order
+    patient_df = patient_df.sort_values(by='num_exams', ascending=False)
+
+    print(f"Found {len(patient_df)} unique patients.")
+    print(f"Patients with {min_exams}+ exams: {len(patient_df[patient_df['num_exams'] >= min_exams])}")
+
+    # Distribution of exams per patient
+    plt.figure(figsize=(10, 6))
+    sns.histplot(data=patient_df, x='num_exams', hue='group', discrete=True, multiple='stack')
+    plt.title('Distribution of Exams per Patient')
+    plt.xlabel('Number of Exams')
+    plt.ylabel('Number of Patients')
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # Filter for patients with multiple exams (at least min_exams)
+    longitudinal_df = patient_df[patient_df['num_exams'] >= min_exams].copy()
+
+    # Show the top patients from each group
+    print("\nTop patients with most exams by group:")
+    for group in sorted(longitudinal_df['group'].unique()):
+        group_patients = longitudinal_df[longitudinal_df['group'] == group].sort_values(by='num_exams', ascending=False)
+        print(f"\n{group} group:")
+        if len(group_patients) > 0:
+            print(group_patients[['patient_id', 'num_exams', 'time_span_days']].head(5).to_string(index=False))
+        else:
+            print("No patients with sufficient exams.")
+
+    # Time span distribution for longitudinal patients
+    plt.figure(figsize=(10, 6))
+    sns.histplot(data=longitudinal_df, x='time_span_days', hue='group', bins=20, multiple='stack')
+    plt.title('Time Span of Exams for Longitudinal Patients')
+    plt.xlabel('Time Span (days)')
+    plt.ylabel('Number of Patients')
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+
+    # GUARANTEED GROUP REPRESENTATION STRATEGY
+    # Allocate slots for each group to ensure representation
+    selected_patients = []
+    all_groups = patient_df['group'].unique()
+    slots_per_group = max(1, max_patients // len(all_groups))
+    remaining_slots = max_patients - (slots_per_group * len(all_groups))
+
+    print(f"\nAllocating {slots_per_group} slots per group with {remaining_slots} remaining slots")
+
+    # First, try to fill with patients meeting minimum exam criteria
+    for group in all_groups:
+        group_patients = longitudinal_df[longitudinal_df['group'] == group]
+
+        # If we don't have enough patients with min_exams, fall back to patients with fewer exams
+        if len(group_patients) < slots_per_group:
+            # Get all patients from this group
+            all_group_patients = patient_df[patient_df['group'] == group].sort_values(by='num_exams', ascending=False)
+
+            # Take top patients even if they don't meet min_exams
+            fallback_count = slots_per_group - len(group_patients)
+            fallback_patients = all_group_patients[~all_group_patients['patient_id'].isin(group_patients['patient_id'])].head(fallback_count)
+
+            # Add to the group patients
+            group_patients = pd.concat([group_patients, fallback_patients])
+
+            print(f"Added {len(fallback_patients)} patients from {group} group with fewer than {min_exams} exams")
+
+        # Select top patients from this group
+        selected_from_group = group_patients.head(slots_per_group)
+        selected_patients.append(selected_from_group)
+
+        print(f"Selected {len(selected_from_group)} patients from {group} group")
+
+    # Combine selected patients and sort by number of exams
+    selected_df = pd.concat(selected_patients).sort_values(by=['num_exams', 'time_span_days'], ascending=[False, False])
+
+    # Allocate remaining slots to patients with the most exams
+    if remaining_slots > 0:
+        # Get eligible patients not already selected
+        remaining_patients = longitudinal_df[~longitudinal_df['patient_id'].isin(selected_df['patient_id'])]
+
+        # If we have eligible patients, add them
+        if len(remaining_patients) > 0:
+            additional = remaining_patients.head(remaining_slots)
+            selected_df = pd.concat([selected_df, additional])
+            print(f"Added {len(additional)} additional patients with the most exams")
+
+    # Final sort by exam count
+    selected_df = selected_df.sort_values(by='num_exams', ascending=False)
+
+    print("\nSelected patients for analysis:")
+    print(selected_df[['patient_id', 'group', 'num_exams', 'time_span_days']].reset_index(drop=True))
+
+    # Verify we have representation from all groups
+    selected_groups = selected_df['group'].unique()
+    if len(selected_groups) == len(all_groups):
+        print("\n✅ All patient groups are represented in the selection")
+    else:
+        missing_groups = set(all_groups) - set(selected_groups)
+        print(f"\n⚠️ Missing representation from groups: {missing_groups}")
+
+    return {
+        'patient_exams': patient_exams,
+        'patient_df': patient_df,
+        'longitudinal_df': longitudinal_df,
+        'selected_patients': selected_df
+    }, selected_df
+
+# Run the function to identify longitudinal patients
+# We're now GUARANTEEING representation from all groups
+patient_data, selected_patients = identify_longitudinal_patients(val_loader, min_exams=2, max_patients=10)
+
+# Cell 26: Extracting and Analyzing Latent Representations for Longitudinal Patients
+import torch
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.manifold import TSNE
+from tqdm import tqdm
+import time
+import gc
+
+def extract_patient_latent_representations(patient_exams, selected_patients, ae_model, vae_model, dataloader):
+    """
+    Extract latent representations for all exams of selected patients.
+
+    Parameters:
+        patient_exams: Dictionary with patient exam info
+        selected_patients: DataFrame of patients selected for analysis
+        ae_model: Trained autoencoder model
+        vae_model: Trained VAE model
+        dataloader: DataLoader containing all images
+
+    Returns:
+        Dictionary with latent representations for each patient and exam
+    """
+    print("Extracting latent representations for longitudinal patients...")
+
+    # Set models to evaluation mode
+    device = next(ae_model.parameters()).device
+    ae_model.eval()
+    vae_model.eval()
+
+    # Create a set of selected patient IDs for faster lookup
+    selected_patient_ids = set(selected_patients['patient_id'])
+
+    # Dictionary to store latent representations
+    patient_latent_reps = {
+        'ae': defaultdict(lambda: defaultdict(list)),
+        'vae': defaultdict(lambda: defaultdict(list))
+    }
+
+    # Process all images in the dataloader
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc="Extracting latent vectors"):
+            volumes = batch['volume']
+            paths = batch['path']
+
+            # Check if any image in this batch belongs to our selected patients
+            batch_has_selected = False
+            for path in paths:
+                patient_id, _, _ = extract_patient_info(path)
+                if patient_id in selected_patient_ids:
+                    batch_has_selected = True
+                    break
+
+            # Skip batch if it doesn't contain any of our selected patients
+            if not batch_has_selected:
+                continue
+
+            # Process the batch
+            volumes = volumes.to(device)
+
+            # Get latent vectors
+            ae_latent = ae_model.encode(volumes)
+            vae_mu, _ = vae_model.encode(volumes)
+
+            # Store latent vectors for selected patients
+            for i, path in enumerate(paths):
+                patient_id, exam_date, _ = extract_patient_info(path)
+
+                if patient_id in selected_patient_ids and exam_date:
+                    patient_latent_reps['ae'][patient_id][exam_date].append(ae_latent[i].cpu().numpy())
+                    patient_latent_reps['vae'][patient_id][exam_date].append(vae_mu[i].cpu().numpy())
+
+            # Memory cleanup
+            del volumes, ae_latent, vae_mu
+            torch.cuda.empty_cache()
+
+    # Average latent vectors for each exam (in case there are multiple images per exam)
+    for model_type in ['ae', 'vae']:
+        for patient_id in patient_latent_reps[model_type]:
+            for exam_date in patient_latent_reps[model_type][patient_id]:
+                vectors = patient_latent_reps[model_type][patient_id][exam_date]
+                if vectors:
+                    # Average the vectors
+                    avg_vector = np.mean(vectors, axis=0)
+                    patient_latent_reps[model_type][patient_id][exam_date] = avg_vector
+
+    # Convert to a more accessible format for analysis
+    latent_data = []
+
+    for model_type in ['ae', 'vae']:
+        for patient_id in patient_latent_reps[model_type]:
+            for exam_date, latent_vector in patient_latent_reps[model_type][patient_id].items():
+                # Get patient group from selected_patients
+                patient_group = selected_patients[selected_patients['patient_id'] == patient_id]['group'].iloc[0]
+
+                latent_data.append({
+                    'patient_id': patient_id,
+                    'group': patient_group,
+                    'exam_date': exam_date,
+                    'model_type': model_type,
+                    'latent_vector': latent_vector
+                })
+
+    latent_df = pd.DataFrame(latent_data)
+
+    print(f"Extracted latent representations for {len(latent_df)} exams across {len(selected_patient_ids)} patients.")
+
+    return latent_df
+
+def analyze_patient_latent_consistency(latent_df):
+    """
+    Analyze the consistency of latent representations across exams for the same patient.
+
+    Parameters:
+        latent_df: DataFrame with latent representations for each patient and exam
+
+    Returns:
+        Dictionary with analysis results
+    """
+    print("\nAnalyzing consistency of latent representations...")
+
+    # Calculate intra-patient and inter-patient similarity
+    results = {
+        'ae': {'intra_sim': [], 'inter_sim': [], 'stable_dims': []},
+        'vae': {'intra_sim': [], 'inter_sim': [], 'stable_dims': []}
+    }
+
+    # Calculate pairwise similarities for each model type
+    for model_type in ['ae', 'vae']:
+        model_data = latent_df[latent_df['model_type'] == model_type]
+
+        # Initialize arrays for dimension-wise analysis
+        latent_dim = len(model_data.iloc[0]['latent_vector'])
+        dim_stability = np.zeros(latent_dim)
+        dim_inter_variation = np.zeros(latent_dim)
+
+        # Group by patient
+        patient_groups = model_data.groupby('patient_id')
+
+        # Calculate intra-patient similarities
+        for patient_id, patient_df in patient_groups:
+            patient_vectors = np.array(patient_df['latent_vector'].tolist())
+
+            # Calculate pairwise similarities within patient
+            if len(patient_vectors) > 1:
+                # Cosine similarity between all pairs of exams
+                sim_matrix = cosine_similarity(patient_vectors)
+
+                # Average similarity (excluding self-similarity along diagonal)
+                intra_sim = (sim_matrix.sum() - len(patient_vectors)) / (len(patient_vectors) * (len(patient_vectors) - 1))
+                results[model_type]['intra_sim'].append(intra_sim)
+
+                # Analyze dimension-wise stability
+                for dim in range(latent_dim):
+                    dim_values = patient_vectors[:, dim]
+                    dim_stability[dim] += np.std(dim_values)
+
+        # Normalize dimension stability by number of patients
+        dim_stability /= len(patient_groups)
+
+        # Find the most stable dimensions (lowest standard deviation across exams)
+        stable_dims = np.argsort(dim_stability)[:20]  # Top 20 most stable dimensions
+        results[model_type]['stable_dims'] = stable_dims.tolist()
+
+        # Calculate inter-patient similarities
+        patient_avg_vectors = {}
+
+        # Get average vector for each patient
+        for patient_id, patient_df in patient_groups:
+            patient_vectors = np.array(patient_df['latent_vector'].tolist())
+            patient_avg_vectors[patient_id] = np.mean(patient_vectors, axis=0)
+
+        # Calculate pairwise similarities between different patients
+        patient_ids = list(patient_avg_vectors.keys())
+        for i in range(len(patient_ids)):
+            for j in range(i+1, len(patient_ids)):
+                vec1 = patient_avg_vectors[patient_ids[i]]
+                vec2 = patient_avg_vectors[patient_ids[j]]
+
+                # Cosine similarity between patients
+                sim = cosine_similarity([vec1], [vec2])[0, 0]
+                results[model_type]['inter_sim'].append(sim)
+
+                # Calculate dimension-wise variation between patients
+                for dim in range(latent_dim):
+                    dim_inter_variation[dim] += abs(vec1[dim] - vec2[dim])
+
+        # Normalize inter-patient variation by number of pairs
+        if len(patient_ids) > 1:
+            num_pairs = len(patient_ids) * (len(patient_ids) - 1) / 2
+            dim_inter_variation /= num_pairs
+
+        # Find most discriminative dimensions (highest variation between patients)
+        discrim_dims = np.argsort(dim_inter_variation)[::-1][:20]  # Top 20 most discriminative dimensions
+        results[model_type]['discrim_dims'] = discrim_dims.tolist()
+
+    # Plot intra vs inter patient similarity distributions
+    plt.figure(figsize=(12, 6))
+
+    plt.subplot(1, 2, 1)
+    sns.kdeplot(results['ae']['intra_sim'], label='Intra-patient', shade=True)
+    sns.kdeplot(results['ae']['inter_sim'], label='Inter-patient', shade=True)
+    plt.title('AE: Intra vs. Inter-Patient Similarity')
+    plt.xlabel('Cosine Similarity')
+    plt.ylabel('Density')
+    plt.grid(alpha=0.3)
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    sns.kdeplot(results['vae']['intra_sim'], label='Intra-patient', shade=True)
+    sns.kdeplot(results['vae']['inter_sim'], label='Inter-patient', shade=True)
+    plt.title('VAE: Intra vs. Inter-Patient Similarity')
+    plt.xlabel('Cosine Similarity')
+    plt.ylabel('Density')
+    plt.grid(alpha=0.3)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+    # Create summary statistics table
+    summary_stats = []
+    for model_type in ['ae', 'vae']:
+        intra_mean = np.mean(results[model_type]['intra_sim'])
+        intra_std = np.std(results[model_type]['intra_sim'])
+        inter_mean = np.mean(results[model_type]['inter_sim'])
+        inter_std = np.std(results[model_type]['inter_sim'])
+
+        # Separation ratio (higher is better)
+        separation_ratio = intra_mean / inter_mean if inter_mean > 0 else float('inf')
+
+        summary_stats.append({
+            'Model': model_type.upper(),
+            'Intra-Patient Similarity': f"{intra_mean:.4f} ± {intra_std:.4f}",
+            'Inter-Patient Similarity': f"{inter_mean:.4f} ± {inter_std:.4f}",
+            'Separation Ratio': f"{separation_ratio:.4f}"
+        })
+
+    summary_df = pd.DataFrame(summary_stats)
+    print("\nSummary Statistics:")
+    print(summary_df)
+
+    # Print most stable dimensions
+    for model_type in ['ae', 'vae']:
+        print(f"\n{model_type.upper()} - Top 10 most stable dimensions:")
+        for dim in results[model_type]['stable_dims'][:10]:
+            print(f"  Dimension {dim}")
+
+        print(f"\n{model_type.upper()} - Top 10 most discriminative dimensions:")
+        for dim in results[model_type]['discrim_dims'][:10]:
+            print(f"  Dimension {dim}")
+
+    return results
+
+# Load AE and VAE models
+print("Loading trained models...")
+ae_model, _ = load_trained_model('checkpoints', 'autoencoder_v1', latent_dim=256)
+vae_model, _ = load_trained_vae('checkpoints', 'vae_model_v2', latent_dim=256)
+
+# Extract latent representations for longitudinal patients
+latent_df = extract_patient_latent_representations(
+    patient_data['patient_exams'],
+    selected_patients,
+    ae_model,
+    vae_model,
+    val_loader
+)
+
+# Analyze consistency of latent representations
+consistency_results = analyze_patient_latent_consistency(latent_df)
+
+# Cell 28: Visualizing Patient Identity in Latent Space
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import LeaveOneOut
+import itertools
+from matplotlib.colors import ListedColormap
+
+def visualize_patient_latent_evolution(latent_df, stable_dims):
+    """
+    Visualize how the latent representations of patients evolve over time,
+    focusing on the most stable dimensions identified.
+
+    Parameters:
+        latent_df: DataFrame with latent representations
+        stable_dims: Dictionary with stable dimensions for AE and VAE
+    """
+    print("Visualizing patient latent space evolution...")
+
+    # Create a figure for both models
+    for model_type in ['ae', 'vae']:
+        model_data = latent_df[latent_df['model_type'] == model_type]
+
+        # Get top stable dimensions
+        top_dims = stable_dims[model_type]['stable_dims'][:2]
+        top_discrim_dims = stable_dims[model_type]['discrim_dims'][:2]
+
+        # Create plots
+        fig, axes = plt.subplots(1, 2, figsize=(18, 8))
+        plt.suptitle(f'{model_type.upper()}: Patient Evolution in Latent Space', fontsize=16)
+
+        # Plot using stable dimensions
+        ax = axes[0]
+        visualize_dimensions(model_data, top_dims, ax, f'Most Stable Dimensions ({top_dims[0]}, {top_dims[1]})')
+
+        # Plot using discriminative dimensions
+        ax = axes[1]
+        visualize_dimensions(model_data, top_discrim_dims, ax, f'Most Discriminative Dimensions ({top_discrim_dims[0]}, {top_discrim_dims[1]})')
+
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.9)
+        plt.show()
+
+    # Create dimension evolution plots for each patient
+    for model_type in ['ae', 'vae']:
+        model_data = latent_df[latent_df['model_type'] == model_type]
+
+        # Get top stable & discriminative dimensions
+        top_stable = stable_dims[model_type]['stable_dims'][:5]
+        top_discrim = stable_dims[model_type]['discrim_dims'][:5]
+
+        # For each patient, visualize how these dimensions evolve over time
+        for patient_id, patient_df in model_data.groupby('patient_id'):
+            # Skip if there are fewer than 3 exams
+            if len(patient_df) < 3:
+                continue
+
+            # Sort by exam date
+            patient_df = patient_df.sort_values('exam_date')
+
+            # Get patient group
+            patient_group = patient_df['group'].iloc[0]
+
+            # Convert exam dates to numerical indices for x-axis
+            exam_dates = patient_df['exam_date'].tolist()
+
+            # Plot evolution of top dimensions
+            fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+            plt.suptitle(f'{model_type.upper()}: Patient {patient_id} ({patient_group}) - Dimension Evolution', fontsize=16)
+
+            # Stable dimensions
+            ax = axes[0]
+            for i, dim in enumerate(top_stable):
+                dim_values = [vec[dim] for vec in patient_df['latent_vector']]
+                ax.plot(range(len(exam_dates)), dim_values, 'o-', label=f'Dim {dim}')
+
+            ax.set_title('Most Stable Dimensions')
+            ax.set_xlabel('Exam Index')
+            ax.set_ylabel('Dimension Value')
+            ax.set_xticks(range(len(exam_dates)))
+            ax.set_xticklabels(exam_dates, rotation=45)
+            ax.grid(alpha=0.3)
+            ax.legend()
+
+            # Discriminative dimensions
+            ax = axes[1]
+            for i, dim in enumerate(top_discrim):
+                dim_values = [vec[dim] for vec in patient_df['latent_vector']]
+                ax.plot(range(len(exam_dates)), dim_values, 'o-', label=f'Dim {dim}')
+
+            ax.set_title('Most Discriminative Dimensions')
+            ax.set_xlabel('Exam Index')
+            ax.set_ylabel('Dimension Value')
+            ax.set_xticks(range(len(exam_dates)))
+            ax.set_xticklabels(exam_dates, rotation=45)
+            ax.grid(alpha=0.3)
+            ax.legend()
+
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.9)
+            plt.show()
+
+def visualize_dimensions(data, dimensions, ax, title):
+    """Helper function to visualize patient trajectories in two dimensions"""
+    # Create a colormap with one color per patient
+    patient_ids = data['patient_id'].unique()
+    colors = plt.cm.tab20(np.linspace(0, 1, len(patient_ids)))
+    patient_colors = {pid: colors[i] for i, pid in enumerate(patient_ids)}
+
+    # Plot each patient's trajectory
+    for patient_id, patient_df in data.groupby('patient_id'):
+        # Sort by exam date
+        patient_df = patient_df.sort_values('exam_date')
+
+        # Get group for marker shape
+        group = patient_df['group'].iloc[0]
+        marker = 'o' if group == 'PD' else ('s' if group == 'Control' else '^')
+
+        # Extract dimension values
+        x_values = [vec[dimensions[0]] for vec in patient_df['latent_vector']]
+        y_values = [vec[dimensions[1]] for vec in patient_df['latent_vector']]
+
+        # Plot trajectory with connecting lines
+        ax.plot(x_values, y_values, '-', color=patient_colors[patient_id], alpha=0.5)
+
+        # Plot individual points with patient labels
+        for i, (x, y, date) in enumerate(zip(x_values, y_values, patient_df['exam_date'])):
+            # Larger and darker marker for first and last exam
+            if i == 0 or i == len(x_values) - 1:
+                ax.scatter(x, y, s=100, color=patient_colors[patient_id], marker=marker,
+                          edgecolor='black', linewidth=1, alpha=1.0, zorder=3)
+                # Add date label for first and last
+                date_label = date.split('-')[0] + ('-' + date.split('-')[1] if '-' in date else '')
+                ax.annotate(date_label, (x, y), xytext=(5, 5), textcoords='offset points',
+                           fontsize=8, bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.7))
+            else:
+                ax.scatter(x, y, s=60, color=patient_colors[patient_id], marker=marker,
+                          edgecolor='black', linewidth=0.5, alpha=0.7, zorder=2)
+
+    # Add legend for patients
+    legend_elements = []
+    for patient_id in patient_ids:
+        patient_data = data[data['patient_id'] == patient_id]
+        group = patient_data['group'].iloc[0]
+        marker = 'o' if group == 'PD' else ('s' if group == 'Control' else '^')
+        legend_elements.append(plt.Line2D([0], [0], marker=marker, color='w', markerfacecolor=patient_colors[patient_id],
+                                         markersize=10, label=f"{patient_id} ({group})"))
+
+    ax.legend(handles=legend_elements, loc='best', fontsize=8)
+    ax.set_title(title)
+    ax.grid(alpha=0.3)
+
+def evaluate_patient_identification(latent_df, stable_dims):
+    """
+    Evaluate whether patients can be identified from their latent representations
+    using leave-one-exam-out cross-validation.
+
+    Parameters:
+        latent_df: DataFrame with latent representations
+        stable_dims: Dictionary with stable dimensions for AE and VAE
+    """
+    print("\nEvaluating patient identification from latent space...")
+
+    # Results for each model
+    identification_results = {}
+
+    for model_type in ['ae', 'vae']:
+        print(f"\nEvaluating {model_type.upper()}...")
+        model_data = latent_df[latent_df['model_type'] == model_type]
+
+        # Get different dimension sets to evaluate
+        dim_sets = {
+            'all_dims': None,  # Use all dimensions
+            'stable_dims': stable_dims[model_type]['stable_dims'][:20],
+            'discrim_dims': stable_dims[model_type]['discrim_dims'][:20]
+        }
+
+        # Store results for this model
+        results = {}
+
+        # Evaluate each dimension set
+        for dim_set_name, dims in dim_sets.items():
+            print(f"\n  Using {dim_set_name}...")
+
+            # Prepare data for cross-validation
+            X_all = []
+            y_all = []
+
+            for _, row in model_data.iterrows():
+                latent_vector = row['latent_vector']
+
+                # Select only the specified dimensions if applicable
+                if dims is not None:
+                    latent_vector = latent_vector[dims]
+
+                X_all.append(latent_vector)
+                y_all.append(row['patient_id'])
+
+            X_all = np.array(X_all)
+            y_all = np.array(y_all)
+
+            # Leave-one-exam-out cross-validation
+            loo = LeaveOneOut()
+            predictions = []
+            actual = []
+
+            for train_index, test_index in tqdm(loo.split(X_all), total=len(X_all), desc="LOO Cross-validation"):
+                X_train, X_test = X_all[train_index], X_all[test_index]
+                y_train, y_test = y_all[train_index], y_all[test_index]
+
+                # Train a simple KNN classifier
+                knn = KNeighborsClassifier(n_neighbors=1)
+                knn.fit(X_train, y_train)
+
+                # Predict
+                pred = knn.predict(X_test)
+
+                predictions.extend(pred)
+                actual.extend(y_test)
+
+            # Calculate accuracy
+            accuracy = np.mean(np.array(predictions) == np.array(actual))
+
+            print(f"  Accuracy: {accuracy:.4f}")
+
+            # Store results
+            results[dim_set_name] = {
+                'accuracy': accuracy
+            }
+
+        identification_results[model_type] = results
+
+    return identification_results
+
+# Visualize patient latent space evolution
+visualize_patient_latent_evolution(latent_df, consistency_results)
+
+# Evaluate patient identification from latent space
+identification_results = evaluate_patient_identification(latent_df, consistency_results)
+
+# Final summary
+print("\nFinal Insights:")
+print("1. Most stable dimensions (consistent within patients):")
+for model_type in ['ae', 'vae']:
+    print(f"   - {model_type.upper()}: {', '.join(map(str, consistency_results[model_type]['stable_dims'][:5]))}")
+
+print("\n2. Most discriminative dimensions (varying between patients):")
+for model_type in ['ae', 'vae']:
+    print(f"   - {model_type.upper()}: {', '.join(map(str, consistency_results[model_type]['discrim_dims'][:5]))}")
+
+print("\n3. Patient identification accuracy:")
+for model_type in ['ae', 'vae']:
+    for dim_set in identification_results[model_type]:
+        accuracy = identification_results[model_type][dim_set]['accuracy']
+        print(f"   - {model_type.upper()} using {dim_set}: {accuracy:.4f}")
+
+"""# SBR Study with Latent Representations"""
 
